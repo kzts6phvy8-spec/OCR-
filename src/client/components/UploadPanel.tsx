@@ -46,7 +46,7 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
     const arr = Array.from(list);
     const ok = arr.filter((f) => ACCEPT.includes(f.type));
     if (ok.length < arr.length) toast("warning", "PNG / JPEG / WebP 以外のファイルを除外しました");
-    setFiles((cur) => [...cur, ...ok].slice(0, 50));
+    setFiles((cur) => [...cur, ...ok]);
   };
 
   const onDrop = (e: DragEvent) => {
@@ -59,10 +59,21 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
     if (files.length === 0) return;
     setUploadRatio(0);
     try {
-      const created = await api.upload(files, mode, targetId || null, setUploadRatio);
+      // 枚数の上限は無し。1 回の通信が大きくなりすぎないよう、20 枚ずつに分けて送る
+      const CHUNK = 20;
+      const totalBytes = files.reduce((n, f) => n + f.size, 0) || 1;
+      let sentBytes = 0;
+      const created = [];
+      for (let i = 0; i < files.length; i += CHUNK) {
+        const chunk = files.slice(i, i + CHUNK);
+        const chunkBytes = chunk.reduce((n, f) => n + f.size, 0);
+        const jobs = await api.upload(chunk, mode, targetId || null, (r) => setUploadRatio((sentBytes + r * chunkBytes) / totalBytes));
+        sentBytes += chunkBytes;
+        created.push(...jobs);
+        onUploaded(jobs);
+        setFiles((cur) => cur.filter((f) => !chunk.includes(f)));
+      }
       toast("info", `${created.length} 枚を解析キューに追加しました`, "バックグラウンドで順番に解析します");
-      setFiles([]);
-      onUploaded(created);
     } catch (e) {
       toast("error", "アップロードに失敗しました", (e as Error).message);
     } finally {
@@ -121,7 +132,7 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
         >
           <UploadCloud className={`size-10 ${dragging ? "text-gold-400" : "text-ebony-500"}`} />
           <p className="text-sm font-medium">ここに画像をドラッグ＆ドロップ</p>
-          <p className="text-xs text-ash">またはクリックして選択 (PNG / JPEG / WebP・最大 50 枚)</p>
+          <p className="text-xs text-ash">またはクリックして選択 (PNG / JPEG / WebP・枚数制限なし)</p>
           <input
             ref={inputRef}
             type="file"
