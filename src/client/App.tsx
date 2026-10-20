@@ -3,7 +3,7 @@ import { AlertTriangle, BookOpen, Database, Download, Save, ScanLine, Settings a
 import type { OcrJob, Warlord } from "../core/types.ts";
 import { api } from "./lib/api.ts";
 import { onQueueChange, resumeQueue } from "./lib/queue.ts";
-import { loadSettings, onSettingsChange, type Settings } from "./lib/settings.ts";
+import { activeModelLabel, hasActiveKey, loadSettings, onSettingsChange, type Settings } from "./lib/settings.ts";
 import { useToast } from "./lib/toast.tsx";
 import { saveFile, today } from "./lib/share.ts";
 import { UploadPanel } from "./components/UploadPanel.tsx";
@@ -146,14 +146,14 @@ export default function App() {
         </div>
       </header>
 
-      {!settings.apiKey && tab !== "settings" && (
+      {!hasActiveKey(settings) && tab !== "settings" && (
         <div className="mx-auto mt-4 w-full max-w-7xl px-4">
           <button
             onClick={() => setTab("settings")}
             className="flex w-full items-center gap-2 rounded-lg border border-hi-600/60 bg-hi-800/40 px-4 py-2 text-left text-sm text-hi-400"
           >
             <AlertTriangle className="size-4 shrink-0" />
-            AI 解析を使うには Claude API キーの登録が必要です。タップして設定 →
+            AI 解析を使うには API キーの登録が必要です (Gemini なら無料枠あり)。タップして設定 →
           </button>
         </div>
       )}
@@ -169,7 +169,7 @@ export default function App() {
           />
         )}
         {tab === "upload" && (
-          <UploadPanel jobs={jobs} warlords={warlords} model={settings.model} hasApiKey={Boolean(settings.apiKey)} onOpenWarlord={setOpenId} />
+          <UploadPanel jobs={jobs} warlords={warlords} model={activeModelLabel(settings)} hasApiKey={hasActiveKey(settings)} onOpenWarlord={setOpenId} />
         )}
         {tab === "data" && <DataPanel count={warlords.length} onImported={refreshWarlords} />}
         {tab === "settings" && <SettingsPanel settings={settings} />}

@@ -3,6 +3,7 @@ import { ingestExtraction } from "../../core/ingest.ts";
 import { warlordLabel } from "../../core/domain.ts";
 import * as db from "./db.ts";
 import { loadSettings } from "./settings.ts";
+import { analyzeWithRetry } from "./analyze.ts";
 
 // 画像を 1 枚ずつ順番に解析するキュー。同じ武将への統合が競合しないよう直列実行。
 // iPhone ではアプリを閉じる・画面を消すと処理が止まるため、処理中は画面消灯を防ぐ。
@@ -83,8 +84,6 @@ export async function runQueue() {
       try {
         const image = await db.getImage(job.image_id);
         if (!image) throw new Error("画像が見つかりません");
-        // AI 通信部分は大きいので、解析を始める時だけ読み込む
-        const { analyzeWithRetry } = await import("./ocr.ts");
         const extraction = await analyzeWithRetry(image, job.mode, loadSettings());
         const result = await ingestExtraction(db.repo, extraction, {
           mode: job.mode,
