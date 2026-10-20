@@ -29,7 +29,17 @@ function toOcrError(err: unknown, settings: Settings): OcrError {
     if (err.status === 400 && /API_KEY_INVALID|API key not valid/i.test(msg)) {
       return new OcrError("Gemini の API キーが無効です。設定画面で確認してください", false);
     }
-    if (err.status === 403) return new OcrError("この API キーでは Gemini を利用できません (権限エラー)", false);
+    if (err.status === 403) {
+      // 「Generative Language API が無効」の場合は、有効化ページの URL を案内する
+      const url = msg.match(/https:\/\/console\.(?:developers|cloud)\.google\.com\/[^\s"'\\]+/)?.[0];
+      if (/SERVICE_DISABLED|has not been used|is disabled/i.test(msg)) {
+        return new OcrError(
+          `Gemini (Generative Language API) がまだ有効になっていません。${url ? `次のページを開いて「有効にする」を押してください: ${url}` : "Google Cloud で「Generative Language API」を有効にしてください"}`,
+          false,
+        );
+      }
+      return new OcrError(`この API キーでは Gemini を利用できません (権限エラー): ${msg.slice(0, 200)}`, false);
+    }
     if (err.status === 404) return new OcrError(`モデル「${settings.geminiModel}」が見つかりません。設定の「接続テスト」で選び直してください`, false);
     if (err.status === 429) return new OcrError("無料枠の利用上限に達しました。時間をおいて再試行してください", true, 30_000);
     if (err.status >= 500) return new OcrError(`Gemini 側のエラー (${err.status})。しばらくして再試行してください`, true, 5_000);
