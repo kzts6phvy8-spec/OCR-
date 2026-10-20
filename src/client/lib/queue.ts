@@ -1,4 +1,4 @@
-import type { OcrJob, UploadMode } from "../../core/types.ts";
+import type { Faction, OcrJob, UploadMode } from "../../core/types.ts";
 import { ingestExtraction } from "../../core/ingest.ts";
 import { warlordLabel } from "../../core/domain.ts";
 import * as db from "./db.ts";
@@ -17,13 +17,19 @@ export function onQueueChange(fn: () => void) {
 const notify = () => listeners.forEach((fn) => fn());
 export const notifyQueueChange = notify;
 
-export async function enqueue(imageIds: { fileName: string; imageId: string }[], mode: UploadMode, targetId: string | null) {
+export async function enqueue(
+  imageIds: { fileName: string; imageId: string }[],
+  mode: UploadMode,
+  targetId: string | null,
+  faction: Faction | "",
+) {
   const now = new Date().toISOString();
   const jobs: OcrJob[] = imageIds.map((f) => ({
     id: crypto.randomUUID(),
     file_name: f.fileName,
     image_id: f.imageId,
     mode,
+    faction,
     target_id: targetId,
     status: "queued",
     error: null,
@@ -84,6 +90,7 @@ export async function runQueue() {
           mode: job.mode,
           targetId: job.target_id,
           imageId: job.image_id,
+          faction: job.faction ?? "",
         });
         await update(job, {
           status: "done",

@@ -26,17 +26,18 @@ export function WeaponBadge() {
 }
 
 const RARITY_STYLE: Record<string, string> = {
-  SSR: "from-gold-300 via-gold-500 to-gold-700 text-ebony-950",
+  SSR: "from-shu-300 via-shu-500 to-shu-600 text-ebony-950",
   SP: "from-hi-400 to-hi-600 text-white",
   SR: "from-violet-300 to-violet-600 text-white",
   R: "from-sky-300 to-sky-600 text-white",
   N: "from-stone-300 to-stone-500 text-ebony-950",
 };
 
-export function RarityBadge({ rarity }: { rarity: string }) {
+export function RarityBadge({ rarity, size = "sm" }: { rarity: string; size?: "sm" | "md" }) {
   if (!rarity) return null;
+  const sizing = size === "md" ? "rounded-full px-4 py-1 text-base" : "rounded px-1.5 py-0.5 text-[10px]";
   return (
-    <span className={`rounded bg-gradient-to-b px-1.5 py-0.5 text-[10px] font-extrabold tracking-wider ${RARITY_STYLE[rarity] ?? RARITY_STYLE.N}`}>
+    <span className={`bg-gradient-to-b font-extrabold tracking-wider ${sizing} ${RARITY_STYLE[rarity] ?? RARITY_STYLE.N}`}>
       {rarity}
     </span>
   );

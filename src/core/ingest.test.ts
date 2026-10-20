@@ -61,3 +61,16 @@ describe("ingestExtraction", async () => {
     expect(res.warlord.synergy_skills).toHaveLength(1);
   });
 });
+
+describe("アップロード時の勢力指定", () => {
+  it("選んだ勢力が読み取り結果より優先される", async () => {
+    const res = await ingest(repo, makeExtraction({ name: "武将A", faction: "東海" }), {
+      mode: "auto",
+      targetId: null,
+      imageId: "img-1",
+      faction: "奥.関.甲",
+    });
+    expect(res.warlord.faction).toBe("奥.関.甲");
+    expect(res.warnings).toEqual([]);
+  });
+});

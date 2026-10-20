@@ -23,6 +23,13 @@
   --color-hi-600: #9e2a20;
   --color-hi-800: #4a1612;
 
+  /* 朱 (主ボタン・強調) */
+  --color-shu-300: #f6b26b;
+  --color-shu-400: #ee9a45;
+  --color-shu-500: #e0812a;
+  --color-shu-600: #c4661a;
+  --color-shu-700: #8a4510;
+
   --color-washi: #ece4d4;
   --color-ash: #a39a8a;
 }

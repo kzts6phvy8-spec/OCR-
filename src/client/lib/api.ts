@@ -1,4 +1,5 @@
-import type { ExportPayload, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
+import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
+import { warlordsToText } from "../../core/text.ts";
 import { normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import * as db from "./db.ts";
@@ -43,14 +44,23 @@ export const api = {
   },
 
   /** 画像を縮小して端末内に保存し、解析キューに追加する */
-  async upload(files: File[], mode: UploadMode, targetId: string | null, onProgress: (ratio: number) => void): Promise<OcrJob[]> {
+  async upload(
+    files: File[],
+    opts: { mode: UploadMode; targetId: string | null; faction: Faction | "" },
+    onProgress: (ratio: number) => void,
+  ): Promise<OcrJob[]> {
     const stored: { fileName: string; imageId: string }[] = [];
     for (const [i, file] of files.entries()) {
       const blob = await compressImage(file);
       stored.push({ fileName: file.name || `画像${i + 1}`, imageId: await db.putImage(blob) });
       onProgress((i + 1) / files.length);
     }
-    return queue.enqueue(stored, mode, targetId);
+    return queue.enqueue(stored, opts.mode, opts.targetId, opts.faction);
+  },
+
+  async exportText(): Promise<Blob> {
+    const list = (await db.listWarlords()).sort((a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
+    return new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" });
   },
 
   async exportData(includeImages: boolean): Promise<Blob> {
