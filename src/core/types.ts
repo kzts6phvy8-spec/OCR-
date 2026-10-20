@@ -93,6 +93,8 @@ export interface OcrJob {
   file_name: string;
   image_id: string;
   mode: UploadMode;
+  /** アップロード時に選んだ勢力 (空なら AI の読み取り結果を使う) */
+  faction: Faction | "";
   target_id: string | null;
   status: JobStatus;
   error: string | null;

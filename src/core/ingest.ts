@@ -1,4 +1,4 @@
-import type { UploadMode, Warlord, WarlordInput } from "./types.ts";
+import type { Faction, UploadMode, Warlord, WarlordInput } from "./types.ts";
 import {
   decideSpecial,
   emptyWarlordInput,
@@ -38,7 +38,7 @@ export interface IngestResult {
 export async function ingestExtraction(
   repo: WarlordRepo,
   ext: OcrExtraction,
-  opts: { mode: UploadMode; targetId: string | null; imageId: string },
+  opts: { mode: UploadMode; targetId: string | null; imageId: string; faction?: Faction | "" },
 ): Promise<IngestResult> {
   const decision = decideSpecial(ext, opts.mode);
   const warnings = [...decision.warnings];
@@ -72,7 +72,9 @@ export async function ingestExtraction(
 
   const base = existing ? toInput(existing) : { ...emptyWarlordInput(), name, is_special: isSpecial };
   const { merged, warnings: mergeWarnings } = mergeWarlord(base, patch);
-  warnings.push(...mergeWarnings);
+  warnings.push(...mergeWarnings.filter((w) => !(opts.faction && w.startsWith("勢力"))));
+  // アップロード時に選んだ勢力は、画像の読み取り結果より優先する
+  if (opts.faction) merged.faction = opts.faction;
 
   const record = normalizeInput(merged);
   const warlord = existing ? await repo.update(existing.id, record) : await repo.insert(record);

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, BookOpen, Database, ScanLine, Settings as SettingsIcon } from "lucide-react";
+import { AlertTriangle, BookOpen, Database, Download, Save, ScanLine, Settings as SettingsIcon, Upload } from "lucide-react";
 import type { OcrJob, Warlord } from "../core/types.ts";
 import { api } from "./lib/api.ts";
 import { onQueueChange, resumeQueue } from "./lib/queue.ts";
 import { loadSettings, onSettingsChange, type Settings } from "./lib/settings.ts";
 import { useToast } from "./lib/toast.tsx";
+import { saveFile, today } from "./lib/share.ts";
 import { UploadPanel } from "./components/UploadPanel.tsx";
 import { WarlordGrid } from "./components/WarlordGrid.tsx";
 import { WarlordDetail } from "./components/WarlordDetail.tsx";
@@ -79,6 +80,14 @@ export default function App() {
     };
   }, [refreshWarlords, refreshJobs]);
 
+  const exportTxt = async () => {
+    if (warlords.length === 0) return toast("info", "まだ武将が登録されていません");
+    await saveFile(await api.exportText(), `warlords-${today()}.txt`, "戦国布武 武将図鑑");
+  };
+  const backup = async () => {
+    await saveFile(await api.exportData(true), `warlords-${today()}.json`, "戦国布武 武将図鑑 バックアップ");
+  };
+
   const openWarlord = warlords.find((w) => w.id === openId) ?? null;
   const activeCount = jobs.filter((j) => j.status === "queued" || j.status === "processing").length;
 
@@ -92,15 +101,32 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 border-b border-ebony-700/80 bg-ebony-950/85 pt-[env(safe-area-inset-top)] backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center gap-x-6 px-4 py-3">
-          <div className="flex items-center gap-3">
+        <div className="mx-auto flex max-w-7xl items-center gap-x-3 px-4 py-3 sm:gap-x-6">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="grid size-10 place-items-center rounded-md border border-gold-600/60 bg-gradient-to-b from-hi-600 to-hi-800 font-serif text-xl font-extrabold text-gold-300 shadow-lg">
               武
             </div>
             <div className="leading-tight">
-              <h1 className="gold-text font-serif text-xl font-extrabold tracking-wider">戦国布武 武将図鑑</h1>
-              <p className="text-[11px] tracking-widest text-ash">AI スクリーンショット解析</p>
+              <h1 className="gold-text font-serif text-lg font-extrabold tracking-wider whitespace-nowrap sm:text-xl">武将図鑑</h1>
+              <p className="text-[11px] whitespace-nowrap text-ash">
+                <span className="font-bold text-shu-300">{warlords.length}</span> 件保存済
+              </p>
             </div>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5 sm:order-last sm:ml-0">
+            <button
+              onClick={exportTxt}
+              className="flex items-center gap-1 rounded-xl bg-gradient-to-b from-shu-400 to-shu-600 px-3 py-2 text-sm font-bold text-white"
+              title="全武将をテキストで保存"
+            >
+              <Download className="size-4" /> .txt
+            </button>
+            <button onClick={backup} className="rounded-xl border border-ebony-600 p-2 text-gold-400" title="バックアップを保存" aria-label="バックアップを保存">
+              <Save className="size-5" />
+            </button>
+            <button onClick={() => setTab("data")} className="rounded-xl border border-ebony-600 p-2 text-ash" title="バックアップから復元" aria-label="バックアップから復元">
+              <Upload className="size-5" />
+            </button>
           </div>
           <nav className="ml-auto hidden gap-1 rounded-lg border border-ebony-700 bg-ebony-900 p-1 sm:flex">
             {TABS.map(({ id, label, icon: Icon }) => (

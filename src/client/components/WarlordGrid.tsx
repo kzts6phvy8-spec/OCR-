@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Images, Plus, ScanLine, Search, SlidersHorizontal, UserRound } from "lucide-react";
+import { Images, LayoutGrid, List, Plus, ScanLine, Search, SlidersHorizontal, UserRound } from "lucide-react";
 import { FACTIONS, RARITIES, type Warlord } from "../../core/types.ts";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { StoredImage } from "./StoredImage.tsx";
@@ -48,6 +48,21 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload }:
   const [weaponOnly, setWeaponOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("growth");
+  const [layout, setLayoutState] = useState<"grid" | "list">(() => {
+    try {
+      return localStorage.getItem("zukan-layout") === "list" ? "list" : "grid";
+    } catch {
+      return "grid";
+    }
+  });
+  const setLayout = (v: "grid" | "list") => {
+    setLayoutState(v);
+    try {
+      localStorage.setItem("zukan-layout", v);
+    } catch {
+      /* 保存できなくても表示は切り替わる */
+    }
+  };
 
   const indexed = useMemo(() => warlords.map((w) => ({ w, text: searchText(w) })), [warlords]);
 
@@ -163,6 +178,24 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload }:
             ))}
           </select>
         </div>
+        <div className="flex rounded-lg border border-ebony-600 p-0.5">
+          {(
+            [
+              ["grid", LayoutGrid, "カード表示"],
+              ["list", List, "リスト表示"],
+            ] as const
+          ).map(([id, Icon, label]) => (
+            <button
+              key={id}
+              onClick={() => setLayout(id)}
+              aria-label={label}
+              title={label}
+              className={`rounded-md px-2.5 py-1 ${layout === id ? "bg-shu-500 text-white" : "text-ash"}`}
+            >
+              <Icon className="size-4" />
+            </button>
+          ))}
+        </div>
         <button
           onClick={onCreate}
           className="ml-auto flex items-center gap-1 rounded-md border border-gold-600/60 px-3 py-1.5 text-xs font-bold text-gold-400 hover:bg-gold-500/10"
@@ -194,11 +227,21 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload }:
       ) : (
         <>
           <p className="mb-3 text-xs text-ash">{visible.length} 件</p>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {visible.map((w) => (
-              <WarlordCard key={w.id} w={w} onClick={() => onOpen(w.id)} />
-            ))}
-          </div>
+          {layout === "grid" ? (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {visible.map((w) => (
+                <WarlordCard key={w.id} w={w} onClick={() => onOpen(w.id)} />
+              ))}
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {visible.map((w) => (
+                <li key={w.id}>
+                  <WarlordRow w={w} onClick={() => onOpen(w.id)} />
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       )}
     </div>
@@ -248,6 +291,46 @@ function WarlordCard({ w, onClick }: { w: Warlord; onClick: () => void }) {
         {w.faction && <span className="rounded bg-ebony-800 px-1.5 py-0.5">{w.faction}</span>}
         {w.skill_name && <span className="truncate">『{w.skill_name}』</span>}
         {w.has_weapon_awakening && <WeaponBadge />}
+      </div>
+    </button>
+  );
+}
+
+function WarlordRow({ w, onClick }: { w: Warlord; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex w-full items-center gap-3 rounded-xl border bg-ebony-900 p-2 text-left transition hover:border-ebony-500 ${
+        w.is_special ? "border-gold-500/60" : "border-ebony-700"
+      }`}
+    >
+      <div className="h-16 w-12 shrink-0 overflow-hidden rounded-md bg-ebony-800">
+        {w.image_url && <StoredImage id={w.image_url} alt="" className="size-full object-cover object-top" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <RarityBadge rarity={w.rarity} />
+          {w.is_special && <SpecialBadge />}
+          <span className="truncate font-serif text-base font-extrabold">{w.name}</span>
+          {w.faction && <span className="shrink-0 rounded bg-ebony-800 px-1.5 py-0.5 text-[10px] text-ash">{w.faction}</span>}
+        </div>
+        <p className="mt-0.5 truncate text-xs text-ash">
+          {w.skill_name && `『${w.skill_name}』`}
+          {w.awakening_skill_name && ` 覚醒『${w.awakening_skill_name}』`}
+        </p>
+      </div>
+      <div className="shrink-0 text-right">
+        {w.growth_total && (
+          <p className="text-xs text-ash">
+            成長 <span className="text-base font-bold text-shu-300">{w.growth_total}</span>
+          </p>
+        )}
+        <div className="mt-0.5 flex items-center justify-end gap-1">
+          {w.has_weapon_awakening && <WeaponBadge />}
+          <span className="flex items-center gap-0.5 text-[10px] text-ash">
+            <Images className="size-3" /> {w.screenshot_count}
+          </span>
+        </div>
       </div>
     </button>
   );

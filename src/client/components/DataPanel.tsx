@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Download, FileJson, Upload } from "lucide-react";
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
+import { saveFile, today } from "../lib/share.ts";
 
 export function DataPanel({ count, onImported }: { count: number; onImported: () => void }) {
   const toast = useToast();
@@ -13,20 +14,7 @@ export function DataPanel({ count, onImported }: { count: number; onImported: ()
   const exportData = async () => {
     setBusy(true);
     try {
-      const blob = await api.exportData(withImages);
-      const name = `warlords-${new Date().toISOString().slice(0, 10)}.json`;
-      const file = new File([blob], name, { type: "application/json" });
-      // iPhone では共有シートから「ファイルに保存」できる
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: "戦国布武 武将図鑑 バックアップ" }).catch(() => {});
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      }
+      await saveFile(await api.exportData(withImages), `warlords-${today()}.json`, "戦国布武 武将図鑑 バックアップ");
     } catch (e) {
       toast("error", "エクスポートに失敗しました", (e as Error).message);
     } finally {

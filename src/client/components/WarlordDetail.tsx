@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
+  Camera,
   ChevronLeft,
+  Copy,
   ChevronRight,
   Lock,
   Pencil,
@@ -24,6 +26,7 @@ import {
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
+import { warlordToText } from "../../core/text.ts";
 import { StoredImage } from "./StoredImage.tsx";
 
 const EMPTY: WarlordInput = {
@@ -131,6 +134,27 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
     }
   };
 
+  const toggleSpecial = async () => {
+    if (!warlord) return;
+    try {
+      const saved = await api.updateWarlord(warlord.id, { is_special: !warlord.is_special });
+      toast("success", saved.is_special ? "特異武将に変更しました" : "通常武将に変更しました", saved.name);
+      onSaved(saved);
+    } catch (e) {
+      toast("error", "変更できませんでした", (e as Error).message);
+    }
+  };
+
+  const copyText = async () => {
+    if (!warlord) return;
+    try {
+      await navigator.clipboard.writeText(warlordToText(warlord));
+      toast("success", "テキストをコピーしました");
+    } catch {
+      toast("error", "コピーできませんでした");
+    }
+  };
+
   const view = warlord && !editing ? warlord : null;
   const gallery = view ? view.gallery_images : draft.gallery_images;
 
@@ -144,60 +168,77 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
       >
         {/* ヘッダー */}
         <div
-          className={`flex items-start gap-3 border-b px-5 py-4 ${
+          className={`border-b px-4 py-3 sm:px-5 sm:py-4 ${
             (view ?? draft).is_special ? "border-gold-600/50 bg-gradient-to-r from-gold-700/25 to-transparent" : "border-ebony-700"
           }`}
         >
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0">
             {view ? (
               <>
-                <div className="flex flex-wrap items-center gap-2">
-                  <RarityBadge rarity={view.rarity} />
-                  {view.is_special && <SpecialBadge size="md" />}
-                  <h2 className="font-serif text-2xl font-extrabold">{view.name}</h2>
-                  {view.has_weapon_awakening && <WeaponBadge />}
-                </div>
-                <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ash">
-                  {view.title_alias && <span className="text-gold-400">「{view.title_alias}」</span>}
-                  {view.faction && <span>{view.faction}</span>}
-                  {view.level > 0 && <span>Lv.{view.level}</span>}
-                  <Stars count={view.stars} />
-                  <span>{view.screenshot_count} 枚のスクショから解析</span>
-                </p>
-              </>
-            ) : (
-              <h2 className="font-serif text-xl font-bold text-gold-400">{warlord ? "武将データを編集" : "武将を手動登録"}</h2>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {view ? (
-              <>
-                <IconButton title="編集" onClick={() => setEditing(true)}>
-                  <Pencil className="size-4" />
-                </IconButton>
-                <IconButton title="削除" onClick={remove} danger>
-                  <Trash2 className="size-4" />
-                </IconButton>
-              </>
-            ) : (
-              <>
-                {warlord && (
-                  <button onClick={() => (setEditing(false), setDraft(toInput(warlord)))} className="rounded-md px-3 py-1.5 text-sm text-ash hover:text-washi">
-                    キャンセル
+                <div className="flex items-center gap-2">
+                  <RarityBadge rarity={view.rarity} size="md" />
+                  <button
+                    onClick={toggleSpecial}
+                    className="flex shrink-0 items-center gap-1 rounded-full border border-ebony-600 px-2.5 py-1 text-xs whitespace-nowrap text-ash hover:border-gold-500 hover:text-gold-300 sm:text-sm"
+                  >
+                    <Sparkles className="size-4" /> {view.is_special ? "通常に変更" : "特異に変更"}
                   </button>
-                )}
-                <button
-                  onClick={save}
-                  disabled={saving}
-                  className="flex items-center gap-1 rounded-md bg-gradient-to-b from-gold-500 to-gold-600 px-3 py-1.5 text-sm font-bold text-ebony-950 disabled:opacity-50"
-                >
-                  <Save className="size-4" /> 保存
-                </button>
+                  <div className="ml-auto flex items-center gap-0.5 sm:gap-1.5">
+                    <IconButton title="テキストをコピー" onClick={copyText}>
+                      <Copy className="size-4" />
+                    </IconButton>
+                    <IconButton title="編集" onClick={() => setEditing(true)}>
+                      <Pencil className="size-4" />
+                    </IconButton>
+                    <button
+                      onClick={remove}
+                      className="flex shrink-0 items-center gap-1 rounded-xl border border-hi-600/70 bg-hi-800/30 px-2.5 py-1.5 text-sm font-bold whitespace-nowrap text-hi-400"
+                    >
+                      <Trash2 className="size-4" /> 消去
+                    </button>
+                    <IconButton title="閉じる" onClick={onClose}>
+                      <X className="size-5" />
+                    </IconButton>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                  {view.is_special && <SpecialBadge size="md" />}
+                  <h2 className="font-serif text-3xl font-extrabold">{view.name}</h2>
+                  {view.faction && <span className="rounded-lg bg-ebony-700 px-3 py-1 text-sm">{view.faction}</span>}
+                  <span className="font-mono text-lg font-bold text-shu-300">
+                    {view.level > 0 && `Lv.${view.level} `}
+                    {view.stars > 0 && <span className="text-base">★{view.stars}</span>}
+                  </span>
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-sm">
+                  <span className="flex items-center gap-1.5 rounded-full border border-emerald-700/70 bg-emerald-900/30 px-3 py-1 text-emerald-300">
+                    <Camera className="size-4" /> {view.screenshot_count}枚統合
+                  </span>
+                  {view.title_alias && <span className="rounded-full border border-ebony-600 px-3 py-1 text-gold-400">「{view.title_alias}」</span>}
+                </div>
               </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <h2 className="font-serif text-xl font-bold text-gold-400">{warlord ? "武将データを編集" : "武将を手動登録"}</h2>
+                <div className="ml-auto flex items-center gap-1">
+                  {warlord && (
+                    <button onClick={() => (setEditing(false), setDraft(toInput(warlord)))} className="rounded-md px-3 py-1.5 text-sm text-ash hover:text-washi">
+                      キャンセル
+                    </button>
+                  )}
+                  <button
+                    onClick={save}
+                    disabled={saving}
+                    className="flex items-center gap-1 rounded-md bg-gradient-to-b from-shu-400 to-shu-600 px-3 py-1.5 text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    <Save className="size-4" /> 保存
+                  </button>
+                  <IconButton title="閉じる" onClick={onClose}>
+                    <X className="size-5" />
+                  </IconButton>
+                </div>
+              </div>
             )}
-            <IconButton title="閉じる" onClick={onClose}>
-              <X className="size-5" />
-            </IconButton>
           </div>
         </div>
 
@@ -267,7 +308,7 @@ function IconButton({ children, title, onClick, danger }: { children: ReactNode;
       title={title}
       aria-label={title}
       onClick={onClick}
-      className={`rounded-md p-2 text-ash transition hover:bg-ebony-700 ${danger ? "hover:text-hi-400" : "hover:text-washi"}`}
+      className={`rounded-md p-1.5 text-ash sm:p-2 transition hover:bg-ebony-700 ${danger ? "hover:text-hi-400" : "hover:text-washi"}`}
     >
       {children}
     </button>
@@ -292,6 +333,13 @@ function Empty({ children = "未解析" }: { children?: ReactNode }) {
 
 // ---------------- 表示 ----------------
 
+const STAT_GRID = [
+  { key: "attack", label: "攻", color: "text-hi-400" },
+  { key: "stratagem", label: "計", color: "text-violet-400" },
+  { key: "defense", label: "防", color: "text-sky-400" },
+  { key: "troops", label: "兵", color: "text-emerald-400" },
+] as const;
+
 function DetailView({
   w,
   counterpart,
@@ -303,7 +351,6 @@ function DetailView({
   allWarlords: Warlord[];
   onOpenOther: (id: string) => void;
 }) {
-  const growthMax = 3.5;
   return (
     <>
       {counterpart && (
@@ -316,83 +363,70 @@ function DetailView({
         </button>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Section title="成長値">
-          <div className="mb-3 flex items-baseline gap-2">
-            <span className="text-xs text-ash">合計</span>
-            <span className="gold-text font-serif text-3xl font-extrabold">{w.growth_total || "—"}</span>
-          </div>
-          <div className="space-y-2.5">
-            {STATS.map(({ key, label, color }) => {
-              const base = w[`${key}_base`];
-              const growth = w[`${key}_growth`];
-              const g = parseFloat(growth.replace("+", "")) || 0;
-              return (
-                <div key={key} className="flex items-center gap-3">
-                  <span className="w-5 font-serif font-bold text-washi">{label}</span>
-                  <span className="w-12 text-right text-sm tabular-nums text-ash">{base || "—"}</span>
-                  <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-ebony-800">
-                    <div className={`h-full rounded-full bg-gradient-to-r ${color}`} style={{ width: `${Math.min(100, (g / growthMax) * 100)}%` }} />
-                  </div>
-                  <span className="w-12 text-right text-sm font-bold tabular-nums text-gold-300">{growth || "—"}</span>
-                </div>
-              );
-            })}
-          </div>
-          {(w.troop_type || w.troop_variants.length > 0) && (
-            <div className="mt-4 flex flex-wrap items-center gap-1.5 text-xs">
-              <span className="text-ash">兵種</span>
-              {(w.troop_variants.length ? w.troop_variants : [w.troop_type]).map((t) => (
-                <span
-                  key={t}
-                  className={`rounded border px-2 py-0.5 ${t === w.troop_type ? "border-gold-500 text-gold-300" : "border-ebony-600 text-ash"}`}
-                >
-                  {t}
-                </span>
-              ))}
+      <div className="mb-5 rounded-2xl border border-ebony-700 bg-ebony-950/60 p-4 sm:p-5">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="font-serif text-lg font-extrabold text-shu-300">成長値：{w.growth_total || "—"}</p>
+          <span className="text-xs text-ash">基礎数値 & 成長比率</span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {STAT_GRID.map(({ key, label, color }) => (
+            <div key={key} className="flex items-center justify-between rounded-xl border border-ebony-700 bg-ebony-900 px-4 py-3">
+              <span className={`font-serif font-bold ${color}`}>{label}</span>
+              <span className="text-right tabular-nums">
+                <span className="text-xl font-extrabold">{w[`${key}_base`] || "—"}</span>
+                {w[`${key}_growth`] && <span className="ml-2 text-sm text-ash">({w[`${key}_growth`]})</span>}
+              </span>
             </div>
-          )}
-        </Section>
-
-        <Section title="奥義スキル" icon={<Sparkles className="size-4" />}>
-          {w.skill_name ? (
-            <div className="rounded-lg border border-ebony-700 bg-ebony-900 p-3">
-              <div className="mb-1 flex items-center justify-between">
-                <p className="font-serif text-lg font-bold">『{w.skill_name}』</p>
-                {w.skill_gauge > 0 && (
-                  <span className="flex gap-0.5" title={`ゲージ ${w.skill_gauge}`}>
-                    {Array.from({ length: 3 }, (_, i) => (
-                      <span key={i} className={`h-3 w-5 rounded-sm ${i < w.skill_gauge ? "bg-gradient-to-b from-gold-300 to-gold-600" : "bg-ebony-700"}`} />
-                    ))}
-                  </span>
-                )}
-              </div>
-              <p className="text-sm leading-relaxed whitespace-pre-wrap text-ash">{w.skill_desc || "効果未解析"}</p>
-            </div>
-          ) : (
-            <Empty />
-          )}
-        </Section>
+          ))}
+        </div>
+        {(w.troop_type || w.troop_variants.length > 0) && (
+          <div className="mt-4 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-ash">兵種</span>
+            {(w.troop_variants.length ? w.troop_variants : [w.troop_type]).map((t) => (
+              <span
+                key={t}
+                className={`rounded border px-2 py-0.5 ${t === w.troop_type ? "border-shu-400 text-shu-300" : "border-ebony-600 text-ash"}`}
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      <Section title="覚醒スキル" icon={<Swords className="size-4" />}>
+      <div className="mb-5 rounded-2xl border border-ebony-700 bg-ebony-950/60 p-4 sm:p-5">
+        <h3 className="flex items-center gap-2 font-serif text-base font-extrabold text-shu-300">
+          <Sparkles className="size-5" />
+          奥義スキル{w.skill_gauge > 0 && `（奥義ゲージ${w.skill_gauge}）`}
+        </h3>
+        {w.skill_name || w.skill_desc ? (
+          <>
+            <p className="mt-2 text-lg font-bold">{w.skill_name || "名称未解析"}</p>
+            <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-washi/80">{w.skill_desc || "効果未解析"}</p>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-ebony-500">未解析</p>
+        )}
+      </div>
+
+      <div className="mb-6 rounded-2xl border border-ebony-700 bg-ebony-950/60 p-4 sm:p-5">
+        <h3 className="flex flex-wrap items-center gap-2 font-serif text-base font-extrabold text-shu-300">
+          <Swords className="size-5" />
+          覚醒スキル{w.awakening_priority && `（${w.awakening_priority}）`}
+          {w.has_weapon_awakening && <WeaponBadge />}
+        </h3>
         {w.has_awakening ? (
           <>
-            <div className="mb-3 flex items-center gap-2">
-              <p className="font-serif text-lg font-bold">『{w.awakening_skill_name || "名称未解析"}』</p>
-              {w.awakening_priority && (
-                <span className="rounded border border-hi-500/60 bg-hi-800/50 px-2 py-0.5 text-[11px] font-bold text-hi-400">
-                  優先度 {w.awakening_priority}
-                </span>
-              )}
-            </div>
-            <div className={`grid gap-3 ${w.has_weapon_awakening ? "md:grid-cols-2" : ""}`}>
-              <div className="rounded-lg border border-ebony-700 bg-ebony-900 p-3">
-                <p className="mb-1 text-[11px] font-bold tracking-wider text-ash">{w.has_weapon_awakening ? "武器覚醒前" : "覚醒効果"}</p>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{w.awakening_before_weapon || <span className="text-ebony-500">未解析</span>}</p>
+            <p className="mt-2 text-lg font-bold">{w.awakening_skill_name || "名称未解析"}</p>
+            <div className={`mt-2 grid gap-3 ${w.has_weapon_awakening ? "md:grid-cols-2" : ""}`}>
+              <div className={w.has_weapon_awakening ? "rounded-xl border border-ebony-700 bg-ebony-900 p-3" : ""}>
+                {w.has_weapon_awakening && <p className="mb-1 text-[11px] font-bold tracking-wider text-ash">武器覚醒前</p>}
+                <p className="text-sm leading-relaxed whitespace-pre-wrap text-washi/80">
+                  {w.awakening_before_weapon || <span className="text-ebony-500">効果未解析</span>}
+                </p>
               </div>
               {w.has_weapon_awakening && (
-                <div className="rounded-lg border border-hi-500/50 bg-gradient-to-br from-hi-800/40 to-ebony-900 p-3">
+                <div className="rounded-xl border border-hi-500/50 bg-gradient-to-br from-hi-800/40 to-ebony-900 p-3">
                   <p className="mb-1 flex items-center gap-1 text-[11px] font-bold tracking-wider text-hi-400">
                     <Swords className="size-3" /> 専用武器覚醒後
                   </p>
@@ -404,9 +438,9 @@ function DetailView({
             </div>
           </>
         ) : (
-          <Empty />
+          <p className="mt-2 text-sm text-ebony-500">未解析</p>
         )}
-      </Section>
+      </div>
 
       <Section title="天賦">
         {w.talents.length ? (
