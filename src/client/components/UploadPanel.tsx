@@ -141,7 +141,7 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
             e.target.value = "";
           }}
         />
-        {!hasApiKey && <p className="mt-3 text-center text-xs text-hi-400">※ 先に「設定」で Claude API キーを登録してください</p>}
+        {!hasApiKey && <p className="mt-3 text-center text-xs text-hi-400">※ 先に「設定」で API キーを登録してください</p>}
 
         <div className="mt-7 space-y-5 border-t border-ebony-700 pt-5">
           <div>

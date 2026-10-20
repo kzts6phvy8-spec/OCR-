@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, HardDrive, KeyRound, Loader2, Share, Smartphone, SquarePlus } from "lucide-react";
-import { MODELS, saveSettings, type Settings } from "../lib/settings.ts";
+import { CLAUDE_MODELS, DEFAULT_GEMINI_MODEL, saveSettings, type Settings } from "../lib/settings.ts";
 import { useToast } from "../lib/toast.tsx";
 
 const EFFORTS = [
@@ -15,10 +15,30 @@ function formatBytes(n: number) {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+function KeyInput({ value, placeholder, onChange }: { value: string; placeholder: string; onChange: (v: string) => void }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="flex gap-2">
+      <input
+        type={show ? "text" : "password"}
+        className="field font-mono"
+        placeholder={placeholder}
+        autoComplete="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button onClick={() => setShow((v) => !v)} className="rounded-lg border border-ebony-600 px-3 text-ash" aria-label="表示切替">
+        {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+      </button>
+    </div>
+  );
+}
+
 export function SettingsPanel({ settings }: { settings: Settings }) {
   const toast = useToast();
   const [draft, setDraft] = useState(settings);
-  const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [storage, setStorage] = useState<{ usage: number; persisted: boolean } | null>(null);
   const standalone =
@@ -33,17 +53,35 @@ export function SettingsPanel({ settings }: { settings: Settings }) {
     })();
   }, []);
 
+  const clean = (d: Settings): Settings => ({ ...d, apiKey: d.apiKey.trim(), geminiKey: d.geminiKey.trim() });
+
   const save = () => {
-    saveSettings({ ...draft, apiKey: draft.apiKey.trim() });
+    saveSettings(clean(draft));
     toast("success", "設定を保存しました");
   };
 
   const test = async () => {
     setTesting(true);
+    const d = clean(draft);
     try {
-      const { testConnection } = await import("../lib/ocr.ts");
-      const name = await testConnection({ ...draft, apiKey: draft.apiKey.trim() });
-      toast("success", "API キーを確認できました", `${name} を利用できます`);
+      if (d.provider === "gemini") {
+        const { testConnection } = await import("../lib/gemini.ts");
+        const models = await testConnection(d);
+        // 使えるモデルの一覧を保存し、選択中のモデルが無ければ Flash の最新を選ぶ
+        const pick =
+          models.includes(d.geminiModel) || models.length === 0
+            ? d.geminiModel
+            : (models.find((m) => m === DEFAULT_GEMINI_MODEL) ?? models.find((m) => /flash/i.test(m) && !/lite/i.test(m)) ?? models[0]);
+        const next = { ...d, geminiModels: models, geminiModel: pick };
+        setDraft(next);
+        saveSettings(next);
+        toast("success", "API キーを確認できました", `${models.length} 種類のモデルが使えます (選択中: ${pick})`);
+      } else {
+        const { testConnection } = await import("../lib/ocr.ts");
+        const name = await testConnection(d);
+        saveSettings(d);
+        toast("success", "API キーを確認できました", `${name} を利用できます`);
+      }
     } catch (e) {
       toast("error", "API キーを確認できませんでした", (e as Error).message);
     } finally {
@@ -60,62 +98,92 @@ export function SettingsPanel({ settings }: { settings: Settings }) {
   return (
     <div className="mx-auto grid max-w-3xl gap-6">
       <section className="panel p-5">
-        <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
-          <KeyRound className="size-5" /> Claude API キー
+        <h2 className="mb-3 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
+          <KeyRound className="size-5" /> 読み取りに使う AI
         </h2>
-        <p className="mb-4 text-sm text-ash">
-          スクショの読み取りに使います。キーはこの iPhone の中にだけ保存され、Anthropic 以外には送信されません。
-          <br />
-          取得: <span className="text-gold-300">console.anthropic.com</span> → API Keys → Create Key (使った分だけの従量課金)
-        </p>
-        <div className="flex gap-2">
-          <input
-            type={showKey ? "text" : "password"}
-            className="field font-mono"
-            placeholder="sk-ant-..."
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            value={draft.apiKey}
-            onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })}
-          />
-          <button onClick={() => setShowKey((v) => !v)} className="rounded-lg border border-ebony-600 px-3 text-ash" aria-label="表示切替">
-            {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-          </button>
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          {(
+            [
+              ["gemini", "Gemini (Google)", "無料枠あり"],
+              ["claude", "Claude (Anthropic)", "有料・高精度"],
+            ] as const
+          ).map(([id, label, note]) => (
+            <button
+              key={id}
+              onClick={() => setDraft({ ...draft, provider: id })}
+              className={`rounded-xl border px-3 py-2.5 text-left transition ${
+                draft.provider === id ? "border-shu-400 bg-shu-500/15" : "border-ebony-600"
+              }`}
+            >
+              <span className={`block text-sm font-bold ${draft.provider === id ? "text-shu-300" : ""}`}>{label}</span>
+              <span className="block text-[11px] text-ash">{note}</span>
+            </button>
+          ))}
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="mb-1 block text-xs font-bold tracking-wider text-ash">AI モデル</span>
-            <select className="field" value={draft.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })}>
-              {MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-            <span className="mt-1 block text-[11px] text-ebony-500">{MODELS.find((m) => m.id === draft.model)?.note} (目安)</span>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-bold tracking-wider text-ash">読み取りの丁寧さ</span>
-            <select className="field" value={draft.effort} onChange={(e) => setDraft({ ...draft, effort: e.target.value as Settings["effort"] })}>
-              {EFFORTS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-            <span className="mt-1 block text-[11px] text-ebony-500">読み間違いが多い時は「ふつう」に</span>
-          </label>
-        </div>
+        {draft.provider === "gemini" ? (
+          <>
+            <p className="mb-3 text-sm text-ash">
+              Google AI Studio (<span className="text-gold-300">aistudio.google.com</span>) → 「Get API key」→「Create API key」で取得できます。
+              無料枠の範囲なら料金はかかりません (1 日・1 分あたりの回数制限あり。上限に達すると少し待ってから自動で再試行します)。
+              <br />
+              <span className="text-[11px] text-ebony-500">※ 無料枠では、送った画像が Google のサービス改善に使われることがあります。</span>
+            </p>
+            <KeyInput value={draft.geminiKey} placeholder="AIza..." onChange={(v) => setDraft({ ...draft, geminiKey: v })} />
+            <label className="mt-4 block">
+              <span className="mb-1 block text-xs font-bold tracking-wider text-ash">AI モデル</span>
+              <select className="field" value={draft.geminiModel} onChange={(e) => setDraft({ ...draft, geminiModel: e.target.value })}>
+                {[...new Set([DEFAULT_GEMINI_MODEL, draft.geminiModel, ...draft.geminiModels])].map((m) => (
+                  <option key={m} value={m}>
+                    {m === DEFAULT_GEMINI_MODEL ? `${m} (最新の Flash・おすすめ)` : m}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block text-[11px] text-ebony-500">「接続テスト」を押すと、このキーで使えるモデルが一覧に追加されます。Pro 系は無料枠外のことがあります</span>
+            </label>
+          </>
+        ) : (
+          <>
+            <p className="mb-3 text-sm text-ash">
+              <span className="text-gold-300">console.anthropic.com</span> → API Keys → Create Key で取得できます。
+              <span className="text-hi-400">事前のチャージ (前払い) が必要な有料サービス</span>です。
+            </p>
+            <KeyInput value={draft.apiKey} placeholder="sk-ant-..." onChange={(v) => setDraft({ ...draft, apiKey: v })} />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold tracking-wider text-ash">AI モデル</span>
+                <select className="field" value={draft.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })}>
+                  {CLAUDE_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-[11px] text-ebony-500">{CLAUDE_MODELS.find((m) => m.id === draft.model)?.note} (目安)</span>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold tracking-wider text-ash">読み取りの丁寧さ</span>
+                <select className="field" value={draft.effort} onChange={(e) => setDraft({ ...draft, effort: e.target.value as Settings["effort"] })}>
+                  {EFFORTS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-[11px] text-ebony-500">読み間違いが多い時は「ふつう」に</span>
+              </label>
+            </div>
+          </>
+        )}
+        <p className="mt-3 text-[11px] text-ebony-500">キーはこの iPhone の中にだけ保存され、選んだ AI の会社以外には送信されません。</p>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          <button onClick={save} className="rounded-lg bg-gradient-to-b from-gold-500 to-gold-600 px-5 py-2 font-bold text-ebony-950">
+          <button onClick={save} className="rounded-lg bg-gradient-to-b from-shu-400 to-shu-600 px-5 py-2 font-bold text-white">
             保存
           </button>
           <button
             onClick={test}
-            disabled={!draft.apiKey.trim() || testing}
+            disabled={!(draft.provider === "gemini" ? draft.geminiKey : draft.apiKey).trim() || testing}
             className="flex items-center gap-1.5 rounded-lg border border-gold-600/60 px-4 py-2 text-sm font-bold text-gold-400 disabled:opacity-40"
           >
             {testing && <Loader2 className="size-4 animate-spin" />} 接続テスト (無料)

@@ -5,18 +5,10 @@ import { OcrExtractionSchema, type OcrExtraction } from "../../core/ocrSchema.ts
 import { SYSTEM_PROMPT } from "../../core/prompt.ts";
 import { blobToBase64 } from "./images.ts";
 import type { Settings } from "./settings.ts";
+import { OcrError, modeHint } from "./ocrCommon.ts";
 
 const TIMEOUT_MS = 45_000;
 const MAX_RETRIES = 2;
-
-export class OcrError extends Error {
-  constructor(
-    message: string,
-    readonly retryable: boolean,
-  ) {
-    super(message);
-  }
-}
 
 // 端末から直接 Anthropic API を呼ぶ。API キーは利用者本人のもので、この端末内にだけ保存されている。
 function client(settings: Settings) {
@@ -26,12 +18,6 @@ function client(settings: Settings) {
     timeout: TIMEOUT_MS,
     maxRetries: MAX_RETRIES,
   });
-}
-
-function modeHint(mode: UploadMode): string {
-  if (mode === "force_normal") return "\n(ユーザー指定: この画像は通常武将です)";
-  if (mode === "force_special") return "\n(ユーザー指定: この画像は特異武将です)";
-  return "";
 }
 
 function toOcrError(err: unknown, settings: Settings): OcrError {
@@ -85,24 +71,6 @@ export async function analyzeScreenshot(image: Blob, mode: UploadMode, settings:
   } catch (err) {
     throw toOcrError(err, settings);
   }
-}
-
-/**
- * 通信系 (429/5xx/タイムアウト/接続断) は SDK が自動リトライ済み。
- * ここでは出力が途切れた・スキーマ不一致など、AI 出力側の問題だけを再試行する。
- */
-export async function analyzeWithRetry(image: Blob, mode: UploadMode, settings: Settings, attempts = 2) {
-  let lastError: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await analyzeScreenshot(image, mode, settings);
-    } catch (err) {
-      lastError = err;
-      if (err instanceof OcrError && !err.retryable) break;
-      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
-    }
-  }
-  throw lastError;
 }
 
 /** API キーの確認 (モデル情報の取得だけなので料金はかからない) */
