@@ -15,6 +15,24 @@ function formatBytes(n: number) {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+/** エラー文中の URL をタップできるリンクにして表示する */
+function ErrorWithLinks({ text }: { text: string }) {
+  const parts = text.split(/(https:\/\/[^\s]+)/);
+  return (
+    <p className="mt-3 rounded-lg border border-hi-600/60 bg-hi-800/30 p-3 text-sm break-all text-hi-400">
+      {parts.map((part, i) =>
+        part.startsWith("https://") ? (
+          <a key={i} href={part} target="_blank" rel="noreferrer" className="font-bold text-sky-300 underline">
+            {part}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </p>
+  );
+}
+
 function KeyInput({ value, placeholder, onChange }: { value: string; placeholder: string; onChange: (v: string) => void }) {
   const [show, setShow] = useState(false);
   return (
@@ -40,6 +58,7 @@ export function SettingsPanel({ settings }: { settings: Settings }) {
   const toast = useToast();
   const [draft, setDraft] = useState(settings);
   const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
   const [storage, setStorage] = useState<{ usage: number; persisted: boolean } | null>(null);
   const standalone =
     typeof window !== "undefined" &&
@@ -62,6 +81,7 @@ export function SettingsPanel({ settings }: { settings: Settings }) {
 
   const test = async () => {
     setTesting(true);
+    setTestError(null);
     const d = clean(draft);
     try {
       if (d.provider === "gemini") {
@@ -84,6 +104,7 @@ export function SettingsPanel({ settings }: { settings: Settings }) {
       }
     } catch (e) {
       toast("error", "API キーを確認できませんでした", (e as Error).message);
+      setTestError((e as Error).message);
     } finally {
       setTesting(false);
     }
@@ -189,6 +210,7 @@ export function SettingsPanel({ settings }: { settings: Settings }) {
             {testing && <Loader2 className="size-4 animate-spin" />} 接続テスト (無料)
           </button>
         </div>
+        {testError && <ErrorWithLinks text={testError} />}
       </section>
 
       <section className="panel p-5">
