@@ -7,7 +7,6 @@ import {
   mergeWarlord,
   normalizeInput,
   normalizeName,
-  sanitizeWeaponAwakening,
   warlordLabel,
 } from "./domain.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
@@ -68,11 +67,7 @@ export function ingestExtraction(
     const { merged, warnings: mergeWarnings } = mergeWarlord(base, patch);
     warnings.push(...mergeWarnings);
 
-    const counterpart = db.findWarlord(name, !isSpecial);
-    const sanitized = sanitizeWeaponAwakening(merged, counterpart);
-    warnings.push(...sanitized.warnings);
-
-    const record = normalizeInput(sanitized.record);
+    const record = normalizeInput(merged);
     const warlord = existing ? db.updateWarlord(existing.id, record) : db.insertWarlord(record);
     return { warlord, merged: Boolean(existing), warnings };
   });

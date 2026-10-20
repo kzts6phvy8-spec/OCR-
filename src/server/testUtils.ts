@@ -13,7 +13,7 @@ export function makeExtraction(over: DeepPartial<OcrExtraction> = {}): OcrExtrac
     faction: null,
     level: null,
     stars: null,
-    special_evidence: { special_icon_next_to_rating: false, special_text_marker: false, notes: "" },
+    special_marker_visible: false,
     growth_total: null,
     attack: { ...stat },
     defense: { ...stat },
@@ -36,7 +36,6 @@ export function makeExtraction(over: DeepPartial<OcrExtraction> = {}): OcrExtrac
   return {
     ...base,
     ...over,
-    special_evidence: { ...base.special_evidence, ...over.special_evidence },
     attack: { ...base.attack, ...over.attack },
     defense: { ...base.defense, ...over.defense },
     stratagem: { ...base.stratagem, ...over.stratagem },

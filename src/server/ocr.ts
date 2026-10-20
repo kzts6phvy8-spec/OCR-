@@ -5,11 +5,6 @@ import sharp from "sharp";
 import type { UploadMode } from "../shared/types.ts";
 import { config, hasApiKey } from "./config.ts";
 import { OcrExtractionSchema, type OcrExtraction } from "./ocrSchema.ts";
-import { SPECIAL_SIGNATURE_SKILLS } from "./domain.ts";
-
-const signatureList = Object.entries(SPECIAL_SIGNATURE_SKILLS)
-  .map(([name, skills]) => `${name}『${skills.join("』『")}』`)
-  .join("、");
 
 const SYSTEM_PROMPT = `あなたはスマホゲーム『戦国布武～我が天下戦国乱世演武～』の武将画面スクリーンショットを読み取る高精度 OCR エンジンです。
 出力は必ず指定された JSON スキーマに従った JSON のみとし、マークダウンや解説を前後に含めないでください。
@@ -20,17 +15,14 @@ const SYSTEM_PROMPT = `あなたはスマホゲーム『戦国布武～我が天
 - スキル効果・天賦効果・連携効果は数値・％・括弧も含めて全文を書き写す。改行は詰めてよい。
 - 1 枚の画像には一部の画面 (基本情報 / スキル詳細 / 覚醒 / 天賦 / 連携 / 兵種 など) しか写らないのが普通。写っている部分だけ埋める。
 
-# 通常武将と特異武将の識別 (最重要)
-同じ武将名でも「通常武将」と「特異武将」はステータスもスキルも全く別物。以下は画面上で実際に確認できた場合のみ true にする:
-- special_icon_next_to_rating: 武将名の横にある「評価」ボタンの すぐ左隣 に【特】アイコンがある。
-- special_text_marker: 武将名や二つ名に「特異」「【特】」「(特)」の表記がある。
-参考: 特異武将の固有スキル例 — ${signatureList}。
+# 【特】表記
+- 画面に【特】の表記が実際に写っている場合のみ special_marker_visible=true。それ以外は false。
 
-# 覚醒スキルと専用武器覚醒 (混同厳禁)
+# 覚醒スキルと専用武器覚醒
 - awakening.skill_name には覚醒スキル名だけを入れ、「(極高)」などの優先度は awakening.priority に分ける。
 - 通常の覚醒効果は before_weapon_effect に入れる。
-- 専用武器覚醒 (例: 『焦熱獄+』のような「+」付きの強化版、「武器覚醒後」「専用武器」等の表示) が この画像に写っている場合に限り weapon_awakening_visible=true とし、その効果を after_weapon_effect に入れる。
-- 写っていなければ weapon_awakening_visible=false, after_weapon_effect=null。他の武将や通常版の知識から補わない。特異武将には武器覚醒が存在しない場合がある。
+- 専用武器覚醒の表示が この画像に写っている場合に限り weapon_awakening_visible=true とし、その効果を after_weapon_effect に入れる。
+- 写っていなければ weapon_awakening_visible=false, after_weapon_effect=null。他の武将の知識から補わない。
 
 # その他
 - 成長率は "+2.6" のように符号付き文字列で。成長値合計は "9" や "8.5"。

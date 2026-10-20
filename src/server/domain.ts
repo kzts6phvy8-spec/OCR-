@@ -1,4 +1,4 @@
-// 戦国布武 ドメインロジック: 名前正規化・特異判定・マージ・武器覚醒リーク防止
+// 戦国布武 ドメインロジック: 名前正規化・【特】判定・マージ
 // DB や API に依存しない純粋関数のみを置く (ユニットテスト対象)。
 
 import {
@@ -15,16 +15,7 @@ import {
 } from "../shared/types.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
 
-/** 特異武将だけが持つ固有スキル (奥義・覚醒)。見つかれば特異と判定する。 */
-export const SPECIAL_SIGNATURE_SKILLS: Record<string, string[]> = {
-  前田慶次: ["人生如夢"],
-  百地三太夫: ["丹波秘術", "浄三業"],
-  井伊直虎: ["直虎武略"],
-};
-
-const SIGNATURE_SKILL_LIST = Object.values(SPECIAL_SIGNATURE_SKILLS).flat();
-
-const SPECIAL_MARKER_RE = /【\s*特\s*】|[（(]\s*特\s*[)）]|特異/g;
+const SPECIAL_MARKER_RE = /【\s*特\s*】/g;
 const RARITY_TAG_RE = /[【\[［]\s*(?:SSR|SR|R|N|SP|UR)\s*[】\]］]/gi;
 
 export function emptyWarlordInput(): WarlordInput {
@@ -63,13 +54,13 @@ export function emptyWarlordInput(): WarlordInput {
   };
 }
 
-/** 武将名から【SSR】などの接頭辞と特異表記を除去した基本名を返す */
+/** 武将名から【SSR】などの接頭辞と【特】表記を除去した基本名を返す */
 export function normalizeName(raw: string | null | undefined): {
   name: string;
   hasSpecialMarker: boolean;
 } {
   const text = (raw ?? "").normalize("NFKC");
-  const hasSpecialMarker = /【\s*特\s*】|\(\s*特\s*\)|特異/.test(text);
+  const hasSpecialMarker = /【\s*特\s*】/.test(text);
   const name = text
     .replace(RARITY_TAG_RE, "")
     .replace(SPECIAL_MARKER_RE, "")
@@ -85,16 +76,6 @@ export function normText(value: string | null | undefined): string {
     .normalize("NFKC")
     .replace(/[\s　「」『』【】、。,.・]/g, "")
     .toLowerCase();
-}
-
-export function containsSignatureSkill(...texts: Array<string | null | undefined>): string | null {
-  for (const text of texts) {
-    const t = normText(text);
-    if (!t) continue;
-    const hit = SIGNATURE_SKILL_LIST.find((skill) => t.includes(normText(skill)));
-    if (hit) return hit;
-  }
-  return null;
 }
 
 export function normalizeRarity(value: string | null | undefined): Rarity | "" {
@@ -163,22 +144,11 @@ export interface SpecialDecision {
 export function decideSpecial(ext: OcrExtraction, mode: UploadMode): SpecialDecision {
   const reasons: string[] = [];
   const warnings: string[] = [];
-  const { hasSpecialMarker } = normalizeName(ext.name);
-  if (ext.special_evidence.special_icon_next_to_rating) reasons.push("評価ボタン左の【特】アイコン");
-  if (ext.special_evidence.special_text_marker || hasSpecialMarker) reasons.push("名前・二つ名の特異表記");
-  if (normalizeName(ext.title_alias).hasSpecialMarker && !reasons.includes("名前・二つ名の特異表記")) {
-    reasons.push("名前・二つ名の特異表記");
-  }
-  const signature = containsSignatureSkill(
-    ext.skill.name,
-    ext.awakening.skill_name,
-    ext.skill.desc,
-  );
-  if (signature) reasons.push(`特異固有スキル『${signature}』`);
+  if (ext.special_marker_visible || normalizeName(ext.name).hasSpecialMarker) reasons.push("画面の【特】表記");
 
   const detected = reasons.length > 0;
   if (mode === "force_normal") {
-    if (detected) warnings.push(`強制: 通常武将 を適用 (特異の根拠を無視: ${reasons.join(" / ")})`);
+    if (detected) warnings.push(`強制: 通常武将 を適用 (【特】表記を無視)`);
     return { is_special: false, reasons: ["手動指定: 通常武将"], warnings };
   }
   if (mode === "force_special") {
@@ -394,49 +364,6 @@ export function mergeWarlord(
   if (!merged.image_url) merged.image_url = patch.image_url || merged.gallery_images[0] || "";
 
   return { merged, warnings };
-}
-
-/**
- * 専用武器覚醒のリーク防止バリデーション。
- * 特異武将に、同名の通常武将と同じ武器覚醒データが入っていたら除去する。
- */
-export function sanitizeWeaponAwakening(
-  record: WarlordInput,
-  counterpart: Pick<
-    Warlord,
-    "is_special" | "has_weapon_awakening" | "awakening_skill_name" | "awakening_after_weapon" | "awakening_before_weapon"
-  > | null,
-): { record: WarlordInput; warnings: string[] } {
-  const warnings: string[] = [];
-  if (!record.is_special) return { record, warnings };
-  const out = { ...record };
-
-  if (counterpart && !counterpart.is_special) {
-    const sameAfter =
-      !!out.awakening_after_weapon &&
-      !!counterpart.awakening_after_weapon &&
-      normText(out.awakening_after_weapon) === normText(counterpart.awakening_after_weapon);
-    const sameAwakeningName =
-      !!out.awakening_skill_name &&
-      normText(out.awakening_skill_name) === normText(counterpart.awakening_skill_name);
-
-    if (sameAfter || (sameAwakeningName && counterpart.has_weapon_awakening && out.has_weapon_awakening)) {
-      out.has_weapon_awakening = false;
-      out.awakening_after_weapon = "";
-      warnings.push("通常武将の武器覚醒データと一致したため、特異武将から武器覚醒を除去しました");
-    }
-    if (
-      sameAwakeningName &&
-      out.awakening_before_weapon &&
-      normText(out.awakening_before_weapon) === normText(counterpart.awakening_before_weapon)
-    ) {
-      warnings.push(
-        `特異武将の覚醒スキル『${out.awakening_skill_name}』が通常武将と完全に一致しています。通常武将の画像ではないか確認してください`,
-      );
-    }
-  }
-  if (!out.has_weapon_awakening && out.awakening_after_weapon) out.awakening_after_weapon = "";
-  return { record: out, warnings };
 }
 
 /** DB に保存する前の最終正規化 (手動編集・インポートにも適用) */

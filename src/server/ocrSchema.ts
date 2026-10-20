@@ -23,22 +23,14 @@ export const OcrExtractionSchema = z.object({
   screen_types: z
     .array(z.string())
     .describe("写っている画面の種類 (基本情報 / スキル / 覚醒 / 天賦 / 連携 / 兵種 など)"),
-  name: nullableString("画面に表示された武将名をそのまま (接頭辞・特異表記も含めてよい)"),
+  name: nullableString("画面に表示された武将名をそのまま (接頭辞・【特】も含めてよい)"),
   title_alias: nullableString("二つ名"),
   rarity: nullableString("SSR / SR / R / N / SP"),
   faction: nullableString("勢力"),
   level: nullableNumber(),
   stars: nullableNumber("星の数 0〜5"),
 
-  special_evidence: z.object({
-    special_icon_next_to_rating: z
-      .boolean()
-      .describe("「評価」ボタンのすぐ左隣に【特】アイコンが実際に見える場合のみ true"),
-    special_text_marker: z
-      .boolean()
-      .describe("武将名・二つ名に「特異」「【特】」「(特)」の表記が実際に見える場合のみ true"),
-    notes: z.string().describe("特異判定の根拠の短いメモ (無ければ空文字)"),
-  }),
+  special_marker_visible: z.boolean().describe("画面に【特】の表記が実際に写っている場合のみ true"),
 
   growth_total: nullableString('成長値合計 (例: "9" や "8.5")'),
   attack: statSchema(),
@@ -59,7 +51,7 @@ export const OcrExtractionSchema = z.object({
     before_weapon_effect: nullableString("通常の (武器覚醒前の) 覚醒スキル効果の全文"),
     weapon_awakening_visible: z
       .boolean()
-      .describe("専用武器覚醒 (例: 『焦熱獄+』) の表示が この画像に 実際に写っている場合のみ true"),
+      .describe("専用武器覚醒の表示が この画像に 実際に写っている場合のみ true"),
     after_weapon_effect: nullableString("武器覚醒後の効果の全文 (この画像に写っている場合のみ)"),
   }),
 

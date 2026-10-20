@@ -18,7 +18,7 @@ import { useToast } from "../lib/toast.tsx";
 const ACCEPT = ["image/png", "image/jpeg", "image/webp"];
 
 const MODES: { id: UploadMode; label: string; desc: string }[] = [
-  { id: "auto", label: "自動判定", desc: "【特】アイコン・表記・固有スキルから判定" },
+  { id: "auto", label: "自動判定", desc: "画面の【特】表記から判定" },
   { id: "force_normal", label: "強制: 通常武将", desc: "すべて通常武将として登録" },
   { id: "force_special", label: "強制: 特異武将", desc: "すべて特異武将として登録" },
 ];

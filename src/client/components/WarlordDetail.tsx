@@ -401,7 +401,6 @@ function DetailView({
                 </div>
               )}
             </div>
-            {!w.has_weapon_awakening && w.is_special && <p className="mt-2 text-[11px] text-ebony-500">この特異武将には専用武器覚醒が登録されていません</p>}
           </>
         ) : (
           <Empty />
@@ -525,9 +524,6 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
             <input className="field" value={draft.growth_total} onChange={(e) => set("growth_total", e.target.value)} placeholder="9" />
           </Field>
         </div>
-        {draft.is_special && (
-          <p className="mt-2 text-[11px] text-amber-300/80">特異武将は通常武将とは別データとして保存されます。通常武将の武器覚醒を流用しないでください。</p>
-        )}
       </Section>
 
       <Section title="成長値 (基礎値 / 成長率)">
