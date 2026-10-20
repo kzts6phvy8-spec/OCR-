@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Noto Sans JP", system-ui, sans-serif;
+  --font-serif: "Shippori Mincho B1", "Noto Serif JP", serif;
+
+  --color-ebony-950: #0c0a08;
+  --color-ebony-900: #14110e;
+  --color-ebony-850: #1a1713;
+  --color-ebony-800: #221e19;
+  --color-ebony-700: #2e2922;
+  --color-ebony-600: #403a31;
+  --color-ebony-500: #5c5446;
+
+  --color-gold-300: #f0d999;
+  --color-gold-400: #e2c06c;
+  --color-gold-500: #c9a24a;
+  --color-gold-600: #a07e33;
+  --color-gold-700: #6f5622;
+
+  --color-hi-400: #e0574a;
+  --color-hi-500: #c4362a;
+  --color-hi-600: #9e2a20;
+  --color-hi-800: #4a1612;
+
+  --color-washi: #ece4d4;
+  --color-ash: #a39a8a;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--color-ebony-950);
+  background-image:
+    radial-gradient(ellipse at 15% -10%, rgb(196 54 42 / 0.12), transparent 50%),
+    radial-gradient(ellipse at 100% 0%, rgb(201 162 74 / 0.08), transparent 45%);
+  background-attachment: fixed;
+  color: var(--color-washi);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgb(201 162 74 / 0.35);
+}
+
+/* ユーティリティクラス (pl-9 等) で上書きできるよう components レイヤーに置く */
+@layer components {
+  .gold-text {
+    background: linear-gradient(180deg, var(--color-gold-300), var(--color-gold-500) 60%, var(--color-gold-600));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .panel {
+    background: linear-gradient(180deg, rgb(34 30 25 / 0.85), rgb(20 17 14 / 0.9));
+    border: 1px solid var(--color-ebony-700);
+    border-radius: 0.75rem;
+    box-shadow: inset 0 1px 0 rgb(240 217 153 / 0.04), 0 10px 30px -12px rgb(0 0 0 / 0.6);
+  }
+
+  .field {
+    width: 100%;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-ebony-600);
+    background: var(--color-ebony-900);
+    padding: 0.45rem 0.7rem;
+    font-size: 0.875rem;
+    color: var(--color-washi);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .field:focus {
+    border-color: var(--color-gold-500);
+    box-shadow: 0 0 0 3px rgb(201 162 74 / 0.2);
+  }
+  .field::placeholder {
+    color: var(--color-ebony-500);
+  }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+.scan-line {
+  animation: scan 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.toast-in {
+  animation: toast-in 0.2s ease-out;
+}
+
+.scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--color-ebony-600); border-radius: 4px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }

@@ -1,0 +1,17 @@
+{
+  "name": "戦国布武 武将図鑑",
+  "short_name": "武将図鑑",
+  "description": "戦国布武のスクリーンショットを AI で解析して武将図鑑を作るアプリ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c0a08",
+  "theme_color": "#0c0a08",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

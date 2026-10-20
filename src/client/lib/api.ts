@@ -1,0 +1,99 @@
+import type { ExportPayload, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
+import { normalizeInput } from "../../core/domain.ts";
+import { toInput } from "../../core/ingest.ts";
+import * as db from "./db.ts";
+import { blobToDataUrl, compressImage, dataUrlToBlob } from "./images.ts";
+import * as queue from "./queue.ts";
+
+// 画面から使う操作。サーバーは無く、すべて端末内で完結する。
+
+export const api = {
+  warlords: () => db.listWarlords(),
+
+  async createWarlord(input: Partial<WarlordInput>): Promise<Warlord> {
+    const record = normalizeInput(input);
+    if (!record.name) throw new Error("武将名は必須です");
+    return db.insertWarlord(record);
+  },
+
+  async updateWarlord(id: string, input: Partial<WarlordInput>): Promise<Warlord> {
+    const current = await db.getWarlord(id);
+    if (!current) throw new Error("武将が見つかりません");
+    const record = normalizeInput({ ...toInput(current), ...input });
+    if (!record.name) throw new Error("武将名は必須です");
+    const updated = await db.updateWarlord(id, record);
+    await db.removeUnreferencedImages(current.gallery_images.filter((g) => !updated.gallery_images.includes(g)));
+    return updated;
+  },
+
+  async deleteWarlord(id: string) {
+    const current = await db.getWarlord(id);
+    if (!current) return;
+    await db.deleteWarlord(id);
+    await db.removeUnreferencedImages(current.gallery_images);
+  },
+
+  jobs: () => db.listJobs(),
+  retryJob: (id: string) => queue.retryJob(id),
+
+  async clearFinishedJobs() {
+    const failedImages = await db.deleteFinishedJobs();
+    await db.removeUnreferencedImages(failedImages);
+    queue.notifyQueueChange();
+  },
+
+  /** 画像を縮小して端末内に保存し、解析キューに追加する */
+  async upload(files: File[], mode: UploadMode, targetId: string | null, onProgress: (ratio: number) => void): Promise<OcrJob[]> {
+    const stored: { fileName: string; imageId: string }[] = [];
+    for (const [i, file] of files.entries()) {
+      const blob = await compressImage(file);
+      stored.push({ fileName: file.name || `画像${i + 1}`, imageId: await db.putImage(blob) });
+      onProgress((i + 1) / files.length);
+    }
+    return queue.enqueue(stored, mode, targetId);
+  },
+
+  async exportData(includeImages: boolean): Promise<Blob> {
+    const warlords = await db.listWarlords();
+    const payload: ExportPayload = { app: "sengoku-fubu-warlord-db", version: 2, exported_at: new Date().toISOString(), warlords };
+    if (includeImages) {
+      payload.images = {};
+      for (const id of new Set(warlords.flatMap((w) => w.gallery_images))) {
+        const blob = await db.getImage(id);
+        if (blob) payload.images[id] = await blobToDataUrl(blob);
+      }
+    }
+    return new Blob([JSON.stringify(payload)], { type: "application/json" });
+  },
+
+  async importData(payload: unknown, mode: "merge" | "replace") {
+    const body = payload as Partial<ExportPayload> | Warlord[];
+    const list = Array.isArray(body) ? body : body?.warlords;
+    if (!Array.isArray(list)) throw new Error("JSON の形式が正しくありません (warlords 配列が必要です)");
+    const images = Array.isArray(body) ? undefined : body.images;
+
+    if (images) for (const [id, url] of Object.entries(images)) await db.putImage(await dataUrlToBlob(url), id);
+    if (mode === "replace") await db.deleteAllWarlords();
+
+    let created = 0;
+    let updated = 0;
+    const errors: string[] = [];
+    for (const [i, raw] of list.entries()) {
+      const input = normalizeInput(raw ?? {});
+      if (!input.name) {
+        errors.push(`${i + 1} 件目: 武将名がありません`);
+        continue;
+      }
+      const existing = await db.findWarlord(input.name, input.is_special);
+      if (existing) {
+        await db.updateWarlord(existing.id, input);
+        updated++;
+      } else {
+        const id = typeof raw?.id === "string" && !(await db.getWarlord(raw.id)) ? raw.id : undefined;
+        await db.insertWarlord(input, { id, created_at: typeof raw?.created_at === "string" ? raw.created_at : undefined });
+        created++;
+      }
+    }
+    return { created, updated, errors };
+  },
+};
