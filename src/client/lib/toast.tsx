@@ -34,7 +34,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={push}>
       {children}
-      <div className="pointer-events-none fixed right-4 bottom-4 left-4 z-[100] flex flex-col items-end gap-2 sm:left-auto">
+      <div className="pointer-events-none fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] left-4 z-[100] sm:bottom-4 flex flex-col items-end gap-2 sm:left-auto">
         {toasts.map((t) => {
           const { icon: Icon, cls } = STYLE[t.kind];
           return (

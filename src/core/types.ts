@@ -1,4 +1,4 @@
-// フロントエンドとバックエンドで共有する型定義
+// アプリ全体で使う型定義 (データはすべて端末内の IndexedDB に保存する)
 
 export const RARITIES = ["SSR", "SR", "R", "N", "SP"] as const;
 export type Rarity = (typeof RARITIES)[number];
@@ -69,7 +69,9 @@ export interface Warlord {
 
   synergy_skills: SynergySkill[];
 
+  /** 代表画像の ID (端末内の画像ストア) */
   image_url: string;
+  /** 統合された元画像の ID 一覧 */
   gallery_images: string[];
   screenshot_count: number;
   created_at: string;
@@ -89,7 +91,7 @@ export type JobStatus = "queued" | "processing" | "done" | "error";
 export interface OcrJob {
   id: string;
   file_name: string;
-  image_url: string;
+  image_id: string;
   mode: UploadMode;
   target_id: string | null;
   status: JobStatus;
@@ -106,13 +108,9 @@ export interface OcrJob {
 
 export interface ExportPayload {
   app: "sengoku-fubu-warlord-db";
-  version: 1;
+  version: 2;
   exported_at: string;
   warlords: Warlord[];
-}
-
-export interface HealthInfo {
-  ok: boolean;
-  api_key_configured: boolean;
-  model: string;
+  /** 画像込みでバックアップした場合のみ: 画像 ID → data URL */
+  images?: Record<string, string>;
 }

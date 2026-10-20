@@ -1,13 +1,11 @@
 {
   "name": "sengoku-fubu-warlord-db",
   "version": "1.0.0",
-  "description": "戦国布武 武将図鑑 — スクリーンショットOCR解析 & データベース",
+  "description": "戦国布武 武将図鑑 — iPhone のホーム画面で使える スクショ OCR 解析アプリ",
   "scripts": {
-    "dev": "concurrently -n server,client -c yellow,cyan \"npm:dev:server\" \"npm:dev:client\"",
-    "dev:server": "tsx watch --env-file-if-exists=.env src/server/index.ts",
-    "dev:client": "vite",
+    "dev": "vite",
     "build": "vite build",
-    "start": "NODE_ENV=production tsx --env-file-if-exists=.env src/server/index.ts",
+    "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -24,25 +22,19 @@
   "homepage": "https://github.com/kzts6phvy8-spec/OCR-#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.136.0",
-    "express": "^5.3.0",
+    "idb": "^8.0.4",
     "lucide-react": "^1.60.0",
-    "multer": "^2.4.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "sharp": "^0.35.5",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@types/express": "^5.0.6",
-    "@types/multer": "^2.3.0",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "concurrently": "^10.0.6",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
@@ -50,6 +42,6 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.13"
+    "node": ">=20"
   }
 }

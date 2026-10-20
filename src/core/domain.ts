@@ -12,7 +12,7 @@ import {
   type UploadMode,
   type Warlord,
   type WarlordInput,
-} from "../shared/types.ts";
+} from "./types.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
 
 const SPECIAL_MARKER_RE = /【\s*特\s*】/g;

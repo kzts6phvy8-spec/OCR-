@@ -7,7 +7,32 @@ export function DataPanel({ count, onImported }: { count: number; onImported: ()
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"merge" | "replace">("merge");
+  const [withImages, setWithImages] = useState(true);
   const [busy, setBusy] = useState(false);
+
+  const exportData = async () => {
+    setBusy(true);
+    try {
+      const blob = await api.exportData(withImages);
+      const name = `warlords-${new Date().toISOString().slice(0, 10)}.json`;
+      const file = new File([blob], name, { type: "application/json" });
+      // iPhone では共有シートから「ファイルに保存」できる
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "戦国布武 武将図鑑 バックアップ" }).catch(() => {});
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      }
+    } catch (e) {
+      toast("error", "エクスポートに失敗しました", (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const onFile = async (file: File) => {
     setBusy(true);
@@ -32,23 +57,30 @@ export function DataPanel({ count, onImported }: { count: number; onImported: ()
     <div className="grid gap-6 md:grid-cols-2">
       <section className="panel p-5">
         <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
-          <Download className="size-5" /> エクスポート
+          <Download className="size-5" /> バックアップ (エクスポート)
         </h2>
-        <p className="mb-4 text-sm text-ash">登録済みの全武将 ({count} 件) を JSON ファイルとしてダウンロードします。画像は URL として含まれます。</p>
-        <a
-          href="/api/export"
-          download
-          className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-b from-gold-500 to-gold-600 px-4 py-2 font-bold text-ebony-950"
+        <p className="mb-3 text-sm text-ash">
+          データはこの iPhone の中にだけ保存されています。機種変更やアプリ削除に備えて、ときどきバックアップを「ファイル」アプリや iCloud
+          Drive に保存してください。({count} 件)
+        </p>
+        <label className="mb-4 flex cursor-pointer items-center gap-2 text-sm">
+          <input type="checkbox" checked={withImages} onChange={(e) => setWithImages(e.target.checked)} className="accent-gold-500" />
+          スクリーンショット画像も含める (ファイルが大きくなります)
+        </label>
+        <button
+          onClick={exportData}
+          disabled={busy}
+          className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-b from-gold-500 to-gold-600 px-4 py-2 font-bold text-ebony-950 disabled:opacity-50"
         >
-          <FileJson className="size-4" /> JSON をダウンロード
-        </a>
+          <FileJson className="size-4" /> バックアップを保存
+        </button>
       </section>
 
       <section className="panel p-5">
         <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
-          <Upload className="size-5" /> インポート
+          <Upload className="size-5" /> 復元 (インポート)
         </h2>
-        <p className="mb-4 text-sm text-ash">エクスポートした JSON を読み込みます。武将は「武将名 + 通常/特異」で照合されます。</p>
+        <p className="mb-4 text-sm text-ash">バックアップした JSON を読み込みます。武将は「武将名 + 通常/特異」で照合されます。</p>
         <div className="mb-4 space-y-2 text-sm">
           <label className="flex cursor-pointer items-center gap-2">
             <input type="radio" checked={mode === "merge"} onChange={() => setMode("merge")} className="accent-gold-500" />
@@ -64,7 +96,7 @@ export function DataPanel({ count, onImported }: { count: number; onImported: ()
           onClick={() => fileRef.current?.click()}
           className="inline-flex items-center gap-2 rounded-lg border border-gold-600/60 px-4 py-2 font-bold text-gold-400 hover:bg-gold-500/10 disabled:opacity-50"
         >
-          <Upload className="size-4" /> JSON ファイルを選択
+          <Upload className="size-4" /> バックアップファイルを選択
         </button>
         <input
           ref={fileRef}

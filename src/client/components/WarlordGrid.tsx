@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Images, Plus, ScanLine, Search, SlidersHorizontal, UserRound } from "lucide-react";
-import { FACTIONS, RARITIES, type Warlord } from "../../shared/types.ts";
+import { FACTIONS, RARITIES, type Warlord } from "../../core/types.ts";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
+import { StoredImage } from "./StoredImage.tsx";
 
 type SpecialFilter = "all" | "normal" | "special";
 type SortKey = "growth" | "created" | "name" | "faction";
@@ -216,7 +217,7 @@ function WarlordCard({ w, onClick }: { w: Warlord; onClick: () => void }) {
     >
       <div className="relative aspect-[4/5] overflow-hidden bg-ebony-800">
         {w.image_url ? (
-          <img src={w.image_url} alt={w.name} loading="lazy" className="size-full object-cover object-top transition duration-500 group-hover:scale-105" />
+          <StoredImage id={w.image_url} alt={w.name} className="size-full object-cover object-top transition duration-500 group-hover:scale-105" />
         ) : (
           <div className="grid size-full place-items-center font-serif text-5xl text-ebony-600">{w.name.slice(0, 1)}</div>
         )}

@@ -20,10 +20,11 @@ import {
   type Talent,
   type Warlord,
   type WarlordInput,
-} from "../../shared/types.ts";
+} from "../../core/types.ts";
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
+import { StoredImage } from "./StoredImage.tsx";
 
 const EMPTY: WarlordInput = {
   name: "",
@@ -136,7 +137,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
       <div
-        className="panel scroll-thin relative flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-b-none sm:rounded-xl"
+        className="panel scroll-thin relative flex max-h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-b-none pb-[env(safe-area-inset-bottom)] sm:max-h-[94vh] sm:rounded-xl sm:pb-0"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -221,10 +222,10 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                         url === (view ?? draft).image_url ? "border-gold-500" : "border-ebony-700"
                       }`}
                     >
-                      <img src={url} alt="" loading="lazy" className="size-full object-cover transition group-hover:scale-105" />
+                      <StoredImage id={url} alt="" className="size-full object-cover transition group-hover:scale-105" />
                     </button>
                     {!view && (
-                      <div className="absolute inset-x-1 bottom-1 flex justify-between opacity-0 transition group-hover:opacity-100">
+                      <div className="absolute inset-x-1 bottom-1 flex justify-between">
                         <button
                           onClick={() => setDraft((d) => ({ ...d, image_url: url }))}
                           className="rounded bg-ebony-950/85 px-1.5 py-0.5 text-[10px] text-gold-300"
@@ -755,7 +756,7 @@ function Lightbox({ images, index, onChange, onClose }: { images: string[]; inde
         onClose();
       }}
     >
-      <img src={images[index]} alt="" className="max-h-[92vh] max-w-[92vw] rounded object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      <StoredImage id={images[index]} alt="" className="max-h-[85vh] max-w-[94vw] rounded object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
       <button className="absolute top-4 right-4 rounded-full bg-ebony-800/80 p-2 text-washi" onClick={onClose} aria-label="閉じる">
         <X className="size-5" />
       </button>

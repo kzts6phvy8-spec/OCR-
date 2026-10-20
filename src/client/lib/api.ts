@@ -1,60 +1,99 @@
-import type { HealthInfo, OcrJob, UploadMode, Warlord, WarlordInput } from "../../shared/types.ts";
+import type { ExportPayload, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
+import { normalizeInput } from "../../core/domain.ts";
+import { toInput } from "../../core/ingest.ts";
+import * as db from "./db.ts";
+import { blobToDataUrl, compressImage, dataUrlToBlob } from "./images.ts";
+import * as queue from "./queue.ts";
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
-    } catch {
-      /* JSON でないエラー本文は無視 */
-    }
-    throw new Error(message);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
-}
-
-const json = (method: string, body: unknown): RequestInit => ({
-  method,
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
+// 画面から使う操作。サーバーは無く、すべて端末内で完結する。
 
 export const api = {
-  health: () => request<HealthInfo>("/api/health"),
-  warlords: () => request<Warlord[]>("/api/warlords"),
-  createWarlord: (input: Partial<WarlordInput>) => request<Warlord>("/api/warlords", json("POST", input)),
-  updateWarlord: (id: string, input: Partial<WarlordInput>) => request<Warlord>(`/api/warlords/${id}`, json("PUT", input)),
-  deleteWarlord: (id: string) => request<void>(`/api/warlords/${id}`, { method: "DELETE" }),
-  jobs: () => request<OcrJob[]>("/api/jobs"),
-  retryJob: (id: string) => request<OcrJob>(`/api/jobs/${id}/retry`, { method: "POST" }),
-  clearFinishedJobs: () => request<void>("/api/jobs/finished", { method: "DELETE" }),
-  importData: (payload: unknown, mode: "merge" | "replace") =>
-    request<{ created: number; updated: number; errors: string[] }>(`/api/import?mode=${mode}`, json("POST", payload)),
+  warlords: () => db.listWarlords(),
 
-  /** 進捗を取得できるよう XHR でアップロードする */
-  upload(files: File[], mode: UploadMode, targetId: string | null, onProgress: (ratio: number) => void) {
-    return new Promise<OcrJob[]>((resolve, reject) => {
-      const form = new FormData();
-      for (const f of files) form.append("files", f);
-      form.append("mode", mode);
-      if (targetId) form.append("target_id", targetId);
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "/api/uploads");
-      xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
-      xhr.onload = () => {
-        try {
-          const body = JSON.parse(xhr.responseText);
-          if (xhr.status >= 200 && xhr.status < 300) resolve(body as OcrJob[]);
-          else reject(new Error(body.error ?? `アップロードに失敗しました (${xhr.status})`));
-        } catch {
-          reject(new Error(`アップロードに失敗しました (${xhr.status})`));
-        }
-      };
-      xhr.onerror = () => reject(new Error("サーバーに接続できませんでした"));
-      xhr.send(form);
-    });
+  async createWarlord(input: Partial<WarlordInput>): Promise<Warlord> {
+    const record = normalizeInput(input);
+    if (!record.name) throw new Error("武将名は必須です");
+    return db.insertWarlord(record);
+  },
+
+  async updateWarlord(id: string, input: Partial<WarlordInput>): Promise<Warlord> {
+    const current = await db.getWarlord(id);
+    if (!current) throw new Error("武将が見つかりません");
+    const record = normalizeInput({ ...toInput(current), ...input });
+    if (!record.name) throw new Error("武将名は必須です");
+    const updated = await db.updateWarlord(id, record);
+    await db.removeUnreferencedImages(current.gallery_images.filter((g) => !updated.gallery_images.includes(g)));
+    return updated;
+  },
+
+  async deleteWarlord(id: string) {
+    const current = await db.getWarlord(id);
+    if (!current) return;
+    await db.deleteWarlord(id);
+    await db.removeUnreferencedImages(current.gallery_images);
+  },
+
+  jobs: () => db.listJobs(),
+  retryJob: (id: string) => queue.retryJob(id),
+
+  async clearFinishedJobs() {
+    const failedImages = await db.deleteFinishedJobs();
+    await db.removeUnreferencedImages(failedImages);
+    queue.notifyQueueChange();
+  },
+
+  /** 画像を縮小して端末内に保存し、解析キューに追加する */
+  async upload(files: File[], mode: UploadMode, targetId: string | null, onProgress: (ratio: number) => void): Promise<OcrJob[]> {
+    const stored: { fileName: string; imageId: string }[] = [];
+    for (const [i, file] of files.entries()) {
+      const blob = await compressImage(file);
+      stored.push({ fileName: file.name || `画像${i + 1}`, imageId: await db.putImage(blob) });
+      onProgress((i + 1) / files.length);
+    }
+    return queue.enqueue(stored, mode, targetId);
+  },
+
+  async exportData(includeImages: boolean): Promise<Blob> {
+    const warlords = await db.listWarlords();
+    const payload: ExportPayload = { app: "sengoku-fubu-warlord-db", version: 2, exported_at: new Date().toISOString(), warlords };
+    if (includeImages) {
+      payload.images = {};
+      for (const id of new Set(warlords.flatMap((w) => w.gallery_images))) {
+        const blob = await db.getImage(id);
+        if (blob) payload.images[id] = await blobToDataUrl(blob);
+      }
+    }
+    return new Blob([JSON.stringify(payload)], { type: "application/json" });
+  },
+
+  async importData(payload: unknown, mode: "merge" | "replace") {
+    const body = payload as Partial<ExportPayload> | Warlord[];
+    const list = Array.isArray(body) ? body : body?.warlords;
+    if (!Array.isArray(list)) throw new Error("JSON の形式が正しくありません (warlords 配列が必要です)");
+    const images = Array.isArray(body) ? undefined : body.images;
+
+    if (images) for (const [id, url] of Object.entries(images)) await db.putImage(await dataUrlToBlob(url), id);
+    if (mode === "replace") await db.deleteAllWarlords();
+
+    let created = 0;
+    let updated = 0;
+    const errors: string[] = [];
+    for (const [i, raw] of list.entries()) {
+      const input = normalizeInput(raw ?? {});
+      if (!input.name) {
+        errors.push(`${i + 1} 件目: 武将名がありません`);
+        continue;
+      }
+      const existing = await db.findWarlord(input.name, input.is_special);
+      if (existing) {
+        await db.updateWarlord(existing.id, input);
+        updated++;
+      } else {
+        const id = typeof raw?.id === "string" && !(await db.getWarlord(raw.id)) ? raw.id : undefined;
+        await db.insertWarlord(input, { id, created_at: typeof raw?.created_at === "string" ? raw.created_at : undefined });
+        created++;
+      }
+    }
+    return { created, updated, errors };
   },
 };

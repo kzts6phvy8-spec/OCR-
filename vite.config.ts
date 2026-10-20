@@ -2,16 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-const apiPort = process.env.PORT ?? "3001";
-
+// 静的ファイルだけで動くアプリ。base を相対にして GitHub Pages 等のサブパスでも動くようにする
 export default defineConfig({
+  base: "./",
   plugins: [react(), tailwindcss()],
-  build: { outDir: "dist/client", emptyOutDir: true },
-  server: {
-    port: 5173,
-    proxy: {
-      "/api": `http://localhost:${apiPort}`,
-      "/uploads": `http://localhost:${apiPort}`,
-    },
-  },
+  build: { outDir: "dist", emptyOutDir: true },
 });

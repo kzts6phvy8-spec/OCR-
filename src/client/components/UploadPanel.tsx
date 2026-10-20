@@ -11,11 +11,12 @@ import {
   XCircle,
   AlertTriangle,
 } from "lucide-react";
-import type { OcrJob, UploadMode, Warlord } from "../../shared/types.ts";
+import type { OcrJob, UploadMode, Warlord } from "../../core/types.ts";
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
+import { StoredImage } from "./StoredImage.tsx";
 
-const ACCEPT = ["image/png", "image/jpeg", "image/webp"];
+const isImage = (f: File) => f.type.startsWith("image/") || /\.(png|jpe?g|webp|heic|heif)$/i.test(f.name);
 
 const MODES: { id: UploadMode; label: string; desc: string }[] = [
   { id: "auto", label: "自動判定", desc: "画面の【特】表記から判定" },
@@ -27,11 +28,11 @@ interface Props {
   jobs: OcrJob[];
   warlords: Warlord[];
   model?: string;
-  onUploaded: (jobs: OcrJob[]) => void;
+  hasApiKey: boolean;
   onOpenWarlord: (id: string) => void;
 }
 
-export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }: Props) {
+export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }: Props) {
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -44,8 +45,8 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
 
   const addFiles = (list: FileList | File[]) => {
     const arr = Array.from(list);
-    const ok = arr.filter((f) => ACCEPT.includes(f.type));
-    if (ok.length < arr.length) toast("warning", "PNG / JPEG / WebP 以外のファイルを除外しました");
+    const ok = arr.filter(isImage);
+    if (ok.length < arr.length) toast("warning", "画像以外のファイルを除外しました");
     setFiles((cur) => [...cur, ...ok]);
   };
 
@@ -59,7 +60,7 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
     if (files.length === 0) return;
     setUploadRatio(0);
     try {
-      // 枚数の上限は無し。1 回の通信が大きくなりすぎないよう、20 枚ずつに分けて送る
+      // 枚数の上限は無し。20 枚ずつ端末内に保存してキューへ追加し、準備できた分から解析を始める
       const CHUNK = 20;
       const totalBytes = files.reduce((n, f) => n + f.size, 0) || 1;
       let sentBytes = 0;
@@ -70,12 +71,11 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
         const jobs = await api.upload(chunk, mode, targetId || null, (r) => setUploadRatio((sentBytes + r * chunkBytes) / totalBytes));
         sentBytes += chunkBytes;
         created.push(...jobs);
-        onUploaded(jobs);
         setFiles((cur) => cur.filter((f) => !chunk.includes(f)));
       }
-      toast("info", `${created.length} 枚を解析キューに追加しました`, "バックグラウンドで順番に解析します");
+      toast("info", `${created.length} 枚を解析キューに追加しました`, "解析が終わるまでアプリを開いたままにしてください");
     } catch (e) {
-      toast("error", "アップロードに失敗しました", (e as Error).message);
+      toast("error", "画像の読み込みに失敗しました", (e as Error).message);
     } finally {
       setUploadRatio(null);
     }
@@ -94,7 +94,6 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
   const retry = async (id: string) => {
     try {
       await api.retryJob(id);
-      onUploaded([]);
     } catch (e) {
       toast("error", "再試行できませんでした", (e as Error).message);
     }
@@ -102,7 +101,6 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
 
   const clearFinished = async () => {
     await api.clearFinishedJobs();
-    onUploaded([]);
   };
 
   const sortedWarlords = useMemo(() => [...warlords].sort((a, b) => a.name.localeCompare(b.name, "ja")), [warlords]);
@@ -116,6 +114,7 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
         <p className="mb-4 text-xs text-ash">
           1 人の武将につき 2〜4 枚 (基本情報・スキル・覚醒・天賦・連携) をまとめてアップロードすると、同じ武将に自動で統合されます。
           {model && <span className="ml-1 text-ebony-500">モデル: {model}</span>}
+          {!hasApiKey && <span className="mt-1 block text-hi-400">※ 先に「設定」で API キーを登録してください</span>}
         </p>
 
         <div
@@ -131,13 +130,13 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
           }`}
         >
           <UploadCloud className={`size-10 ${dragging ? "text-gold-400" : "text-ebony-500"}`} />
-          <p className="text-sm font-medium">ここに画像をドラッグ＆ドロップ</p>
-          <p className="text-xs text-ash">またはクリックして選択 (PNG / JPEG / WebP・枚数制限なし)</p>
+          <p className="text-sm font-medium">タップして写真を選択</p>
+          <p className="text-xs text-ash">写真アプリから何枚でもまとめて選べます (PC ではドラッグ＆ドロップも可)</p>
           <input
             ref={inputRef}
             type="file"
             multiple
-            accept={ACCEPT.join(",")}
+            accept="image/*"
             className="hidden"
             onChange={(e) => {
               if (e.target.files) addFiles(e.target.files);
@@ -153,7 +152,7 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
                 <img src={url} alt={file.name} className="size-full object-cover" />
                 <button
                   onClick={() => setFiles((cur) => cur.filter((_, idx) => idx !== i))}
-                  className="absolute top-1 right-1 rounded bg-ebony-950/80 p-1 text-ash opacity-0 transition group-hover:opacity-100 hover:text-hi-400"
+                  className="absolute top-1 right-1 rounded bg-ebony-950/80 p-1 text-ash hover:text-hi-400"
                   aria-label="除外"
                 >
                   <Trash2 className="size-3.5" />
@@ -203,7 +202,7 @@ export function UploadPanel({ jobs, warlords, model, onUploaded, onOpenWarlord }
         >
           {uploadRatio !== null ? (
             <>
-              <Loader2 className="size-4 animate-spin" /> アップロード中… {Math.round(uploadRatio * 100)}%
+              <Loader2 className="size-4 animate-spin" /> 画像を準備中… {Math.round(uploadRatio * 100)}%
             </>
           ) : (
             <>
@@ -260,7 +259,7 @@ function JobRow({ job, onRetry, onOpen }: { job: OcrJob; onRetry: (id: string) =
   return (
     <li className="flex gap-3 rounded-lg border border-ebony-700 bg-ebony-900/70 p-2">
       <div className="relative h-16 w-10 shrink-0 overflow-hidden rounded border border-ebony-700 bg-ebony-800">
-        <img src={job.image_url} alt="" className="size-full object-cover" loading="lazy" />
+        <StoredImage id={job.image_id} alt="" className="size-full object-cover" />
         {job.status === "processing" && (
           <div className="absolute inset-0 overflow-hidden bg-gold-500/10">
             <div className="scan-line h-full w-full bg-gradient-to-b from-transparent via-gold-400/70 to-transparent" />
