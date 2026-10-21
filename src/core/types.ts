@@ -86,7 +86,11 @@ export type WarlordInput = Omit<
 
 export type UploadMode = "auto" | "force_normal" | "force_special";
 
-export type JobStatus = "queued" | "processing" | "done" | "error";
+/** queued: 待機中 / processing: 解析中 (サーバーへ送信中も含む) / remote: サーバーで解析待ち / done / error */
+export type JobStatus = "queued" | "processing" | "remote" | "done" | "error";
+
+/** まだ結果が出ていないジョブか */
+export const isPending = (s: JobStatus) => s === "queued" || s === "processing" || s === "remote";
 
 export interface OcrJob {
   id: string;

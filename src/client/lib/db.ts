@@ -162,6 +162,11 @@ export async function nextQueuedJob(): Promise<OcrJob | null> {
   return rest;
 }
 
+export async function deleteJobs(ids: string[]) {
+  const d = await db();
+  for (const id of ids) await d.delete("jobs", id);
+}
+
 export async function deleteFinishedJobs(): Promise<string[]> {
   const d = await db();
   const failedImages: string[] = [];

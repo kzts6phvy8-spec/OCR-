@@ -13,6 +13,11 @@ export interface Settings {
   apiKey: string;
   model: string;
   effort: "low" | "medium" | "high";
+  /** バックグラウンド解析 (Google Apps Script のサーバー経由・Gemini のみ) */
+  bgEnabled: boolean;
+  bgUrl: string;
+  /** サーバーとの合言葉 (この端末で自動生成) */
+  bgToken: string;
 }
 
 export const CLAUDE_MODELS = [
@@ -33,6 +38,9 @@ const DEFAULTS: Settings = {
   apiKey: "",
   model: "claude-sonnet-5-5",
   effort: "low",
+  bgEnabled: false,
+  bgUrl: "",
+  bgToken: "",
 };
 
 export function loadSettings(): Settings {
@@ -56,6 +64,11 @@ export function saveSettings(s: Settings) {
   }
   listeners.forEach((fn) => fn(s));
 }
+
+/** バックグラウンド解析を使う設定になっているか */
+export const bgActive = (s: Settings) => s.bgEnabled && s.provider === "gemini" && Boolean(s.bgUrl && s.bgToken && s.geminiKey);
+
+export const newToken = () => (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, "");
 
 /** 選択中の AI のキーが登録されているか */
 export const hasActiveKey = (s: Settings) => Boolean(s.provider === "claude" ? s.apiKey : s.geminiKey);

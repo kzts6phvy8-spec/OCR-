@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, HardDrive, KeyRound, Loader2, Share, Smartphone, SquarePlus } from "lucide-react";
-import { CLAUDE_MODELS, DEFAULT_GEMINI_MODEL, saveSettings, type Settings } from "../lib/settings.ts";
+import { Cloud, Copy, Eye, EyeOff, HardDrive, KeyRound, Loader2, Share, Smartphone, SquarePlus } from "lucide-react";
+import { CLAUDE_MODELS, DEFAULT_GEMINI_MODEL, newToken, saveSettings, type Settings } from "../lib/settings.ts";
+import { callServer } from "../lib/remote.ts";
+import { refreshServerStatus } from "../lib/queue.ts";
 import { useToast } from "../lib/toast.tsx";
 
 const EFFORTS = [
@@ -213,6 +215,8 @@ export function SettingsPanel({ settings }: { settings: Settings }) {
         {testError && <ErrorWithLinks text={testError} />}
       </section>
 
+      <BackgroundSection draft={draft} setDraft={setDraft} />
+
       <section className="panel p-5">
         <h2 className="mb-3 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
           <Smartphone className="size-5" /> ホーム画面に追加
@@ -256,5 +260,133 @@ export function SettingsPanel({ settings }: { settings: Settings }) {
         )}
       </section>
     </div>
+  );
+}
+
+const SETUP_STEPS = [
+  "下の「サーバー用コードをコピー」を押す",
+  "Safari で script.google.com を開き (Gemini のキーを作った Google アカウントで)、「新しいプロジェクト」を押す。画面が見づらい時は「ぁあ」→「デスクトップ用 Web サイトを表示」",
+  "最初から書いてあるコードをすべて消して、コピーしたコードを貼り付け、保存 (フロッピーのマーク) を押す",
+  "上の関数の選択欄で「setup」を選んで「実行」を押す → 「権限を確認」→ アカウントを選ぶ →「詳細」→「(プロジェクト名) に移動」→「許可」",
+  "右上の「デプロイ」→「新しいデプロイ」→ 種類の選択 (歯車) で「ウェブアプリ」→「次のユーザーとして実行: 自分」「アクセスできるユーザー: 全員」→「デプロイ」",
+  "表示された「ウェブアプリの URL」(https://script.google.com/macros/s/… で始まる) をコピーして、下の欄に貼り付ける",
+  "「接続テスト」を押す (Gemini のキーと合言葉が自動でサーバーに登録されます)",
+];
+
+function BackgroundSection({ draft, setDraft }: { draft: Settings; setDraft: (s: Settings) => void }) {
+  const toast = useToast();
+  const [code, setCode] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [showCode, setShowCode] = useState(false);
+
+  // iPhone ではボタンを押した瞬間にコピーする必要があるので、先に読み込んでおく
+  useEffect(() => {
+    fetch("./apps-script.gs")
+      .then((r) => (r.ok ? r.text() : Promise.reject()))
+      .then(setCode, () => setCode(null));
+  }, []);
+
+  const copyCode = async () => {
+    if (!code) return toast("error", "コードを読み込めませんでした。電波状況を確認してください");
+    try {
+      await navigator.clipboard.writeText(code);
+      toast("success", "サーバー用コードをコピーしました", `${code.split("\n").length} 行`);
+    } catch {
+      setShowCode(true);
+      toast("warning", "自動でコピーできませんでした", "下に表示したコードを長押しして「すべてを選択」→「コピー」してください");
+    }
+  };
+
+  const test = async () => {
+    setTesting(true);
+    setMessage(null);
+    const next: Settings = { ...draft, bgUrl: draft.bgUrl.trim(), bgToken: draft.bgToken || newToken(), bgEnabled: true };
+    try {
+      if (!next.geminiKey.trim()) throw new Error("先に上で Gemini の API キーを登録してください");
+      if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(next.bgUrl)) {
+        throw new Error("URL は https://script.google.com/macros/s/… で始まるウェブアプリの URL を貼り付けてください");
+      }
+      const res = await callServer(next, "config", { geminiKey: next.geminiKey.trim() });
+      setDraft(next);
+      saveSettings(next);
+      void refreshServerStatus();
+      setMessage({ ok: true, text: `つながりました。バックグラウンド解析をオンにしました (サーバーの解析待ち ${res.pending ?? 0} 枚)` });
+    } catch (e) {
+      setMessage({ ok: false, text: (e as Error).message });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const toggle = (on: boolean) => {
+    const next = { ...draft, bgEnabled: on };
+    setDraft(next);
+    saveSettings(next);
+    toast("info", on ? "バックグラウンド解析をオンにしました" : "バックグラウンド解析をオフにしました", on ? undefined : "これからの解析は、この iPhone で直接行います");
+  };
+
+  return (
+    <section className="panel p-5">
+      <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
+        <Cloud className="size-5" /> バックグラウンド解析
+      </h2>
+      <p className="mb-3 text-sm text-ash">
+        あなたの Google アカウントの中で無料で動く「Google Apps Script」を解析サーバーとして使い、
+        <span className="text-washi">アプリを閉じていても解析を進めます</span>。写真をサーバーに送る間だけアプリを開いておき、結果は次に開いた時に受け取ります。
+      </p>
+      {draft.provider !== "gemini" ? (
+        <p className="text-sm text-amber-300">読み取りに使う AI で「Gemini」を選んだ時だけ使えます。</p>
+      ) : (
+        <>
+          {draft.bgUrl && draft.bgToken && (
+            <label className="mb-4 flex cursor-pointer items-center gap-2 text-sm">
+              <input type="checkbox" checked={draft.bgEnabled} onChange={(e) => toggle(e.target.checked)} className="size-4 accent-shu-500" />
+              バックグラウンド解析を使う
+            </label>
+          )}
+          <details className="mb-4 rounded-lg border border-ebony-700 bg-ebony-900 p-3" open={!draft.bgUrl}>
+            <summary className="cursor-pointer text-sm font-bold text-washi">はじめての準備 (1 回だけ)</summary>
+            <ol className="mt-3 space-y-2 text-sm text-ash">
+              {SETUP_STEPS.map((step, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-ebony-700 text-[11px] font-bold text-washi">{i + 1}</span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+            <button
+              onClick={copyCode}
+              className="mt-3 flex items-center gap-1.5 rounded-lg border border-gold-600/60 px-3 py-1.5 text-sm font-bold text-gold-400"
+            >
+              <Copy className="size-4" /> サーバー用コードをコピー
+            </button>
+            {showCode && code && <textarea readOnly value={code} rows={8} className="field mt-2 font-mono text-[10px]" />}
+          </details>
+          <input
+            className="field font-mono text-xs"
+            placeholder="https://script.google.com/macros/s/…/exec"
+            autoCapitalize="off"
+            autoComplete="off"
+            spellCheck={false}
+            value={draft.bgUrl}
+            onChange={(e) => setDraft({ ...draft, bgUrl: e.target.value })}
+          />
+          <button
+            onClick={test}
+            disabled={!draft.bgUrl.trim() || testing}
+            className="mt-3 flex items-center gap-1.5 rounded-lg border border-gold-600/60 px-4 py-2 text-sm font-bold text-gold-400 disabled:opacity-40"
+          >
+            {testing && <Loader2 className="size-4 animate-spin" />} 接続テスト
+          </button>
+          {message &&
+            (message.ok ? (
+              <p className="mt-3 rounded-lg border border-emerald-700/60 bg-emerald-900/20 p-3 text-sm text-emerald-300">{message.text}</p>
+            ) : (
+              <ErrorWithLinks text={message.text} />
+            ))}
+        </>
+      )}
+    </section>
   );
 }
