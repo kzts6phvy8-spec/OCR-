@@ -59,8 +59,8 @@ export const OcrExtractionSchema = z.object({
     z.object({
       star_level: z.number().describe("星1〜星5"),
       position: z.string().describe("天賦の位置・枠 (不明なら空文字)"),
-      name: z.string(),
-      effect: z.string(),
+      name: z.string().describe("天賦の名前。名前が無く効果だけの場合は空文字"),
+      effect: z.string().describe("効果 (例: 物理防御+50%)"),
       unlocked: z.boolean().describe("解放済み (グレーアウトしていない) なら true"),
     }),
   ),
@@ -70,8 +70,8 @@ export const OcrExtractionSchema = z.object({
 
   synergy_skills: z.array(
     z.object({
-      partner: z.string().describe("連携相手の武将名"),
-      effect: z.string(),
+      partner: z.string().describe("この武将以外の連携相手の武将名 (複数なら「、」区切り)"),
+      effect: z.string().describe("条件を含む文章の全文 (例: 〇〇、△△が同時に場内にいる場合、計略防御+20%)"),
     }),
   ),
 });

@@ -9,7 +9,20 @@ import { analyzeWithRetry } from "./analyze.ts";
 // iPhone ではアプリを閉じる・画面を消すと処理が止まるため、処理中は画面消灯を防ぐ。
 
 let running = false;
+/** 処理中にアプリが裏に回った (iPhone では通信が止まる) か */
+let wentHidden = false;
 const listeners = new Set<() => void>();
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (running) wentHidden = true;
+    } else {
+      // アプリに戻ってきたら、中断していた解析を自動で再開する
+      void resumeQueue();
+    }
+  });
+}
 
 export function onQueueChange(fn: () => void) {
   listeners.add(fn);
@@ -79,7 +92,9 @@ export async function runQueue() {
   let lock: WakeLock | null = null;
   try {
     for (let job = await db.nextQueuedJob(); job; job = await db.nextQueuedJob()) {
+      if (typeof document !== "undefined" && document.hidden) break; // 裏にいる間は始めない
       lock ??= await keepAwake();
+      wentHidden = false;
       job = await update(job, { status: "processing", attempts: job.attempts + 1 });
       try {
         const image = await db.getImage(job.image_id);
@@ -99,6 +114,11 @@ export async function runQueue() {
           warnings: result.warnings,
         });
       } catch (err) {
+        if (wentHidden) {
+          // アプリを離れたせいで止まった分は失敗にせず、戻ってきた時にやり直す
+          await update(job, { status: "queued", attempts: job.attempts - 1 });
+          break;
+        }
         console.error(`[ocr] ${job.file_name}:`, err);
         await update(job, { status: "error", error: err instanceof Error ? err.message : String(err) });
       }
@@ -111,6 +131,7 @@ export async function runQueue() {
 
 /** 起動時: 中断されていたジョブを再開 */
 export async function resumeQueue() {
+  if (running) return; // 処理中のジョブはそのまま続ける
   await db.requeueStaleJobs();
   void runQueue();
 }

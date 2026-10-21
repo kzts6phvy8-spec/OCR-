@@ -455,14 +455,14 @@ function DetailView({
                 <div className={`rounded-lg border p-3 ${t.unlocked ? "border-gold-700/60 bg-ebony-900" : "border-ebony-800 bg-ebony-900/50 opacity-70"}`}>
                   <div className="mb-0.5 flex flex-wrap items-center gap-2">
                     <Stars count={t.star_level} className="text-xs" />
-                    <span className="font-bold">{t.name || "名称未解析"}</span>
+                    <span className="font-bold">{t.name || t.effect || "未解析"}</span>
                     {t.position && <span className="text-[11px] text-ash">{t.position}</span>}
                     <span className={`ml-auto flex items-center gap-0.5 text-[11px] ${t.unlocked ? "text-gold-400" : "text-ebony-500"}`}>
                       {t.unlocked ? <Unlock className="size-3" /> : <Lock className="size-3" />}
                       {t.unlocked ? "解放済" : "未解放"}
                     </span>
                   </div>
-                  <p className="text-sm text-ash">{t.effect}</p>
+                  {t.name && t.effect && <p className="text-sm text-ash">{t.effect}</p>}
                 </div>
               </li>
             ))}
