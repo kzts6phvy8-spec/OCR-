@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Download, FileJson, Upload } from "lucide-react";
+import { Download, FileJson, FileText, Trash2, Upload } from "lucide-react";
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
 import { saveFile, today } from "../lib/share.ts";
@@ -8,7 +8,7 @@ export function DataPanel({ count, onImported }: { count: number; onImported: ()
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"merge" | "replace">("merge");
-  const [withImages, setWithImages] = useState(true);
+  const [withImages, setWithImages] = useState(count <= 100);
   const [busy, setBusy] = useState(false);
 
   const exportData = async () => {
@@ -41,8 +41,51 @@ export function DataPanel({ count, onImported }: { count: number; onImported: ()
     }
   };
 
+  const exportText = async () => {
+    if (count === 0) return toast("info", "まだ武将が登録されていません");
+    setBusy(true);
+    try {
+      await saveFile(await api.exportText(), `warlords-${today()}.txt`, "戦国布武 武将図鑑");
+    } catch (e) {
+      toast("error", "書き出しに失敗しました", (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteAll = async () => {
+    if (!confirm(`登録されている ${count} 件の武将と、すべてのスクリーンショット・解析履歴を削除します。よろしいですか？`)) return;
+    if (!confirm("本当に削除しますか？ 元に戻せません。\n(先にバックアップを保存しておくことをおすすめします)")) return;
+    setBusy(true);
+    try {
+      await api.deleteEverything();
+      toast("success", "すべてのデータを削除しました");
+      onImported();
+    } catch (e) {
+      toast("error", "削除に失敗しました", (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="grid gap-6 md:grid-cols-2">
+      <section className="panel p-5 md:col-span-2">
+        <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
+          <FileText className="size-5" /> 全武将をテキストで保存
+        </h2>
+        <p className="mb-4 text-sm text-ash">
+          登録されている全武将 ({count} 件) の情報を 1 つのテキストファイル (.txt) にまとめて保存します。「ファイル」アプリや iCloud Drive に保存したり、メモ帳などで開いたりできます。
+        </p>
+        <button
+          onClick={exportText}
+          disabled={busy}
+          className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-b from-shu-400 to-shu-600 px-4 py-2 font-bold text-white disabled:opacity-50"
+        >
+          <Download className="size-4" /> テキスト (.txt) を保存
+        </button>
+      </section>
+
       <section className="panel p-5">
         <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
           <Download className="size-5" /> バックアップ (エクスポート)
@@ -53,7 +96,7 @@ export function DataPanel({ count, onImported }: { count: number; onImported: ()
         </p>
         <label className="mb-4 flex cursor-pointer items-center gap-2 text-sm">
           <input type="checkbox" checked={withImages} onChange={(e) => setWithImages(e.target.checked)} className="accent-gold-500" />
-          スクリーンショット画像も含める (ファイルが大きくなります)
+          スクリーンショット画像も含める (ファイルがかなり大きくなります。武将が多い時は外すのがおすすめ)
         </label>
         <button
           onClick={exportData}
@@ -97,6 +140,22 @@ export function DataPanel({ count, onImported }: { count: number; onImported: ()
             e.target.value = "";
           }}
         />
+      </section>
+      <section className="panel border-hi-800/70 p-5 md:col-span-2">
+        <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-hi-400">
+          <Trash2 className="size-5" /> データの消去
+        </h2>
+        <p className="mb-4 text-sm text-ash">
+          武将を個別に消すときは、図鑑の「選択して削除」か、武将の詳細画面の「消去」を使ってください。ここでは、武将・スクリーンショット・解析履歴を
+          <span className="text-hi-400">すべて</span>削除します (API キーなどの設定は残ります)。
+        </p>
+        <button
+          onClick={deleteAll}
+          disabled={busy || count === 0}
+          className="inline-flex items-center gap-2 rounded-lg border border-hi-600 bg-hi-800/40 px-4 py-2 font-bold text-hi-400 disabled:opacity-40"
+        >
+          <Trash2 className="size-4" /> すべてのデータを消去
+        </button>
       </section>
     </div>
   );

@@ -42,26 +42,49 @@ export default function App() {
     }
   }, [toast]);
 
+  // バッチ (未完了が 0 になるまで) の集計。大量に解析してもトーストが溢れないよう、まとめて通知する
+  const batchStats = useRef({ done: 0, merged: 0, failed: 0, warnings: 0 });
+
   const refreshJobs = useCallback(async () => {
     const list = await api.jobs();
-    // 状態が変わったジョブをトーストで通知する
     const prev = knownStatus.current;
     let changed = false;
     if (prev) {
+      const stats = batchStats.current;
+      const finishedNow: OcrJob[] = [];
       for (const job of list) {
         const before = prev.get(job.id);
         const finished = job.status === "done" || job.status === "error";
         if (before === undefined || before === job.status || !finished) continue;
         changed = true;
+        finishedNow.push(job);
         if (job.status === "done") {
+          stats.done++;
+          if (job.merged) stats.merged++;
+          if (job.warnings.length) stats.warnings++;
+        } else stats.failed++;
+      }
+      // 少ない枚数なら 1 枚ずつ、多ければ失敗だけを知らせる
+      const pending = list.filter((j) => j.status === "queued" || j.status === "processing").length;
+      for (const job of finishedNow) {
+        if (job.status === "error") {
+          if (stats.failed <= 3) toast("error", `解析失敗: ${job.file_name}`, job.error ?? undefined);
+        }
+        else if (pending + finishedNow.length <= 3 && stats.done <= 3) {
           toast(
             job.warnings.length ? "warning" : "success",
             `${job.warlord_label} を${job.merged ? "統合更新" : "新規登録"}しました`,
             job.warnings.length ? job.warnings.join(" / ") : job.file_name,
           );
-        } else {
-          toast("error", `解析失敗: ${job.file_name}`, job.error ?? undefined);
         }
+      }
+      if (pending === 0 && stats.done + stats.failed > 0 && finishedNow.length > 0) {
+        toast(
+          stats.failed ? "warning" : "success",
+          `解析が完了しました (${stats.done + stats.failed} 枚)`,
+          `成功 ${stats.done} 枚 (うち統合 ${stats.merged}) / 失敗 ${stats.failed} 枚${stats.warnings ? ` / 要確認 ${stats.warnings} 枚` : ""}`,
+        );
+        batchStats.current = { done: 0, merged: 0, failed: 0, warnings: 0 };
       }
     }
     knownStatus.current = new Map(list.map((j) => [j.id, j.status]));
@@ -85,7 +108,8 @@ export default function App() {
     await saveFile(await api.exportText(), `warlords-${today()}.txt`, "戦国布武 武将図鑑");
   };
   const backup = async () => {
-    await saveFile(await api.exportData(true), `warlords-${today()}.json`, "戦国布武 武将図鑑 バックアップ");
+    // 武将が多いと画像込みでは巨大になるため、100 件を超えたら画像なし (画像込みはデータ管理から選べる)
+    await saveFile(await api.exportData(warlords.length <= 100), `warlords-${today()}.json`, "戦国布武 武将図鑑 バックアップ");
   };
 
   const openWarlord = warlords.find((w) => w.id === openId) ?? null;
@@ -166,6 +190,7 @@ export default function App() {
             onOpen={setOpenId}
             onCreate={() => setCreating(true)}
             onGoUpload={() => setTab("upload")}
+            onChanged={refreshWarlords}
           />
         )}
         {tab === "upload" && (

@@ -40,14 +40,14 @@ export function warlordToText(w: Warlord): string {
     }
   }
 
-  const stat = (label: string, base: number, growth: string) => `${label}：${base || "-"}${growth ? ` （${growth}）` : ""}`;
+  // 値のある能力だけを「攻：92 （+2.3）計：96 （+2.5）」の形で並べる
+  const stat = (label: string, base: number, growth: string) =>
+    base || growth ? `${label}：${base || "-"}${growth ? ` （${growth}）` : ""}` : "";
   if (w.growth_total) lines.push(`成長値：${w.growth_total}`);
-  if (w.attack_base || w.attack_growth || w.stratagem_base || w.stratagem_growth) {
-    lines.push(`${stat("攻", w.attack_base, w.attack_growth)}${stat("計", w.stratagem_base, w.stratagem_growth)}`);
-  }
-  if (w.defense_base || w.defense_growth || w.troops_base || w.troops_growth) {
-    lines.push(`${stat("防", w.defense_base, w.defense_growth)} ${stat("兵", w.troops_base, w.troops_growth)}`);
-  }
+  const row1 = [stat("攻", w.attack_base, w.attack_growth), stat("計", w.stratagem_base, w.stratagem_growth)].filter(Boolean).join("");
+  const row2 = [stat("防", w.defense_base, w.defense_growth), stat("兵", w.troops_base, w.troops_growth)].filter(Boolean).join(" ");
+  if (row1) lines.push(row1);
+  if (row2) lines.push(row2);
   return lines.join("\n");
 }
 

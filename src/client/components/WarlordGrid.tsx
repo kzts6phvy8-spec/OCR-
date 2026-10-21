@@ -1,5 +1,7 @@
-import { useMemo, useState } from "react";
-import { Images, LayoutGrid, List, Plus, ScanLine, Search, SlidersHorizontal, UserRound } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Check, CheckSquare, Images, LayoutGrid, List, Plus, ScanLine, Search, SlidersHorizontal, Trash2, UserRound } from "lucide-react";
+import { api } from "../lib/api.ts";
+import { useToast } from "../lib/toast.tsx";
 import { FACTIONS, RARITIES, type Warlord } from "../../core/types.ts";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { StoredImage } from "./StoredImage.tsx";
@@ -39,9 +41,16 @@ interface Props {
   onOpen: (id: string) => void;
   onCreate: () => void;
   onGoUpload: () => void;
+  onChanged: () => void;
 }
 
-export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload }: Props) {
+const PAGE = 120;
+
+export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, onChanged }: Props) {
+  const toast = useToast();
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [limit, setLimit] = useState(PAGE);
   const [faction, setFaction] = useState<string>("all");
   const [rarities, setRarities] = useState<string[]>([]);
   const [special, setSpecial] = useState<SpecialFilter>("all");
@@ -94,6 +103,17 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload }:
       }
     });
   }, [indexed, faction, rarities, special, weaponOnly, query, sort]);
+
+  // 絞り込みを変えたら表示件数を最初に戻す
+  useEffect(() => setLimit(PAGE), [faction, rarities, special, weaponOnly, query, sort]);
+
+  const toggle = (id: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const counts = useMemo(() => {
     const map = new Map<string, number>();
@@ -197,12 +217,49 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload }:
           ))}
         </div>
         <button
+          onClick={() => {
+            setSelecting((v) => !v);
+            setSelected(new Set());
+          }}
+          className={`ml-auto flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-bold ${
+            selecting ? "border-hi-500 bg-hi-800/40 text-hi-400" : "border-ebony-600 text-ash"
+          }`}
+        >
+          <CheckSquare className="size-3.5" /> {selecting ? "選択をやめる" : "選択して削除"}
+        </button>
+        <button
           onClick={onCreate}
-          className="ml-auto flex items-center gap-1 rounded-md border border-gold-600/60 px-3 py-1.5 text-xs font-bold text-gold-400 hover:bg-gold-500/10"
+          className="flex items-center gap-1 rounded-md border border-gold-600/60 px-3 py-1.5 text-xs font-bold text-gold-400 hover:bg-gold-500/10"
         >
           <Plus className="size-3.5" /> 手動登録
         </button>
       </div>
+
+      {selecting && (
+        <div className="sticky top-[calc(4.25rem+env(safe-area-inset-top))] z-20 mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-hi-600/60 bg-ebony-900/95 p-3 text-sm backdrop-blur">
+          <span className="font-bold text-hi-400">{selected.size} 件を選択中</span>
+          <button onClick={() => setSelected(new Set(visible.map((w) => w.id)))} className="rounded-md border border-ebony-600 px-2.5 py-1 text-xs">
+            表示中をすべて選択 ({visible.length})
+          </button>
+          <button onClick={() => setSelected(new Set())} className="rounded-md border border-ebony-600 px-2.5 py-1 text-xs">
+            選択を解除
+          </button>
+          <button
+            disabled={selected.size === 0}
+            onClick={async () => {
+              if (!confirm(`選択した ${selected.size} 件の武将を削除しますか？\n登録画像も削除され、元に戻せません。`)) return;
+              await api.deleteWarlords([...selected]);
+              toast("success", `${selected.size} 件を削除しました`);
+              setSelected(new Set());
+              setSelecting(false);
+              onChanged();
+            }}
+            className="ml-auto flex items-center gap-1 rounded-md bg-hi-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
+          >
+            <Trash2 className="size-3.5" /> 削除
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -229,21 +286,49 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload }:
           <p className="mb-3 text-xs text-ash">{visible.length} 件</p>
           {layout === "grid" ? (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {visible.map((w) => (
-                <WarlordCard key={w.id} w={w} onClick={() => onOpen(w.id)} />
+              {visible.slice(0, limit).map((w) => (
+                <Selectable key={w.id} active={selecting} checked={selected.has(w.id)}>
+                  <WarlordCard w={w} onClick={() => (selecting ? toggle(w.id) : onOpen(w.id))} />
+                </Selectable>
               ))}
             </div>
           ) : (
             <ul className="space-y-2">
-              {visible.map((w) => (
+              {visible.slice(0, limit).map((w) => (
                 <li key={w.id}>
-                  <WarlordRow w={w} onClick={() => onOpen(w.id)} />
+                  <Selectable active={selecting} checked={selected.has(w.id)}>
+                    <WarlordRow w={w} onClick={() => (selecting ? toggle(w.id) : onOpen(w.id))} />
+                  </Selectable>
                 </li>
               ))}
             </ul>
           )}
+          {visible.length > limit && (
+            <button
+              onClick={() => setLimit((n) => n + PAGE)}
+              className="mx-auto mt-5 block rounded-lg border border-ebony-600 px-5 py-2 text-sm text-ash hover:text-washi"
+            >
+              さらに表示 (残り {visible.length - limit} 件)
+            </button>
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+function Selectable({ active, checked, children }: { active: boolean; checked: boolean; children: ReactNode }) {
+  if (!active) return <>{children}</>;
+  return (
+    <div className={`relative rounded-xl ${checked ? "ring-2 ring-hi-500" : ""}`}>
+      {children}
+      <span
+        className={`pointer-events-none absolute top-2 right-2 z-10 grid size-6 place-items-center rounded-md border-2 ${
+          checked ? "border-hi-400 bg-hi-500 text-white" : "border-washi/70 bg-ebony-950/70"
+        }`}
+      >
+        {checked && <Check className="size-4" />}
+      </span>
     </div>
   );
 }
