@@ -280,7 +280,7 @@ function BackgroundSection({ draft, setDraft }: { draft: Settings; setDraft: (s:
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [version, setVersion] = useState(getServerVersion());
-  const LATEST = 4;
+  const LATEST = 5;
 
   useEffect(() => {
     if (!draft.bgUrl || !draft.bgToken) return;
@@ -389,13 +389,13 @@ function BackgroundSection({ draft, setDraft }: { draft: Settings; setDraft: (s:
           </button>
           {version > 0 && version < LATEST && (
             <div className="mt-4 rounded-lg border border-amber-500/50 bg-amber-900/20 p-3 text-sm text-amber-200">
-              <p className="font-bold">サーバーのコードを更新すると、解析が速くなります (今: 版 {version} → 最新: 版 {LATEST})</p>
+              <p className="font-bold">サーバーのコードを更新してください (今: 版 {version} → 最新: 版 {LATEST})</p>
               <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-amber-100/90">
                 <li>上の「サーバー用コードをコピー」を押す</li>
                 <li>iPad などで script.google.com のプロジェクトを開き、コードをすべて消して貼り付け、保存</li>
                 <li>「デプロイ」→「デプロイを管理」→ 鉛筆マーク →「バージョン」で「新バージョン」→「デプロイ」(URL は変わりません)</li>
               </ol>
-              <p className="mt-2 text-xs text-amber-100/70">更新しなくても今まで通り使えます。更新すると、送信後すぐに解析が始まり (版 2〜)、無料枠の上限に達した時にその理由と再開の時刻が表示され (版 3)、Google ドライブが一時的に不調でも自動でやり直すようになります (版 4)。</p>
+              <p className="mt-2 text-xs text-amber-100/70">更新しなくても今まで通り使えます。更新すると、送信後すぐに解析が始まり (版 2〜)、無料枠の上限に達した時にその理由と再開の時刻が表示され (版 3)、Google ドライブが一時的に不調でも自動でやり直し (版 4)、解析済みの結果をアプリが確実に受け取れるようになります (版 5。版 4 で結果が届かず止まる不具合の修正)。</p>
             </div>
           )}
           {version >= LATEST && <p className="mt-3 text-xs text-emerald-300">サーバーは最新版 (版 {version}) です。</p>}

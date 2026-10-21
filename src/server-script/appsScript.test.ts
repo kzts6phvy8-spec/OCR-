@@ -35,11 +35,8 @@ function makeEnv(
   const folder = {
     getId: () => "folder-1",
     getFiles: () => (flaky(), iter(live().map(fileApi))),
-    searchFiles: (q: string) => {
-      flaky();
-      const prefix = /title contains '([^']+)'/.exec(q)![1];
-      return iter(live().filter((f) => f.name.includes(prefix)).map(fileApi));
-    },
+    // 本物のドライブの検索は新しいファイルや記号入りの名前を見つけられないことがあるので、使ったら何も返さない
+    searchFiles: () => iter([]),
     getFilesByName: (n: string) => iter(live().filter((f) => f.name === n).map(fileApi)),
     createFile: (name: string, content: string) => {
       files.push({ name, content, trashed: false });
@@ -131,7 +128,7 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
     reply = () => ({ code: 429, text: '{"error":{"message":"Quota exceeded for metric: generate_content_free_tier_requests, limit: 250, GenerateRequestsPerDayPerProjectPerModel-FreeTier"}}' });
     env.process();
     const st = env.post({ action: "status", token: TOKEN });
-    expect(st).toMatchObject({ pending: 1, ready: 0, version: 4 });
+    expect(st).toMatchObject({ pending: 1, ready: 0, version: 5 });
     expect(st.limit).toMatchObject({ daily: true });
     expect(st.lastRunAt).toBeGreaterThan(0);
     expect(st.lastOkAt).toBe(0);
@@ -166,9 +163,9 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
   it("kick の合図で、自動起動を待たずにその場で解析する", () => {
     env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
     for (let i = 0; i < 10; i++) env.post({ action: "enqueue", token: TOKEN, id: "k" + i, model: "m", body: {} });
-    expect(env.post({ action: "kick", token: TOKEN })).toMatchObject({ ok: true, version: 4, pending: 0, ready: 10 });
+    expect(env.post({ action: "kick", token: TOKEN })).toMatchObject({ ok: true, version: 5, pending: 0, ready: 10 });
     expect(calls).toHaveLength(10);
-    expect(env.post({ action: "results", token: TOKEN }).version).toBe(4);
+    expect(env.post({ action: "results", token: TOKEN }).version).toBe(5);
   });
 
   it("ドライブが一時的にエラーを返しても、やり直して解析を続ける", () => {

@@ -10,7 +10,7 @@
  * Gemini の API キーと合言葉は、アプリの「接続テスト」で自動的に登録されます。
  */
 
-const VERSION = 4;
+const VERSION = 5;
 const FOLDER_NAME = "武将図鑑_解析キュー";
 const BATCH = 8; // 1 回の問い合わせで同時に送る枚数
 const MAX_RUN_MS = 4.5 * 60 * 1000; // 1 回の起動で使う最大時間 (上限 6 分)
@@ -117,9 +117,9 @@ function counts() {
   let pending;
   let ready;
   try {
-    const folder = getFolder();
-    pending = listFiles(folder, "job_", 100000).length;
-    ready = listFiles(folder, "result_", 100000).length;
+    const c = countFiles(getFolder());
+    pending = c.pending;
+    ready = c.ready;
     props.setProperty("LAST_COUNTS", JSON.stringify({ pending: pending, ready: ready }));
   } catch (err) {
     // ドライブが不調で数えられない時は、前回数えた値を返す
@@ -254,16 +254,35 @@ function isDriveError(err) {
   return /ドライブ|Drive|サービス エラー|Service error/i.test(String(err && err.message ? err.message : err));
 }
 
-/** フォルダの中から、名前が prefix で始まるファイルだけを最大 limit 件探す (全ファイルを見て回らない) */
+/**
+ * フォルダの中から、名前が prefix で始まるファイルを最大 limit 件集める。
+ * ドライブの「検索」は新しいファイルが出てくるまで時間がかかることがあり、記号を含む名前も
+ * 見つからないことがあるので使わず、フォルダの中身を直接読む (失敗したらやり直す)。
+ */
 function listFiles(folder, prefix, limit) {
   return retry(function () {
     const out = [];
-    const it = folder.searchFiles("title contains '" + prefix + "' and trashed = false");
+    const it = folder.getFiles();
     while (it.hasNext() && out.length < limit) {
       const f = it.next();
       if (f.getName().indexOf(prefix) === 0) out.push(f);
     }
     return out;
+  });
+}
+
+/** 解析待ちと受け取り待ちの件数を、フォルダを 1 回読むだけで数える */
+function countFiles(folder) {
+  return retry(function () {
+    let pending = 0;
+    let ready = 0;
+    const it = folder.getFiles();
+    while (it.hasNext()) {
+      const n = it.next().getName();
+      if (n.indexOf("job_") === 0) pending++;
+      else if (n.indexOf("result_") === 0) ready++;
+    }
+    return { pending: pending, ready: ready };
   });
 }
 
