@@ -214,7 +214,7 @@ async function processJob(job: OcrJob) {
   try {
     const image = await db.getImage(job.image_id);
     if (!image) throw new Error("画像が見つかりません");
-    if (bgActive(loadSettings())) return await sendToServer(job, image);
+    if (bgActive(loadSettings()) && !job.local) return await sendToServer(job, image);
     const extraction = await analyzeWithRetry(image, job.mode, loadSettings());
     const result = await ingestLock(() =>
       ingestExtraction(db.repo, extraction, {
@@ -277,7 +277,8 @@ async function worker() {
 }
 
 export async function runQueue() {
-  const limit = bgActive(loadSettings()) ? UPLOAD_CONCURRENCY : CONCURRENCY;
+  const next = await db.nextQueuedJob();
+  const limit = bgActive(loadSettings()) && !next?.local ? UPLOAD_CONCURRENCY : CONCURRENCY;
   if (workers >= limit) return;
   if (!(await db.nextQueuedJob())) return;
   await keepAwake();
@@ -410,6 +411,27 @@ export async function refreshServerStatus() {
 }
 
 // ---------------- キューから取り除く ----------------
+
+/**
+ * サーバーで解析待ちのまま止まっているジョブを、この端末で直接解析し直す。
+ * サーバー側の依頼は取り消す (届かなくても、後から来た結果は取り消し済みとして捨てる)。
+ */
+export async function takeOverRemoteJobs() {
+  const settings = loadSettings();
+  const remote = (await db.listJobs()).filter((j) => j.status === "remote");
+  if (remote.length === 0) return 0;
+  try {
+    await callServer(settings, "cancel", { ids: remote.map((j) => j.id) });
+  } catch {
+    /* サーバーに届かなくても続ける */
+  }
+  for (const job of remote) {
+    await db.saveJob({ ...job, status: "queued", local: true, attempts: 0, updated_at: new Date().toISOString() });
+  }
+  notify();
+  void runQueue();
+  return remote.length;
+}
 
 /** 待機中・サーバーで解析待ち・失敗のジョブを取り除く (解析中のものは取り除けない) */
 export async function removeJobs(ids: string[]) {
