@@ -2,7 +2,17 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } 
 import { AlertTriangle, BookOpen, CheckCircle2, Clock, Cloud, ImagePlus, Loader2, RefreshCw, RotateCcw, ScanLine, Send, X, XCircle } from "lucide-react";
 import { FACTIONS, isPending, type Faction, type OcrJob, type UploadMode, type Warlord } from "../../core/types.ts";
 import { api } from "../lib/api.ts";
-import { CONCURRENCY, UPLOAD_CONCURRENCY, getQueueState, pollServer, resumeNow, type QueueState } from "../lib/queue.ts";
+import {
+  CONCURRENCY,
+  UPLOAD_CONCURRENCY,
+  getLastResultAt,
+  getQueueState,
+  getServerVersion,
+  pollServer,
+  resumeNow,
+  type QueueState,
+} from "../lib/queue.ts";
+import { formatClock, formatReset, nextDailyReset } from "../lib/quota.ts";
 import { bgActive, loadSettings } from "../lib/settings.ts";
 import { useToast } from "../lib/toast.tsx";
 import { StoredImage } from "./StoredImage.tsx";
@@ -251,8 +261,13 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
           <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-900/20 p-3 text-xs text-amber-200">
             <Clock className="size-4 shrink-0" />
             <span className="flex-1">
-              {qs.pauseReason}。{Math.ceil((qs.pausedUntil - Date.now()) / 1000)} 秒後に自動で再開します
-              <span className="block text-[11px] text-amber-200/70">1 日の上限に達した場合は、翌日まで待つと再開できます (アプリは開いたままに)</span>
+              {qs.pauseReason}。
+              {qs.pausedUntil - Date.now() > 120_000
+                ? `${formatReset(new Date(qs.pausedUntil))}に上限が戻り、自動で再開します`
+                : `${Math.ceil((qs.pausedUntil - Date.now()) / 1000)} 秒後に自動で再開します`}
+              <span className="block text-[11px] text-amber-200/70">
+                アプリを閉じても、次に開いた時に続きから再開します。急ぐ時は「今すぐ再開」で試せます
+              </span>
             </span>
             <button onClick={resumeNow} className="shrink-0 rounded-md border border-amber-400/60 px-2 py-1 font-bold">
               今すぐ再開
@@ -289,6 +304,7 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
               バックグラウンド解析: オン{remoteCount > 0 && ` ・ サーバーで解析待ち ${remoteCount} 枚`}
               {qs.server && ` (サーバー: 未解析 ${qs.server.pending} / 受け取り待ち ${qs.server.ready})`}
               <span className="block text-[11px] text-sky-200/70">送信が終われば、アプリを閉じても Google のサーバーで解析が進みます。開くと結果を受け取ります</span>
+              {qs.server?.lastOkAt ? <span className="block text-[11px] text-sky-200/70">最後に解析できた時刻: {formatClock(qs.server.lastOkAt)}</span> : null}
               {qs.serverError && <span className="block text-hi-400">{qs.serverError}</span>}
             </span>
             <button onClick={() => void pollServer()} className="shrink-0 rounded-md border border-sky-600/60 p-1.5" aria-label="結果を確認" title="結果を確認">
@@ -296,6 +312,8 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
             </button>
           </div>
         )}
+
+        {bg && <ServerNotice qs={qs} jobs={jobs} />}
 
         {waitingIds.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
@@ -485,6 +503,8 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
         </div>
       )}
 
+      <ServerNotice qs={qs} jobs={batch} />
+
       <ol className="space-y-2.5">
         {steps.map(({ n, icon: Icon, label, detail, ratio }) => {
           const state = n < stage ? "done" : n === stage ? "active" : "todo";
@@ -521,5 +541,60 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
         })}
       </ol>
     </section>
+  );
+}
+
+/** サーバーで止まっている理由 (無料枠の上限・自動起動の停止など) を分かる範囲で表示する */
+function serverNotice(qs: QueueState, jobs: OcrJob[]): { tone: "limit" | "stuck"; title: string; detail: string } | null {
+  const remote = jobs.filter((j) => j.status === "remote");
+  if (remote.length === 0) return null;
+  const s = qs.server;
+  if (s?.limit && s.pending > 0) {
+    return s.limit.daily
+      ? {
+          tone: "limit",
+          title: `Gemini 無料枠の 1 日の上限に達しています (${formatClock(s.limit.at)} 時点)`,
+          detail: `${formatReset(nextDailyReset())}に上限が戻り、サーバーが自動で続きを解析します。アプリは閉じていて大丈夫です。`,
+        }
+      : { tone: "limit", title: "Gemini 無料枠の 1 分あたりの上限に達しています", detail: "少し待つと、サーバーが自動で続きを解析します。" };
+  }
+  const version = getServerVersion();
+  if (version >= 3 && s && s.pending > 0 && s.lastRunAt && Date.now() - s.lastRunAt > 6 * 60_000) {
+    return {
+      tone: "stuck",
+      title: "サーバーの自動起動が止まっているようです",
+      detail: `最後に動いたのは ${formatClock(s.lastRunAt)} です。iPad などで Apps Script のプロジェクトを開き、もう一度「setup」を実行して許可してください。`,
+    };
+  }
+  const oldest = Math.min(...remote.map((j) => Date.parse(j.updated_at)));
+  const stalledMin = (Date.now() - Math.max(getLastResultAt(), oldest)) / 60_000;
+  if (stalledMin > 10) {
+    return {
+      tone: "stuck",
+      title: `${Math.floor(stalledMin)} 分以上、新しい結果が届いていません`,
+      detail:
+        version < 3
+          ? "Gemini 無料枠の 1 日の上限に達している可能性があります。サーバーのコードを版 3 に更新すると、上限に達しているかどうかがここに表示されるようになります (設定 → バックグラウンド解析)。"
+          : "電波状況を確認して、↻ で結果を確認してください。",
+    };
+  }
+  return null;
+}
+
+function ServerNotice({ qs, jobs }: { qs: QueueState; jobs: OcrJob[] }) {
+  const n = serverNotice(qs, jobs);
+  if (!n) return null;
+  return (
+    <div
+      className={`mb-4 flex items-start gap-3 rounded-xl border p-3 ${
+        n.tone === "limit" ? "border-amber-500/60 bg-amber-900/25 text-amber-200" : "border-hi-600/60 bg-hi-800/30 text-hi-400"
+      }`}
+    >
+      {n.tone === "limit" ? <Clock className="mt-0.5 size-5 shrink-0" /> : <AlertTriangle className="mt-0.5 size-5 shrink-0" />}
+      <div>
+        <p className="text-sm font-bold">{n.title}</p>
+        <p className="mt-0.5 text-xs opacity-90">{n.detail}</p>
+      </div>
+    </div>
   );
 }

@@ -3,6 +3,7 @@ import type { UploadMode } from "../../core/types.ts";
 import { OcrExtractionSchema, type OcrExtraction } from "../../core/ocrSchema.ts";
 import { SYSTEM_PROMPT } from "../../core/prompt.ts";
 import { OcrError, modeHint } from "./ocrCommon.ts";
+import { isDailyLimit } from "./quota.ts";
 
 // Gemini への依頼内容と、応答の検証。端末から直接送る場合も、バックグラウンド解析サーバー経由の場合も同じものを使う。
 
@@ -116,7 +117,10 @@ export function geminiHttpError(status: number, message: string, model: string):
     return new OcrError(`この API キーでは Gemini を利用できません (権限エラー): ${message.slice(0, 200)}`, false);
   }
   if (status === 404) return new OcrError(`モデル「${model}」が見つかりません。設定の「接続テスト」で選び直してください`, false);
-  if (status === 429) return new OcrError("無料枠の利用上限に達しました", false, 0, true);
+  if (status === 429) {
+    const daily = isDailyLimit(message);
+    return new OcrError(daily ? "Gemini 無料枠の 1 日の上限に達しました" : "Gemini 無料枠の 1 分あたりの上限に達しました", false, 0, true, daily);
+  }
   if (status >= 500) return new OcrError(`Gemini 側のエラー (${status})。しばらくして再試行してください`, true, 5_000);
   return new OcrError(`Gemini API エラー (${status}): ${message.slice(0, 300)}`, false);
 }

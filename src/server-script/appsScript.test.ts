@@ -35,7 +35,7 @@ function makeEnv(fetchImpl: (req: { url: string; payload: string; headers: Recor
       createFolder: () => ((folderCreated = true), folder),
     },
     PropertiesService: {
-      getScriptProperties: () => ({ getProperty: (k: string) => props.get(k) ?? null, setProperty: (k: string, v: string) => props.set(k, v) }),
+      getScriptProperties: () => ({ getProperty: (k: string) => props.get(k) ?? null, setProperty: (k: string, v: string) => props.set(k, v), deleteProperty: (k: string) => props.delete(k) }),
     },
     ScriptApp: {
       getProjectTriggers: () => triggers.map((h) => ({ getHandlerFunction: () => h })),
@@ -106,15 +106,29 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
     expect(env.post({ action: "status", token: TOKEN })).toMatchObject({ ready: 3 });
   });
 
-  it("無料枠の上限 (429) では依頼を残して次の起動を待つ", () => {
+  it("無料枠の上限 (429) では依頼を残して次の起動を待ち、上限の種類をアプリに伝える", () => {
     env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
     env.post({ action: "enqueue", token: TOKEN, id: "a", model: "m", body: {} });
-    reply = () => ({ code: 429, text: "quota" });
+    reply = () => ({ code: 429, text: '{"error":{"message":"Quota exceeded for metric: generate_content_free_tier_requests, limit: 250, GenerateRequestsPerDayPerProjectPerModel-FreeTier"}}' });
     env.process();
-    expect(env.post({ action: "status", token: TOKEN })).toMatchObject({ pending: 1, ready: 0 });
+    const st = env.post({ action: "status", token: TOKEN });
+    expect(st).toMatchObject({ pending: 1, ready: 0, version: 3 });
+    expect(st.limit).toMatchObject({ daily: true });
+    expect(st.lastRunAt).toBeGreaterThan(0);
+    expect(st.lastOkAt).toBe(0);
     reply = () => ({ code: 200, text: "{}" });
     env.process();
-    expect(env.post({ action: "status", token: TOKEN })).toMatchObject({ pending: 0, ready: 1 });
+    const st2 = env.post({ action: "status", token: TOKEN });
+    expect(st2).toMatchObject({ pending: 0, ready: 1, limit: null });
+    expect(st2.lastOkAt).toBeGreaterThan(0);
+  });
+
+  it("1 分あたりの上限は daily: false として伝える", () => {
+    env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
+    env.post({ action: "enqueue", token: TOKEN, id: "a", model: "m", body: {} });
+    reply = () => ({ code: 429, text: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" });
+    env.process();
+    expect(env.post({ action: "status", token: TOKEN }).limit).toMatchObject({ daily: false });
   });
 
   it("サーバーエラーは数回まで再試行し、それ以外のエラーは結果として返す", () => {
@@ -130,9 +144,9 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
   it("kick の合図で、自動起動を待たずにその場で解析する", () => {
     env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
     for (let i = 0; i < 10; i++) env.post({ action: "enqueue", token: TOKEN, id: "k" + i, model: "m", body: {} });
-    expect(env.post({ action: "kick", token: TOKEN })).toMatchObject({ ok: true, version: 2, pending: 0, ready: 10 });
+    expect(env.post({ action: "kick", token: TOKEN })).toMatchObject({ ok: true, version: 3, pending: 0, ready: 10 });
     expect(calls).toHaveLength(10);
-    expect(env.post({ action: "results", token: TOKEN }).version).toBe(2);
+    expect(env.post({ action: "results", token: TOKEN }).version).toBe(3);
   });
 
   it("取り消した依頼は解析しない", () => {

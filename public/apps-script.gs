@@ -10,7 +10,7 @@
  * Gemini の API キーと合言葉は、アプリの「接続テスト」で自動的に登録されます。
  */
 
-const VERSION = 2;
+const VERSION = 3;
 const FOLDER_NAME = "武将図鑑_解析キュー";
 const BATCH = 8; // 1 回の問い合わせで同時に送る枚数
 const MAX_RUN_MS = 4.5 * 60 * 1000; // 1 回の起動で使う最大時間 (上限 6 分)
@@ -110,7 +110,16 @@ function counts() {
     else if (n.indexOf("result_") === 0) ready++;
   }
   // pending: 解析待ち / ready: 解析済みで受け取り待ち
-  return { pending: pending, ready: ready };
+  // lastRunAt / lastOkAt: 最後に解析を試みた・成功した時刻、limit: 無料枠などの上限に達している時の情報
+  const props = PropertiesService.getScriptProperties();
+  const limit = props.getProperty("LAST_LIMIT");
+  return {
+    pending: pending,
+    ready: ready,
+    lastRunAt: Number(props.getProperty("LAST_RUN") || 0),
+    lastOkAt: Number(props.getProperty("LAST_OK") || 0),
+    limit: limit ? JSON.parse(limit) : null,
+  };
 }
 
 // ---------------- 1 分ごとの解析 ----------------
@@ -119,7 +128,8 @@ function processQueue() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) return; // 前回の処理がまだ動いている
   try {
-    const key = PropertiesService.getScriptProperties().getProperty("GEMINI_KEY");
+    const props = PropertiesService.getScriptProperties();
+    const key = props.getProperty("GEMINI_KEY");
     if (!key) return;
     const started = Date.now();
     const folder = getFolder();
@@ -136,6 +146,7 @@ function processQueue() {
         }
       }
       if (jobs.length === 0) return;
+      props.setProperty("LAST_RUN", String(Date.now()));
 
       const responses = UrlFetchApp.fetchAll(
         jobs.map(function (j) {
@@ -155,9 +166,18 @@ function processQueue() {
         const j = jobs[i];
         const code = res.getResponseCode();
         const text = res.getContentText();
-        if (code === 200) return finish(folder, j, { id: j.job.id, ok: true, status: code, body: text });
+        if (code === 200) {
+          props.setProperty("LAST_OK", String(Date.now()));
+          props.deleteProperty("LAST_LIMIT");
+          return finish(folder, j, { id: j.job.id, ok: true, status: code, body: text });
+        }
         if (code === 429) {
           rateLimited = true; // 無料枠の上限: 依頼はそのまま残し、次の起動で再挑戦
+          // アプリに「上限に達している」ことと、1 日の上限か 1 分の上限かを伝えるために記録する
+          props.setProperty(
+            "LAST_LIMIT",
+            JSON.stringify({ at: Date.now(), daily: /per.?day|PerDay|daily/i.test(text), message: text.slice(0, 500) }),
+          );
           return;
         }
         if (code >= 500 && (j.job.attempts || 0) + 1 < MAX_ATTEMPTS) {
