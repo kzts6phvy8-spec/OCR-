@@ -280,7 +280,7 @@ function BackgroundSection({ draft, setDraft }: { draft: Settings; setDraft: (s:
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [showCode, setShowCode] = useState(false);
   const [version, setVersion] = useState(getServerVersion());
-  const LATEST = 3;
+  const LATEST = 4;
 
   useEffect(() => {
     if (!draft.bgUrl || !draft.bgToken) return;
@@ -395,7 +395,7 @@ function BackgroundSection({ draft, setDraft }: { draft: Settings; setDraft: (s:
                 <li>iPad などで script.google.com のプロジェクトを開き、コードをすべて消して貼り付け、保存</li>
                 <li>「デプロイ」→「デプロイを管理」→ 鉛筆マーク →「バージョン」で「新バージョン」→「デプロイ」(URL は変わりません)</li>
               </ol>
-              <p className="mt-2 text-xs text-amber-100/70">更新しなくても今まで通り使えます。更新すると、送信後すぐに解析が始まり (版 2〜)、無料枠の上限に達した時にその理由と再開の時刻が表示されるようになります (版 3)。</p>
+              <p className="mt-2 text-xs text-amber-100/70">更新しなくても今まで通り使えます。更新すると、送信後すぐに解析が始まり (版 2〜)、無料枠の上限に達した時にその理由と再開の時刻が表示され (版 3)、Google ドライブが一時的に不調でも自動でやり直すようになります (版 4)。</p>
             </div>
           )}
           {version >= LATEST && <p className="mt-3 text-xs text-emerald-300">サーバーは最新版 (版 {version}) です。</p>}

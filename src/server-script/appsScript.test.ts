@@ -6,13 +6,24 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 type File = { name: string; content: string; trashed: boolean };
 
-function makeEnv(fetchImpl: (req: { url: string; payload: string; headers: Record<string, string> }) => { code: number; text: string }) {
+function makeEnv(
+  fetchImpl: (req: { url: string; payload: string; headers: Record<string, string> }) => { code: number; text: string },
+  /** ドライブの呼び出しを失敗させる回数 (ドライブの一時的な不調を再現) */
+  driveFailures = { left: 0 },
+) {
+  const flaky = () => {
+    if (driveFailures.left > 0) {
+      driveFailures.left--;
+      throw new Error("サービス エラー: ドライブ");
+    }
+  };
   const files: File[] = [];
   const props = new Map<string, string>();
   const triggers: string[] = [];
   const live = () => files.filter((f) => !f.trashed);
   const fileApi = (f: File) => ({
     getName: () => f.name,
+    isTrashed: () => f.trashed,
     getBlob: () => ({ getDataAsString: () => f.content }),
     setContent: (c: string) => void (f.content = c),
     setTrashed: (t: boolean) => void (f.trashed = t),
@@ -22,7 +33,13 @@ function makeEnv(fetchImpl: (req: { url: string; payload: string; headers: Recor
     return { hasNext: () => i < arr.length, next: () => arr[i++] };
   };
   const folder = {
-    getFiles: () => iter(live().map(fileApi)),
+    getId: () => "folder-1",
+    getFiles: () => (flaky(), iter(live().map(fileApi))),
+    searchFiles: (q: string) => {
+      flaky();
+      const prefix = /title contains '([^']+)'/.exec(q)![1];
+      return iter(live().filter((f) => f.name.includes(prefix)).map(fileApi));
+    },
     getFilesByName: (n: string) => iter(live().filter((f) => f.name === n).map(fileApi)),
     createFile: (name: string, content: string) => {
       files.push({ name, content, trashed: false });
@@ -31,6 +48,7 @@ function makeEnv(fetchImpl: (req: { url: string; payload: string; headers: Recor
   let folderCreated = false;
   const ctx = {
     DriveApp: {
+      getFolderById: () => (flaky(), folder),
       getFoldersByName: () => iter(folderCreated ? [folder] : []),
       createFolder: () => ((folderCreated = true), folder),
     },
@@ -54,10 +72,11 @@ function makeEnv(fetchImpl: (req: { url: string; payload: string; headers: Recor
       createTextOutput: (t: string) => ({ setMimeType: () => ({ body: t }) }),
     },
     Logger: { log: () => {} },
+    Utilities: { sleep: () => {} },
   } as Record<string, unknown>;
   runInNewContext(readFileSync("public/apps-script.gs", "utf8"), ctx);
   const post = (body: object) => JSON.parse((ctx.doPost as (e: unknown) => { body: string })({ postData: { contents: JSON.stringify(body) } }).body);
-  return { ctx, post, files, props, triggers, process: () => (ctx.processQueue as () => void)() };
+  return { ctx, post, files, props, triggers, driveFailures, process: () => (ctx.processQueue as () => void)() };
 }
 
 const TOKEN = "t".repeat(32);
@@ -112,7 +131,7 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
     reply = () => ({ code: 429, text: '{"error":{"message":"Quota exceeded for metric: generate_content_free_tier_requests, limit: 250, GenerateRequestsPerDayPerProjectPerModel-FreeTier"}}' });
     env.process();
     const st = env.post({ action: "status", token: TOKEN });
-    expect(st).toMatchObject({ pending: 1, ready: 0, version: 3 });
+    expect(st).toMatchObject({ pending: 1, ready: 0, version: 4 });
     expect(st.limit).toMatchObject({ daily: true });
     expect(st.lastRunAt).toBeGreaterThan(0);
     expect(st.lastOkAt).toBe(0);
@@ -135,7 +154,10 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
     env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
     env.post({ action: "enqueue", token: TOKEN, id: "a", model: "m", body: {} });
     reply = () => ({ code: 503, text: "busy" });
-    env.process(); // 1 回の起動の中でも再試行して、上限回数で結果になる
+    env.process(); // 1 回目: 失敗 → 依頼を残す
+    expect(env.post({ action: "status", token: TOKEN })).toMatchObject({ pending: 1, ready: 0 });
+    env.process(); // 次の起動で再試行
+    env.process(); // 上限回数で結果になる
     const res = env.post({ action: "results", token: TOKEN });
     expect(res.results).toEqual([{ id: "a", ok: false, status: 503, error: "busy" }]);
     expect(calls.length).toBe(3);
@@ -144,9 +166,40 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
   it("kick の合図で、自動起動を待たずにその場で解析する", () => {
     env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
     for (let i = 0; i < 10; i++) env.post({ action: "enqueue", token: TOKEN, id: "k" + i, model: "m", body: {} });
-    expect(env.post({ action: "kick", token: TOKEN })).toMatchObject({ ok: true, version: 3, pending: 0, ready: 10 });
+    expect(env.post({ action: "kick", token: TOKEN })).toMatchObject({ ok: true, version: 4, pending: 0, ready: 10 });
     expect(calls).toHaveLength(10);
-    expect(env.post({ action: "results", token: TOKEN }).version).toBe(3);
+    expect(env.post({ action: "results", token: TOKEN }).version).toBe(4);
+  });
+
+  it("ドライブが一時的にエラーを返しても、やり直して解析を続ける", () => {
+    env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
+    for (const id of ["a", "b"]) env.post({ action: "enqueue", token: TOKEN, id, model: "m", body: {} });
+    env.driveFailures.left = 2; // 2 回続けて失敗 → 3 回目で成功
+    env.process();
+    expect(calls).toHaveLength(2);
+    expect(env.post({ action: "status", token: TOKEN })).toMatchObject({ pending: 0, ready: 2, lastError: null });
+  });
+
+  it("ドライブの不調が続いても止まらずに記録だけ残し、直れば次の起動で続きから", () => {
+    env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
+    env.post({ action: "enqueue", token: TOKEN, id: "a", model: "m", body: {} });
+    env.driveFailures.left = 1000;
+    expect(() => env.process()).not.toThrow();
+    env.driveFailures.left = 0;
+    const st = env.post({ action: "status", token: TOKEN });
+    expect(st.lastError.message).toContain("ドライブ");
+    expect(st.pending).toBe(1);
+    env.process();
+    expect(calls).toHaveLength(1);
+    expect(env.post({ action: "status", token: TOKEN })).toMatchObject({ pending: 0, ready: 1, lastError: null });
+  });
+
+  it("ドライブが不調な時の問い合わせには、分かりやすいエラーを返す", () => {
+    env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
+    env.driveFailures.left = 1000;
+    const res = env.post({ action: "enqueue", token: TOKEN, id: "a", model: "m", body: {} });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("Google ドライブが一時的に使えません");
   });
 
   it("取り消した依頼は解析しない", () => {

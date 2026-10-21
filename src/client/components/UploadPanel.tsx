@@ -569,6 +569,13 @@ function serverNotice(qs: QueueState, jobs: OcrJob[]): { tone: "limit" | "stuck"
         }
       : { tone: "limit", title: "Gemini 無料枠の 1 分あたりの上限に達しています", detail: "少し待つと、サーバーが自動で続きを解析します。" };
   }
+  if (s?.lastError && s.pending > 0 && Date.now() - s.lastError.at < 15 * 60_000) {
+    return {
+      tone: "limit",
+      title: `Google ドライブが一時的に不調です (${formatClock(s.lastError.at)})`,
+      detail: "サーバーが自動でやり直しています。直れば続きから解析されるので、アプリは閉じていて大丈夫です。",
+    };
+  }
   const version = getServerVersion();
   if (version >= 3 && s && s.pending > 0 && s.lastRunAt && Date.now() - s.lastRunAt > 6 * 60_000) {
     return {
