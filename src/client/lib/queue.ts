@@ -9,6 +9,7 @@ import { blobToBase64 } from "./images.ts";
 import { analyzeWithRetry } from "./analyze.ts";
 import { OcrError } from "./ocrCommon.ts";
 import { shrinkForGallery } from "./images.ts";
+import { nextDailyReset } from "./quota.ts";
 
 // 画像を解析するキュー。AI への問い合わせは 2 枚同時に進め、保存 (同じ武将への統合) は 1 件ずつ順番に行う。
 // iPhone ではアプリを閉じる・画面を消すと処理が止まるため、処理中は画面消灯を防ぎ、戻ったら自動で再開する。
@@ -43,7 +44,21 @@ export interface QueueState {
 let serverCounts: QueueState["server"] = null;
 let serverError = "";
 let serverVersion = 0;
+/** 最後にサーバーから結果を受け取った時刻 (止まっているかの目安) */
+let lastResultAt = 0;
 export const getServerVersion = () => serverVersion;
+export const getLastResultAt = () => lastResultAt;
+
+function setServerCounts(res: Partial<ServerCounts>) {
+  serverCounts = {
+    pending: res.pending ?? 0,
+    ready: res.ready ?? 0,
+    lastRunAt: res.lastRunAt,
+    lastOkAt: res.lastOkAt,
+    limit: res.limit ?? null,
+    checkedAt: Date.now(),
+  };
+}
 
 export const getQueueState = (): QueueState => ({
   running: workers > 0,
@@ -226,7 +241,8 @@ async function processJob(job: OcrJob) {
     if (err instanceof OcrError && err.rateLimited) {
       // 上限に達した: このジョブは待機に戻し、キュー全体を少し休ませる (30 秒 → 最大 10 分)
       backoffMs = Math.min(MAX_BACKOFF_MS, Math.max(30_000, backoffMs * 2));
-      pausedUntil = Date.now() + backoffMs;
+      // 1 日の上限なら、上限が戻る時刻 (日本時間の夕方) まで待つ
+      pausedUntil = err.dailyLimit ? nextDailyReset().getTime() + 60_000 : Date.now() + backoffMs;
       pauseReason = err.message;
       await update(job, { status: "queued", attempts: Math.max(0, job.attempts - 1) });
       return;
@@ -300,7 +316,8 @@ export async function pollServer() {
   try {
     for (;;) {
       const res = await callServer<{ results: RemoteResult[]; version?: number }>(settings, "results", { limit: 30 });
-      serverCounts = { pending: res.pending ?? 0, ready: res.ready ?? 0, checkedAt: Date.now() };
+      setServerCounts(res);
+      if (res.results.length) lastResultAt = Date.now();
       if (res.version) serverVersion = res.version;
       serverError = "";
       if (res.results.length === 0) break;
@@ -313,7 +330,7 @@ export async function pollServer() {
       }
       await callServer(settings, "ack", { ids: received });
       if (res.results.length < 30) {
-        serverCounts = { ...serverCounts, ready: Math.max(0, serverCounts.ready - received.length) };
+        if (serverCounts) serverCounts = { ...serverCounts, ready: Math.max(0, serverCounts.ready - received.length) };
         break;
       }
     }
@@ -378,7 +395,7 @@ export async function refreshServerStatus() {
   if (!bgActive(settings)) return;
   try {
     const res = await callServer<{ version?: number }>(settings, "status");
-    serverCounts = { pending: res.pending ?? 0, ready: res.ready ?? 0, checkedAt: Date.now() };
+    setServerCounts(res);
     if (res.version) serverVersion = res.version;
     serverError = "";
   } catch (err) {

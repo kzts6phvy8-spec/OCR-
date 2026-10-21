@@ -8,6 +8,8 @@ export class OcrError extends Error {
     readonly retryAfterMs = 1500,
     /** 利用回数の上限 (無料枠など) に達した: キュー全体を一時停止して待つ */
     readonly rateLimited = false,
+    /** 1 日の上限に達した (翌日の上限が戻る時刻まで待つ) */
+    readonly dailyLimit = false,
   ) {
     super(message);
   }

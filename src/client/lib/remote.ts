@@ -8,6 +8,11 @@ export interface ServerCounts {
   pending: number;
   /** 解析済みでアプリの受け取り待ちの枚数 */
   ready: number;
+  /** 最後に解析を試みた / 成功した時刻 (版 3 以降のサーバーのみ) */
+  lastRunAt?: number;
+  lastOkAt?: number;
+  /** 無料枠などの上限に達している時の情報 (版 3 以降のサーバーのみ) */
+  limit?: { at: number; daily: boolean; message: string } | null;
 }
 
 export interface RemoteResult {
