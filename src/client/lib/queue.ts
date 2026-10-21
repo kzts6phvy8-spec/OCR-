@@ -2,7 +2,10 @@ import type { Faction, OcrJob, UploadMode } from "../../core/types.ts";
 import { ingestExtraction } from "../../core/ingest.ts";
 import { warlordLabel } from "../../core/domain.ts";
 import * as db from "./db.ts";
-import { loadSettings } from "./settings.ts";
+import { bgActive, loadSettings } from "./settings.ts";
+import { callServer, type RemoteResult, type ServerCounts } from "./remote.ts";
+import { buildGeminiBody, geminiHttpError, parseGeminiRestBody } from "./geminiShared.ts";
+import { blobToBase64 } from "./images.ts";
 import { analyzeWithRetry } from "./analyze.ts";
 import { OcrError } from "./ocrCommon.ts";
 import { shrinkForGallery } from "./images.ts";
@@ -27,12 +30,20 @@ export interface QueueState {
   /** 利用上限で一時停止中なら再開予定時刻 */
   pausedUntil: number | null;
   pauseReason: string;
+  /** バックグラウンド解析サーバーの状況 (最後に確認した時点) */
+  server: (ServerCounts & { checkedAt: number }) | null;
+  serverError: string;
 }
+
+let serverCounts: QueueState["server"] = null;
+let serverError = "";
 
 export const getQueueState = (): QueueState => ({
   running: workers > 0,
   pausedUntil: pausedUntil > Date.now() ? pausedUntil : null,
   pauseReason,
+  server: serverCounts,
+  serverError,
 });
 
 if (typeof document !== "undefined") {
@@ -137,11 +148,28 @@ async function keepAwake() {
   }
 }
 
+/** バックグラウンド解析: 依頼をサーバーに預け、端末の画像は保存用の大きさに縮める */
+async function sendToServer(job: OcrJob, image: Blob) {
+  const settings = loadSettings();
+  await callServer(settings, "enqueue", {
+    id: job.id,
+    model: settings.geminiModel,
+    body: buildGeminiBody(await blobToBase64(image), job.mode),
+  });
+  try {
+    await db.putImage(await shrinkForGallery(image), job.image_id);
+  } catch {
+    /* 縮小できなくても解析には影響しない */
+  }
+  await update(job, { status: "remote" });
+}
+
 async function processJob(job: OcrJob) {
   const startedAt = Date.now();
   try {
     const image = await db.getImage(job.image_id);
     if (!image) throw new Error("画像が見つかりません");
+    if (bgActive(loadSettings())) return await sendToServer(job, image);
     const extraction = await analyzeWithRetry(image, job.mode, loadSettings());
     const result = await ingestLock(() =>
       ingestExtraction(db.repo, extraction, {
@@ -220,9 +248,125 @@ export async function runQueue() {
   }
 }
 
-/** 起動時・アプリに戻った時: 中断されていたジョブを再開 */
+/** 起動時・アプリに戻った時: 中断されていたジョブを再開し、サーバーの結果を受け取る */
 export async function resumeQueue() {
+  void pollServer();
   if (workers > 0) return; // 処理中のジョブはそのまま続ける
   await db.requeueStaleJobs();
   void runQueue();
+}
+
+// ---------------- バックグラウンド解析の結果受け取り ----------------
+
+let polling = false;
+
+/** サーバーで解析が終わった結果を受け取り、図鑑に反映する */
+export async function pollServer() {
+  const settings = loadSettings();
+  if (polling || !bgActive(settings)) return;
+  const jobs = await db.listJobs();
+  if (!jobs.some((j) => j.status === "remote")) return;
+  polling = true;
+  try {
+    for (;;) {
+      const res = await callServer<{ results: RemoteResult[] }>(settings, "results", { limit: 30 });
+      serverCounts = { pending: res.pending ?? 0, ready: res.ready ?? 0, checkedAt: Date.now() };
+      serverError = "";
+      if (res.results.length === 0) break;
+      const received: string[] = [];
+      for (const r of res.results) {
+        received.push(r.id);
+        const job = await db.getJob(r.id);
+        if (!job || job.status !== "remote") continue; // 取り消し済みなど
+        await applyServerResult(job, r, settings.geminiModel);
+      }
+      await callServer(settings, "ack", { ids: received });
+      if (res.results.length < 30) {
+        serverCounts = { ...serverCounts, ready: Math.max(0, serverCounts.ready - received.length) };
+        break;
+      }
+    }
+  } catch (err) {
+    serverError = err instanceof Error ? err.message : String(err);
+  } finally {
+    polling = false;
+    notify();
+  }
+}
+
+async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
+  try {
+    if (!r.ok) {
+      let message = r.error ?? "";
+      try {
+        message = (JSON.parse(message) as { error?: { message?: string } }).error?.message ?? message;
+      } catch {
+        /* そのまま */
+      }
+      throw geminiHttpError(r.status, message, model);
+    }
+    const extraction = parseGeminiRestBody(r.body ?? "");
+    const result = await ingestLock(() =>
+      ingestExtraction(db.repo, extraction, {
+        mode: job.mode,
+        targetId: job.target_id,
+        imageId: job.image_id,
+        faction: job.faction ?? "",
+      }),
+    );
+    await update(job, {
+      status: "done",
+      warlord_id: result.warlord.id,
+      warlord_label: warlordLabel(result.warlord),
+      merged: result.merged,
+      warnings: result.warnings,
+    });
+  } catch (err) {
+    await update(job, { status: "error", error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+// アプリを開いている間は 20 秒ごとに結果を確かめる
+if (typeof window !== "undefined") {
+  setInterval(() => {
+    if (!document.hidden) void pollServer();
+  }, 20_000);
+}
+
+/** サーバーの状況だけを確認する (設定画面・キュー画面の表示用) */
+export async function refreshServerStatus() {
+  const settings = loadSettings();
+  if (!bgActive(settings)) return;
+  try {
+    const res = await callServer(settings, "status");
+    serverCounts = { pending: res.pending ?? 0, ready: res.ready ?? 0, checkedAt: Date.now() };
+    serverError = "";
+  } catch (err) {
+    serverError = err instanceof Error ? err.message : String(err);
+  }
+  notify();
+}
+
+// ---------------- キューから取り除く ----------------
+
+/** 待機中・サーバーで解析待ち・失敗のジョブを取り除く (解析中のものは取り除けない) */
+export async function removeJobs(ids: string[]) {
+  const settings = loadSettings();
+  const removable: OcrJob[] = [];
+  for (const id of ids) {
+    const job = await db.getJob(id);
+    if (job && job.status !== "processing" && job.status !== "done") removable.push(job);
+  }
+  const remoteIds = removable.filter((j) => j.status === "remote").map((j) => j.id);
+  if (remoteIds.length && bgActive(settings)) {
+    try {
+      await callServer(settings, "cancel", { ids: remoteIds });
+    } catch {
+      /* サーバーに届かなくても、結果が来た時に取り消し済みとして捨てる */
+    }
+  }
+  await db.deleteJobs(removable.map((j) => j.id));
+  await db.removeUnreferencedImages(removable.map((j) => j.image_id));
+  notify();
+  return removable.length;
 }

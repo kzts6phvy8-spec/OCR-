@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, Clock, ImagePlus, Loader2, RotateCcw, ScanLine, XCircle } from "lucide-react";
-import { FACTIONS, type Faction, type OcrJob, type UploadMode, type Warlord } from "../../core/types.ts";
+import { AlertTriangle, CheckCircle2, Clock, Cloud, ImagePlus, Loader2, RefreshCw, RotateCcw, ScanLine, X, XCircle } from "lucide-react";
+import { FACTIONS, isPending, type Faction, type OcrJob, type UploadMode, type Warlord } from "../../core/types.ts";
 import { api } from "../lib/api.ts";
-import { CONCURRENCY, getQueueState, resumeNow } from "../lib/queue.ts";
+import { CONCURRENCY, getQueueState, pollServer, resumeNow } from "../lib/queue.ts";
+import { bgActive, loadSettings } from "../lib/settings.ts";
 import { useToast } from "../lib/toast.tsx";
 import { StoredImage } from "./StoredImage.tsx";
 
@@ -83,7 +84,7 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
   };
 
   // 進捗バー: 最も古い未完了ジョブ以降に追加されたジョブを「現在のバッチ」とする
-  const pending = jobs.filter((j) => j.status === "queued" || j.status === "processing");
+  const pending = jobs.filter((j) => isPending(j.status));
   const batch = useMemo(() => {
     if (pending.length === 0) return [];
     const since = Math.min(...pending.map((j) => Date.parse(j.created_at)));
@@ -111,10 +112,18 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
       .slice(0, 20)
       .map((j) => Date.parse(j.updated_at) - Date.parse(j.started_at!))
       .filter((ms) => ms > 0);
-    if (recent.length === 0 || pending.length === 0) return null;
+    if (recent.length === 0 || pending.length === 0 || bgActive(loadSettings())) return null;
     const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
     return (pending.length * avg) / CONCURRENCY;
   }, [jobs, pending.length]);
+
+  const remove = async (ids: string[]) => {
+    const n = await api.removeJobs(ids);
+    if (n > 1) toast("success", `${n} 枚をキューから取り除きました`);
+  };
+  const waitingIds = jobs.filter((j) => j.status === "queued" || j.status === "remote").map((j) => j.id);
+  const bg = bgActive(loadSettings());
+  const remoteCount = jobs.filter((j) => j.status === "remote").length;
 
   const retry = async (id: string) => {
     try {
@@ -271,6 +280,35 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
           </div>
         )}
 
+        {bg && (
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-sky-700/60 bg-sky-950/30 p-3 text-xs text-sky-200">
+            <Cloud className="size-4 shrink-0" />
+            <span className="flex-1">
+              バックグラウンド解析: オン{remoteCount > 0 && ` ・ サーバーで解析待ち ${remoteCount} 枚`}
+              {qs.server && ` (サーバー: 未解析 ${qs.server.pending} / 受け取り待ち ${qs.server.ready})`}
+              <span className="block text-[11px] text-sky-200/70">送信が終われば、アプリを閉じても Google のサーバーで解析が進みます。開くと結果を受け取ります</span>
+              {qs.serverError && <span className="block text-hi-400">{qs.serverError}</span>}
+            </span>
+            <button onClick={() => void pollServer()} className="shrink-0 rounded-md border border-sky-600/60 p-1.5" aria-label="結果を確認" title="結果を確認">
+              <RefreshCw className="size-4" />
+            </button>
+          </div>
+        )}
+
+        {waitingIds.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-ash">待機中 {waitingIds.length} 枚</span>
+            <button
+              onClick={() => {
+                if (confirm(`まだ解析していない ${waitingIds.length} 枚をキューから取り除きますか？`)) void remove(waitingIds);
+              }}
+              className="flex items-center gap-1 rounded-md border border-ebony-600 px-2 py-1 text-washi"
+            >
+              <X className="size-3.5" /> 待機中をすべて取り消す
+            </button>
+          </div>
+        )}
+
         {failedCount > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
             <span className="text-hi-400">失敗 {failedCount} 枚</span>
@@ -292,7 +330,7 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
         ) : (
           <ul className="scroll-thin -mr-2 space-y-2 overflow-y-auto pr-2" style={{ maxHeight: "36rem" }}>
             {shownJobs.map((job) => (
-              <JobRow key={job.id} job={job} onRetry={retry} onOpen={onOpenWarlord} />
+              <JobRow key={job.id} job={job} onRetry={retry} onOpen={onOpenWarlord} onRemove={(id) => void remove([id])} />
             ))}
             {jobs.length > shownJobs.length && !showFailedOnly && (
               <li className="py-2 text-center text-[11px] text-ebony-500">ほか {jobs.length - shownJobs.length} 件 (新しい 100 件を表示中)</li>
@@ -304,7 +342,17 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
   );
 }
 
-function JobRow({ job, onRetry, onOpen }: { job: OcrJob; onRetry: (id: string) => void; onOpen: (id: string) => void }) {
+function JobRow({
+  job,
+  onRetry,
+  onOpen,
+  onRemove,
+}: {
+  job: OcrJob;
+  onRetry: (id: string) => void;
+  onOpen: (id: string) => void;
+  onRemove: (id: string) => void;
+}) {
   return (
     <li className="flex gap-3 rounded-lg border border-ebony-700 bg-ebony-900/70 p-2">
       <div className="relative h-16 w-10 shrink-0 overflow-hidden rounded border border-ebony-700 bg-ebony-800">
@@ -323,6 +371,7 @@ function JobRow({ job, onRetry, onOpen }: { job: OcrJob; onRetry: (id: string) =
         <p className="mt-0.5 text-xs text-ash">
           {job.status === "queued" && "待機中"}
           {job.status === "processing" && <span className="text-gold-400">AI が画像を解析しています…</span>}
+          {job.status === "remote" && <span className="text-sky-300">サーバーで解析待ち (アプリを閉じても進みます)</span>}
           {job.status === "done" && (
             <button onClick={() => job.warlord_id && onOpen(job.warlord_id)} className="text-gold-300 underline-offset-2 hover:underline">
               {job.warlord_label} を{job.merged ? "統合更新" : "新規登録"}
@@ -345,17 +394,25 @@ function JobRow({ job, onRetry, onOpen }: { job: OcrJob; onRetry: (id: string) =
           </ul>
         )}
       </div>
-      {job.status === "error" && (
-        <button onClick={() => onRetry(job.id)} className="self-center rounded p-1.5 text-ash hover:bg-ebony-700 hover:text-washi" title="再試行">
-          <RotateCcw className="size-4" />
-        </button>
-      )}
+      <div className="flex shrink-0 flex-col justify-center gap-1">
+        {job.status === "error" && (
+          <button onClick={() => onRetry(job.id)} className="rounded p-1.5 text-ash hover:bg-ebony-700 hover:text-washi" title="再試行" aria-label="再試行">
+            <RotateCcw className="size-4" />
+          </button>
+        )}
+        {(job.status === "queued" || job.status === "remote" || job.status === "error") && (
+          <button onClick={() => onRemove(job.id)} className="rounded p-1.5 text-ash hover:bg-ebony-700 hover:text-hi-400" title="キューから取り除く" aria-label="キューから取り除く">
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
     </li>
   );
 }
 
 function StatusIcon({ status }: { status: OcrJob["status"] }) {
   if (status === "queued") return <Clock className="size-4 shrink-0 text-ash" />;
+  if (status === "remote") return <Cloud className="size-4 shrink-0 text-sky-300" />;
   if (status === "processing") return <Loader2 className="size-4 shrink-0 animate-spin text-gold-400" />;
   if (status === "done") return <CheckCircle2 className="size-4 shrink-0 text-gold-400" />;
   return <XCircle className="size-4 shrink-0 text-hi-400" />;

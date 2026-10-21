@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, BookOpen, Database, Download, Save, ScanLine, Settings as SettingsIcon, Upload } from "lucide-react";
-import type { OcrJob, Warlord } from "../core/types.ts";
+import { isPending, type OcrJob, type Warlord } from "../core/types.ts";
 import { api } from "./lib/api.ts";
 import { onQueueChange, resumeQueue } from "./lib/queue.ts";
 import { activeModelLabel, hasActiveKey, loadSettings, onSettingsChange, type Settings } from "./lib/settings.ts";
@@ -65,7 +65,7 @@ export default function App() {
         } else stats.failed++;
       }
       // 少ない枚数なら 1 枚ずつ、多ければ失敗だけを知らせる
-      const pending = list.filter((j) => j.status === "queued" || j.status === "processing").length;
+      const pending = list.filter((j) => isPending(j.status)).length;
       for (const job of finishedNow) {
         if (job.status === "error") {
           if (stats.failed <= 3) toast("error", `解析失敗: ${job.file_name}`, job.error ?? undefined);
@@ -113,7 +113,7 @@ export default function App() {
   };
 
   const openWarlord = warlords.find((w) => w.id === openId) ?? null;
-  const activeCount = jobs.filter((j) => j.status === "queued" || j.status === "processing").length;
+  const activeCount = jobs.filter((j) => isPending(j.status)).length;
 
   const badge = (id: Tab) =>
     id === "upload" && activeCount > 0 ? (

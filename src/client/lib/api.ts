@@ -50,6 +50,7 @@ export const api = {
 
   jobs: () => db.listJobs(),
   retryJob: (id: string) => queue.retryJob(id),
+  removeJobs: (ids: string[]) => queue.removeJobs(ids),
   async retryAllFailed() {
     const failed = (await db.listJobs()).filter((j) => j.status === "error").map((j) => j.id);
     await queue.retryJobs(failed);

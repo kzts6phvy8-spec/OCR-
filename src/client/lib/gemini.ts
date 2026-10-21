@@ -1,22 +1,15 @@
 import { ApiError, GoogleGenAI, MediaResolution } from "@google/genai";
-import { z } from "zod";
 import type { UploadMode } from "../../core/types.ts";
-import { OcrExtractionSchema, type OcrExtraction } from "../../core/ocrSchema.ts";
+import type { OcrExtraction } from "../../core/ocrSchema.ts";
 import { SYSTEM_PROMPT } from "../../core/prompt.ts";
+import { RESPONSE_SCHEMA, geminiHttpError, parseExtractionText, userText } from "./geminiShared.ts";
 import { blobToBase64 } from "./images.ts";
-import { OcrError, modeHint } from "./ocrCommon.ts";
+import { OcrError } from "./ocrCommon.ts";
 import type { Settings } from "./settings.ts";
 
 // Google Gemini API (無料枠あり) で読み取る。Claude 版と同じスキーマ・指示文を使う。
 
 const TIMEOUT_MS = 45_000;
-
-/** Gemini に渡す JSON Schema (Claude と同じ Zod スキーマから生成) */
-const RESPONSE_SCHEMA = (() => {
-  const s = z.toJSONSchema(OcrExtractionSchema) as Record<string, unknown>;
-  delete s.$schema;
-  return s;
-})();
 
 function client(settings: Settings) {
   return new GoogleGenAI({ apiKey: settings.geminiKey, httpOptions: { timeout: TIMEOUT_MS } });
@@ -24,27 +17,7 @@ function client(settings: Settings) {
 
 function toOcrError(err: unknown, settings: Settings): OcrError {
   if (err instanceof OcrError) return err;
-  if (err instanceof ApiError) {
-    const msg = err.message ?? "";
-    if (err.status === 400 && /API_KEY_INVALID|API key not valid/i.test(msg)) {
-      return new OcrError("Gemini の API キーが無効です。設定画面で確認してください", false);
-    }
-    if (err.status === 403) {
-      // 「Generative Language API が無効」の場合は、有効化ページの URL を案内する
-      const url = msg.match(/https:\/\/console\.(?:developers|cloud)\.google\.com\/[^\s"'\\]+/)?.[0];
-      if (/SERVICE_DISABLED|has not been used|is disabled/i.test(msg)) {
-        return new OcrError(
-          `Gemini (Generative Language API) がまだ有効になっていません。${url ? `次のページを開いて「有効にする」を押してください: ${url}` : "Google Cloud で「Generative Language API」を有効にしてください"}`,
-          false,
-        );
-      }
-      return new OcrError(`この API キーでは Gemini を利用できません (権限エラー): ${msg.slice(0, 200)}`, false);
-    }
-    if (err.status === 404) return new OcrError(`モデル「${settings.geminiModel}」が見つかりません。設定の「接続テスト」で選び直してください`, false);
-    if (err.status === 429) return new OcrError("無料枠の利用上限に達しました", false, 0, true);
-    if (err.status >= 500) return new OcrError(`Gemini 側のエラー (${err.status})。しばらくして再試行してください`, true, 5_000);
-    return new OcrError(`Gemini API エラー (${err.status}): ${msg}`, false);
-  }
+  if (err instanceof ApiError) return geminiHttpError(err.status, err.message ?? "", settings.geminiModel);
   if (err instanceof Error && /abort|timeout/i.test(`${err.name} ${err.message}`)) {
     return new OcrError(`AI の応答がタイムアウトしました (${TIMEOUT_MS / 1000} 秒)`, true, 2_000);
   }
@@ -64,7 +37,7 @@ export async function analyzeScreenshot(image: Blob, mode: UploadMode, settings:
           role: "user",
           parts: [
             { inlineData: { mimeType: "image/jpeg", data } },
-            { text: `このスクリーンショットから武将情報を読み取り、JSON で返してください。${modeHint(mode)}` },
+            { text: userText(mode) },
           ],
         },
       ],
@@ -88,16 +61,7 @@ export async function analyzeScreenshot(image: Blob, mode: UploadMode, settings:
   }
 
   // 形式が崩れた応答は採用せず、再試行に回す
-  if (!text) throw new OcrError("AI から応答がありませんでした", true);
-  let json: unknown;
-  try {
-    json = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ""));
-  } catch {
-    throw new OcrError("AI の応答を JSON として解釈できませんでした", true);
-  }
-  const parsed = OcrExtractionSchema.safeParse(json);
-  if (!parsed.success) throw new OcrError("AI の応答が決められた形式ではありませんでした", true);
-  return parsed.data;
+  return parseExtractionText(text);
 }
 
 /** API キーの確認と、画像解析に使えるモデルの一覧取得 (料金はかからない) */
