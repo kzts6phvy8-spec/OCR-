@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-// Google Apps Script のサーバーコード (public/apps-script.gs) を、Google のサービスを模したものの上で動かして確かめる
+// Google Apps Script のサーバーコード (public/apps-script.txt) を、Google のサービスを模したものの上で動かして確かめる
 
 type File = { name: string; content: string; trashed: boolean };
 
@@ -74,7 +74,7 @@ function makeEnv(
     Logger: { log: () => {} },
     Utilities: { sleep: () => {} },
   } as Record<string, unknown>;
-  runInNewContext(readFileSync("public/apps-script.gs", "utf8"), ctx);
+  runInNewContext(readFileSync("public/apps-script.txt", "utf8"), ctx);
   const post = (body: object) => JSON.parse((ctx.doPost as (e: unknown) => { body: string })({ postData: { contents: JSON.stringify(body) } }).body);
   return { ctx, post, files, props, triggers, driveFailures, process: () => (ctx.processQueue as () => void)() };
 }

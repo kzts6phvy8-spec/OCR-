@@ -289,7 +289,7 @@ function BackgroundSection({ draft, setDraft }: { draft: Settings; setDraft: (s:
 
   // iPhone ではボタンを押した瞬間にコピーする必要があるので、先に読み込んでおく
   useEffect(() => {
-    fetch("./apps-script.gs")
+    fetch("./apps-script.txt")
       .then((r) => (r.ok ? r.text() : Promise.reject()))
       .then(setCode, () => setCode(null));
   }, []);
