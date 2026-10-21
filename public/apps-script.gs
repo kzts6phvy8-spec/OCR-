@@ -10,11 +10,12 @@
  * Gemini の API キーと合言葉は、アプリの「接続テスト」で自動的に登録されます。
  */
 
-const VERSION = 3;
+const VERSION = 4;
 const FOLDER_NAME = "武将図鑑_解析キュー";
 const BATCH = 8; // 1 回の問い合わせで同時に送る枚数
 const MAX_RUN_MS = 4.5 * 60 * 1000; // 1 回の起動で使う最大時間 (上限 6 分)
 const MAX_ATTEMPTS = 3; // サーバーエラー時の再試行回数
+const DRIVE_TRIES = 3; // Google ドライブが一時的にエラーを返した時のやり直し回数
 
 // ---------------- アプリからの呼び出し ----------------
 
@@ -63,7 +64,11 @@ function doPost(e) {
         return json({ ok: false, error: "不明な操作です: " + req.action });
     }
   } catch (err) {
-    return json({ ok: false, error: String(err && err.message ? err.message : err) });
+    const message = String(err && err.message ? err.message : err);
+    return json({
+      ok: false,
+      error: /ドライブ|Drive/i.test(message) ? "Google ドライブが一時的に使えません。少し待ってからもう一度お試しください (" + message + ")" : message,
+    });
   }
 }
 
@@ -71,54 +76,69 @@ function enqueue(req) {
   if (!req.id || !req.model || !req.body) return { ok: false, error: "依頼の内容が足りません" };
   const folder = getFolder();
   const name = "job_" + req.id + ".json";
-  if (!folder.getFilesByName(name).hasNext()) {
-    folder.createFile(name, JSON.stringify({ id: req.id, model: req.model, body: req.body, attempts: 0 }), "application/json");
+  const exists = retry(function () {
+    return folder.getFilesByName(name).hasNext();
+  });
+  if (!exists) {
+    const content = JSON.stringify({ id: req.id, model: req.model, body: req.body, attempts: 0 });
+    retry(function () {
+      folder.createFile(name, content, "application/json");
+    });
   }
   return { ok: true };
 }
 
 function takeResults(limit) {
   const out = [];
-  const files = getFolder().getFiles();
-  while (files.hasNext() && out.length < limit) {
-    const f = files.next();
-    if (f.getName().indexOf("result_") !== 0) continue;
+  listFiles(getFolder(), "result_", limit).forEach(function (f) {
     try {
-      out.push(JSON.parse(f.getBlob().getDataAsString()));
+      out.push(JSON.parse(retry(function () {
+        return f.getBlob().getDataAsString();
+      })));
     } catch (err) {
-      f.setTrashed(true);
+      if (!isDriveError(err)) f.setTrashed(true); // 壊れた結果は捨てる (ドライブの不調ならそのまま次回へ)
     }
-  }
+  });
   return out;
 }
 
 function trashByIds(ids, prefix) {
   const folder = getFolder();
   ids.forEach(function (id) {
-    const it = folder.getFilesByName(prefix + id + ".json");
-    while (it.hasNext()) it.next().setTrashed(true);
+    retry(function () {
+      const it = folder.getFilesByName(prefix + id + ".json");
+      while (it.hasNext()) it.next().setTrashed(true);
+    });
   });
 }
 
 function counts() {
-  let pending = 0;
-  let ready = 0;
-  const files = getFolder().getFiles();
-  while (files.hasNext()) {
-    const n = files.next().getName();
-    if (n.indexOf("job_") === 0) pending++;
-    else if (n.indexOf("result_") === 0) ready++;
+  const props = PropertiesService.getScriptProperties();
+  let pending;
+  let ready;
+  try {
+    const folder = getFolder();
+    pending = listFiles(folder, "job_", 100000).length;
+    ready = listFiles(folder, "result_", 100000).length;
+    props.setProperty("LAST_COUNTS", JSON.stringify({ pending: pending, ready: ready }));
+  } catch (err) {
+    // ドライブが不調で数えられない時は、前回数えた値を返す
+    const last = JSON.parse(props.getProperty("LAST_COUNTS") || '{"pending":0,"ready":0}');
+    pending = last.pending;
+    ready = last.ready;
   }
   // pending: 解析待ち / ready: 解析済みで受け取り待ち
   // lastRunAt / lastOkAt: 最後に解析を試みた・成功した時刻、limit: 無料枠などの上限に達している時の情報
-  const props = PropertiesService.getScriptProperties();
+  // lastError: ドライブの不調など、解析を進められなかった時の情報 (直れば消える)
   const limit = props.getProperty("LAST_LIMIT");
+  const lastError = props.getProperty("LAST_ERROR");
   return {
     pending: pending,
     ready: ready,
     lastRunAt: Number(props.getProperty("LAST_RUN") || 0),
     lastOkAt: Number(props.getProperty("LAST_OK") || 0),
     limit: limit ? JSON.parse(limit) : null,
+    lastError: lastError ? JSON.parse(lastError) : null,
   };
 }
 
@@ -127,24 +147,28 @@ function counts() {
 function processQueue() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) return; // 前回の処理がまだ動いている
+  const props = PropertiesService.getScriptProperties();
   try {
-    const props = PropertiesService.getScriptProperties();
     const key = props.getProperty("GEMINI_KEY");
     if (!key) return;
     const started = Date.now();
     const folder = getFolder();
+    // ドライブの検索は反映が数秒遅れることがあるので、この起動で扱った依頼は二度送らない
+    const handled = {};
     while (Date.now() - started < MAX_RUN_MS) {
       const jobs = [];
-      const files = folder.getFiles();
-      while (files.hasNext() && jobs.length < BATCH) {
-        const f = files.next();
-        if (f.getName().indexOf("job_") !== 0) continue;
+      listFiles(folder, "job_", BATCH * 2).forEach(function (f) {
+        if (jobs.length >= BATCH || handled[f.getName()]) return;
+        handled[f.getName()] = true;
         try {
-          jobs.push({ file: f, job: JSON.parse(f.getBlob().getDataAsString()) });
+          jobs.push({ file: f, job: JSON.parse(retry(function () {
+            return f.getBlob().getDataAsString();
+          })) });
         } catch (err) {
-          f.setTrashed(true);
+          if (isDriveError(err)) throw err;
+          f.setTrashed(true); // 壊れた依頼は捨てる
         }
-      }
+      });
       if (jobs.length === 0) return;
       props.setProperty("LAST_RUN", String(Date.now()));
 
@@ -182,24 +206,66 @@ function processQueue() {
         }
         if (code >= 500 && (j.job.attempts || 0) + 1 < MAX_ATTEMPTS) {
           j.job.attempts = (j.job.attempts || 0) + 1;
-          j.file.setContent(JSON.stringify(j.job));
+          retry(function () {
+            j.file.setContent(JSON.stringify(j.job));
+          });
           return;
         }
         finish(folder, j, { id: j.job.id, ok: false, status: code, error: text.slice(0, 2000) });
       });
+      props.deleteProperty("LAST_ERROR");
       if (rateLimited) return;
     }
+  } catch (err) {
+    // ドライブの不調などでやり直しても進めない時は、記録だけして終わる (1 分後の次の起動で続きから)
+    props.setProperty("LAST_ERROR", JSON.stringify({ at: Date.now(), message: String(err && err.message ? err.message : err).slice(0, 300) }));
+    Logger.log("解析を中断しました (次の起動で再開します): " + err);
   } finally {
     lock.releaseLock();
   }
 }
 
 function finish(folder, j, result) {
-  folder.createFile("result_" + j.job.id + ".json", JSON.stringify(result), "application/json");
-  j.file.setTrashed(true);
+  retry(function () {
+    folder.createFile("result_" + j.job.id + ".json", JSON.stringify(result), "application/json");
+  });
+  retry(function () {
+    j.file.setTrashed(true);
+  });
 }
 
 // ---------------- 補助 ----------------
+
+/** Google ドライブなどが一時的にエラーを返した時、少し待ってやり直す */
+function retry(fn) {
+  let lastErr;
+  for (let i = 0; i < DRIVE_TRIES; i++) {
+    try {
+      return fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < DRIVE_TRIES - 1) Utilities.sleep(500 * Math.pow(3, i)); // 0.5 秒 → 1.5 秒
+    }
+  }
+  throw lastErr;
+}
+
+function isDriveError(err) {
+  return /ドライブ|Drive|サービス エラー|Service error/i.test(String(err && err.message ? err.message : err));
+}
+
+/** フォルダの中から、名前が prefix で始まるファイルだけを最大 limit 件探す (全ファイルを見て回らない) */
+function listFiles(folder, prefix, limit) {
+  return retry(function () {
+    const out = [];
+    const it = folder.searchFiles("title contains '" + prefix + "' and trashed = false");
+    while (it.hasNext() && out.length < limit) {
+      const f = it.next();
+      if (f.getName().indexOf(prefix) === 0) out.push(f);
+    }
+    return out;
+  });
+}
 
 function ensureTrigger() {
   const exists = ScriptApp.getProjectTriggers().some(function (t) {
@@ -208,9 +274,25 @@ function ensureTrigger() {
   if (!exists) ScriptApp.newTrigger("processQueue").timeBased().everyMinutes(1).create();
 }
 
+/** フォルダは ID を覚えておき、毎回名前で探さない (ドライブへの問い合わせを減らす) */
 function getFolder() {
-  const it = DriveApp.getFoldersByName(FOLDER_NAME);
-  return it.hasNext() ? it.next() : DriveApp.createFolder(FOLDER_NAME);
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty("FOLDER_ID");
+  if (id) {
+    try {
+      return retry(function () {
+        return DriveApp.getFolderById(id);
+      });
+    } catch (err) {
+      if (isDriveError(err) && !/not found|見つかりません/i.test(String(err))) throw err;
+    }
+  }
+  const folder = retry(function () {
+    const it = DriveApp.getFoldersByName(FOLDER_NAME);
+    return it.hasNext() ? it.next() : DriveApp.createFolder(FOLDER_NAME);
+  });
+  props.setProperty("FOLDER_ID", folder.getId());
+  return folder;
 }
 
 function json(obj) {

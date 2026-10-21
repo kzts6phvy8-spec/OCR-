@@ -13,6 +13,8 @@ export interface ServerCounts {
   lastOkAt?: number;
   /** 無料枠などの上限に達している時の情報 (版 3 以降のサーバーのみ) */
   limit?: { at: number; daily: boolean; message: string } | null;
+  /** ドライブの不調など、解析を進められなかった時の情報 (版 4 以降のサーバーのみ・直れば消える) */
+  lastError?: { at: number; message: string } | null;
 }
 
 export interface RemoteResult {

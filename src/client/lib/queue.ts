@@ -57,6 +57,7 @@ function setServerCounts(res: Partial<ServerCounts>) {
     lastRunAt: res.lastRunAt,
     lastOkAt: res.lastOkAt,
     limit: res.limit ?? null,
+    lastError: res.lastError ?? null,
     checkedAt: Date.now(),
   };
 }
