@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, Clock, Cloud, ImagePlus, Loader2, RefreshCw, RotateCcw, ScanLine, X, XCircle } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, Clock, Cloud, ImagePlus, Loader2, RefreshCw, RotateCcw, ScanLine, Send, X, XCircle } from "lucide-react";
 import { FACTIONS, isPending, type Faction, type OcrJob, type UploadMode, type Warlord } from "../../core/types.ts";
 import { api } from "../lib/api.ts";
-import { CONCURRENCY, getQueueState, pollServer, resumeNow } from "../lib/queue.ts";
+import { CONCURRENCY, UPLOAD_CONCURRENCY, getQueueState, pollServer, resumeNow, type QueueState } from "../lib/queue.ts";
 import { bgActive, loadSettings } from "../lib/settings.ts";
 import { useToast } from "../lib/toast.tsx";
 import { StoredImage } from "./StoredImage.tsx";
@@ -69,7 +69,8 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
         );
         count += jobs.length;
       }
-      toast("info", `${count} 枚の解析を開始しました`, "終わるまでアプリを開いたままにしてください");
+      if (bgActive(loadSettings())) toast("info", `${count} 枚をサーバーへ送信しています`, "「送信完了」と出るまでアプリを開いたままにしてください");
+      else toast("info", `${count} 枚の解析を開始しました`, "終わるまでアプリを開いたままにしてください");
     } catch (e) {
       toast("error", "画像の読み込みに失敗しました", (e as Error).message);
     } finally {
@@ -137,6 +138,7 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
 
   return (
     <div className="mx-auto grid max-w-3xl gap-6">
+      {bg && (preparing !== null || batch.length > 0) && <BgStages batch={batch} preparing={preparing} qs={qs} />}
       <section
         className={`panel border-shu-700/50 p-5 sm:p-7 ${dragging ? "ring-2 ring-shu-400" : ""}`}
         onDragOver={(e) => {
@@ -258,7 +260,7 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
           </div>
         )}
 
-        {batch.length > 0 && (
+        {!bg && batch.length > 0 && (
           <div className="mb-4 rounded-lg border border-ebony-700 bg-ebony-900 p-3">
             <div className="mb-1.5 flex justify-between gap-2 text-xs">
               <span className="truncate text-ash">
@@ -416,4 +418,108 @@ function StatusIcon({ status }: { status: OcrJob["status"] }) {
   if (status === "processing") return <Loader2 className="size-4 shrink-0 animate-spin text-gold-400" />;
   if (status === "done") return <CheckCircle2 className="size-4 shrink-0 text-gold-400" />;
   return <XCircle className="size-4 shrink-0 text-hi-400" />;
+}
+
+/** バックグラウンド解析の進み具合を 4 段階で表示する (どこまで終われば閉じてよいかを分かりやすく) */
+function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number | null; qs: QueueState }) {
+  const total = batch.length;
+  const toSend = batch.filter((j) => j.status === "queued" || j.status === "processing").length;
+  const atServer = batch.filter((j) => j.status === "remote").length;
+  const finished = batch.filter((j) => j.status === "done" || j.status === "error").length;
+  const failed = batch.filter((j) => j.status === "error").length;
+  const sent = total - toSend;
+
+  // 送信の残り時間の目安: 送信済みのジョブの送信にかかった時間の平均から
+  const sendEta = useMemo(() => {
+    const times = batch
+      .filter((j) => j.status === "remote" && j.started_at)
+      .slice(0, 20)
+      .map((j) => Date.parse(j.updated_at) - Date.parse(j.started_at!))
+      .filter((ms) => ms > 0);
+    if (!times.length || !toSend) return null;
+    return ((times.reduce((a, b) => a + b, 0) / times.length) * toSend) / UPLOAD_CONCURRENCY;
+  }, [batch, toSend]);
+
+  const sending = preparing !== null || toSend > 0;
+  const stage = preparing !== null ? 1 : toSend > 0 ? 2 : atServer > 0 ? 3 : 4;
+
+  const steps = [
+    { n: 1, icon: ImagePlus, label: "写真を取り込む", detail: preparing !== null ? `${Math.round(preparing * 100)}%` : "完了", ratio: preparing ?? 1 },
+    { n: 2, icon: Send, label: "サーバーへ送信", detail: `${sent} / ${total}`, ratio: total ? sent / total : 0 },
+    {
+      n: 3,
+      icon: Cloud,
+      label: "サーバーで解析",
+      detail: `残り ${atServer} 枚`,
+      ratio: total ? (finished + Math.min(atServer, qs.server?.ready ?? 0)) / total : 0,
+    },
+    { n: 4, icon: BookOpen, label: "図鑑に反映", detail: `${finished} / ${total}${failed ? ` (失敗 ${failed})` : ""}`, ratio: total ? finished / total : 0 },
+  ];
+
+  return (
+    <section className={`panel p-4 ${sending ? "border-shu-600/60" : stage === 3 ? "border-emerald-600/60" : "border-ebony-700"}`}>
+      {sending ? (
+        <div className="mb-4 flex items-start gap-3 rounded-xl bg-shu-500/15 p-3">
+          <Loader2 className="mt-0.5 size-6 shrink-0 animate-spin text-shu-300" />
+          <div>
+            <p className="font-bold text-shu-300">
+              {preparing !== null ? "写真を取り込んでいます…" : `サーバーへ送信中… 残り ${toSend} 枚${sendEta ? ` (約${formatDuration(sendEta)})` : ""}`}
+            </p>
+            <p className="mt-0.5 text-xs text-washi/80">送信が終わるまで、アプリを開いたままにしてください。終わるとここに「送信完了」と出ます。</p>
+          </div>
+        </div>
+      ) : stage === 3 ? (
+        <div className="mb-4 flex items-start gap-3 rounded-xl bg-emerald-500/15 p-3">
+          <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-emerald-300" />
+          <div>
+            <p className="font-bold text-emerald-300">送信完了！ アプリを閉じても大丈夫です</p>
+            <p className="mt-0.5 text-xs text-washi/80">
+              Google のサーバーで解析が進みます (残り {atServer} 枚)。次にアプリを開いた時に結果を受け取り、図鑑に反映します。
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-4 flex items-start gap-3 rounded-xl bg-gold-500/10 p-3">
+          <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-gold-300" />
+          <p className="font-bold text-gold-300">すべての解析が終わり、図鑑に反映しました{failed ? ` (失敗 ${failed} 枚)` : ""}</p>
+        </div>
+      )}
+
+      <ol className="space-y-2.5">
+        {steps.map(({ n, icon: Icon, label, detail, ratio }) => {
+          const state = n < stage ? "done" : n === stage ? "active" : "todo";
+          return (
+            <li key={n} className="flex items-center gap-3">
+              <span
+                className={`grid size-8 shrink-0 place-items-center rounded-full border ${
+                  state === "done"
+                    ? "border-emerald-500 bg-emerald-500/20 text-emerald-300"
+                    : state === "active"
+                      ? "border-shu-400 bg-shu-500/20 text-shu-300"
+                      : "border-ebony-600 text-ebony-500"
+                }`}
+              >
+                {state === "done" ? <CheckCircle2 className="size-4" /> : <Icon className="size-4" />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className={state === "todo" ? "text-ebony-500" : "font-bold text-washi"}>
+                    {n}. {label}
+                    {n === 3 && <span className="ml-1 font-normal text-emerald-300/80">← ここからはアプリを閉じて OK</span>}
+                  </span>
+                  <span className="shrink-0 text-ash">{detail}</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ebony-800">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${state === "done" ? "bg-emerald-500" : "bg-gradient-to-r from-shu-500 to-gold-300"}`}
+                    style={{ width: `${Math.round(Math.min(1, ratio) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
 }

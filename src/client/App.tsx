@@ -3,7 +3,7 @@ import { AlertTriangle, BookOpen, Database, Download, Save, ScanLine, Settings a
 import { isPending, type OcrJob, type Warlord } from "../core/types.ts";
 import { api } from "./lib/api.ts";
 import { onQueueChange, resumeQueue } from "./lib/queue.ts";
-import { activeModelLabel, hasActiveKey, loadSettings, onSettingsChange, type Settings } from "./lib/settings.ts";
+import { activeModelLabel, bgActive, hasActiveKey, loadSettings, onSettingsChange, type Settings } from "./lib/settings.ts";
 import { useToast } from "./lib/toast.tsx";
 import { saveFile, today } from "./lib/share.ts";
 import { UploadPanel } from "./components/UploadPanel.tsx";
@@ -31,6 +31,7 @@ export default function App() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const knownStatus = useRef<Map<string, OcrJob["status"]> | null>(null);
+  const sendingRef = useRef(0);
 
   const refreshWarlords = useCallback(async () => {
     try {
@@ -87,6 +88,13 @@ export default function App() {
         batchStats.current = { done: 0, merged: 0, failed: 0, warnings: 0 };
       }
     }
+    // バックグラウンド解析: サーバーへの送信が終わった瞬間を知らせる (ここからはアプリを閉じてよい)
+    const sendingNow = list.filter((j) => j.status === "queued" || j.status === "processing").length;
+    const remoteNow = list.filter((j) => j.status === "remote").length;
+    if (bgActive(loadSettings()) && sendingRef.current > 0 && sendingNow === 0 && remoteNow > 0) {
+      toast("success", "送信完了！ アプリを閉じても大丈夫です", `サーバーで ${remoteNow} 枚を解析中。次に開いた時に結果を受け取ります`);
+    }
+    sendingRef.current = sendingNow;
     knownStatus.current = new Map(list.map((j) => [j.id, j.status]));
     setJobs(list);
     if (changed) void refreshWarlords();

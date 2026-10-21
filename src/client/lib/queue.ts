@@ -17,7 +17,7 @@ import { shrinkForGallery } from "./images.ts";
 /** 端末で直接解析する時に同時に AI へ送る枚数 */
 export const CONCURRENCY = 3;
 /** バックグラウンド解析でサーバーへ同時に送る枚数 (送るだけなので多めに) */
-const UPLOAD_CONCURRENCY = 4;
+export const UPLOAD_CONCURRENCY = 4;
 /** この版以降のサーバーは「すぐ解析を始めて」の合図 (kick) に対応 */
 const KICK_MIN_VERSION = 2;
 const MAX_BACKOFF_MS = 10 * 60_000;
