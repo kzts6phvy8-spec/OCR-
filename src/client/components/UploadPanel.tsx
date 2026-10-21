@@ -442,7 +442,9 @@ function StatusIcon({ status }: { status: OcrJob["status"] }) {
 /** バックグラウンド解析の進み具合を 4 段階で表示する (どこまで終われば閉じてよいかを分かりやすく) */
 function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number | null; qs: QueueState }) {
   const total = batch.length;
-  const toSend = batch.filter((j) => j.status === "queued" || j.status === "processing").length;
+  const toSend = batch.filter((j) => !j.local && (j.status === "queued" || j.status === "processing")).length;
+  // サーバーで止まった分を引き取って、この端末で解析している枚数
+  const localPending = batch.filter((j) => j.local && (j.status === "queued" || j.status === "processing")).length;
   const atServer = batch.filter((j) => j.status === "remote").length;
   const finished = batch.filter((j) => j.status === "done" || j.status === "error").length;
   const failed = batch.filter((j) => j.status === "error").length;
@@ -477,7 +479,15 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
 
   return (
     <section className={`panel p-4 ${sending ? "border-shu-600/60" : stage === 3 ? "border-emerald-600/60" : "border-ebony-700"}`}>
-      {sending ? (
+      {localPending > 0 && !sending ? (
+        <div className="mb-4 flex items-start gap-3 rounded-xl bg-shu-500/15 p-3">
+          <Loader2 className="mt-0.5 size-6 shrink-0 animate-spin text-shu-300" />
+          <div>
+            <p className="font-bold text-shu-300">この iPhone で解析中… 残り {localPending} 枚</p>
+            <p className="mt-0.5 text-xs text-washi/80">サーバーで止まっていた分を、この iPhone で直接解析しています。終わるまでアプリを開いたままにしてください。</p>
+          </div>
+        </div>
+      ) : sending ? (
         <div className="mb-4 flex items-start gap-3 rounded-xl bg-shu-500/15 p-3">
           <Loader2 className="mt-0.5 size-6 shrink-0 animate-spin text-shu-300" />
           <div>
@@ -609,8 +619,15 @@ function serverNotice(qs: QueueState, jobs: OcrJob[]): { tone: "limit" | "stuck"
 }
 
 function ServerNotice({ qs, jobs }: { qs: QueueState; jobs: OcrJob[] }) {
+  const toast = useToast();
   const n = serverNotice(qs, jobs);
   if (!n) return null;
+  const remoteCount = jobs.filter((j) => j.status === "remote").length;
+  const takeOver = async () => {
+    if (!confirm(`サーバーで解析待ちの ${remoteCount} 枚を、この iPhone で解析し直しますか？\n解析が終わるまでアプリを開いたままにしてください。`)) return;
+    const moved = await api.takeOverRemoteJobs();
+    toast("info", `${moved} 枚をこの iPhone で解析します`, "終わるまでアプリを開いたままにしてください");
+  };
   return (
     <div
       className={`mb-4 flex items-start gap-3 rounded-xl border p-3 ${
@@ -621,6 +638,11 @@ function ServerNotice({ qs, jobs }: { qs: QueueState; jobs: OcrJob[] }) {
       <div>
         <p className="text-sm font-bold">{n.title}</p>
         <p className="mt-0.5 text-xs opacity-90">{n.detail}</p>
+        {n.tone === "stuck" && (
+          <button onClick={takeOver} className="mt-2 rounded-lg border border-current px-3 py-1.5 text-xs font-bold">
+            待たずに、この iPhone で解析する ({remoteCount} 枚)
+          </button>
+        )}
       </div>
     </div>
   );

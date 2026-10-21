@@ -110,6 +110,8 @@ export interface OcrJob {
   attempts: number;
   /** 解析を始めた時刻 (残り時間の目安に使う) */
   started_at?: string | null;
+  /** バックグラウンド解析がオンでも、この端末で直接解析する (サーバーで止まった分の引き取り) */
+  local?: boolean;
   created_at: string;
   updated_at: string;
 }
