@@ -388,11 +388,13 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
   }
 }
 
-// アプリを開いている間は 10 秒ごとに結果を確かめる
+// アプリを開いている間は 1 分ごとに結果を確かめる。
+// サーバーは確認のたびに Google ドライブのフォルダを読むので、短すぎるとドライブ側がエラー
+// (「サービス エラー: ドライブ」) を返し、サーバーの解析まで止まってしまう。
 if (typeof window !== "undefined") {
   setInterval(() => {
     if (!document.hidden) void pollServer();
-  }, 10_000);
+  }, 60_000);
 }
 
 /** サーバーの状況だけを確認する (設定画面・キュー画面の表示用) */
