@@ -127,6 +127,14 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
     expect(calls.length).toBe(3);
   });
 
+  it("kick の合図で、自動起動を待たずにその場で解析する", () => {
+    env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
+    for (let i = 0; i < 10; i++) env.post({ action: "enqueue", token: TOKEN, id: "k" + i, model: "m", body: {} });
+    expect(env.post({ action: "kick", token: TOKEN })).toMatchObject({ ok: true, version: 2, pending: 0, ready: 10 });
+    expect(calls).toHaveLength(10);
+    expect(env.post({ action: "results", token: TOKEN }).version).toBe(2);
+  });
+
   it("取り消した依頼は解析しない", () => {
     env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
     env.post({ action: "enqueue", token: TOKEN, id: "a", model: "m", body: {} });

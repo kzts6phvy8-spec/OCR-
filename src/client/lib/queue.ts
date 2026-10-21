@@ -14,7 +14,12 @@ import { shrinkForGallery } from "./images.ts";
 // iPhone ではアプリを閉じる・画面を消すと処理が止まるため、処理中は画面消灯を防ぎ、戻ったら自動で再開する。
 // 無料枠などの利用上限に達したら、失敗にせずキュー全体を一時停止して待つ。
 
-export const CONCURRENCY = 2;
+/** 端末で直接解析する時に同時に AI へ送る枚数 */
+export const CONCURRENCY = 3;
+/** バックグラウンド解析でサーバーへ同時に送る枚数 (送るだけなので多めに) */
+const UPLOAD_CONCURRENCY = 4;
+/** この版以降のサーバーは「すぐ解析を始めて」の合図 (kick) に対応 */
+const KICK_MIN_VERSION = 2;
 const MAX_BACKOFF_MS = 10 * 60_000;
 
 let workers = 0;
@@ -37,6 +42,8 @@ export interface QueueState {
 
 let serverCounts: QueueState["server"] = null;
 let serverError = "";
+let serverVersion = 0;
+export const getServerVersion = () => serverVersion;
 
 export const getQueueState = (): QueueState => ({
   running: workers > 0,
@@ -148,7 +155,7 @@ async function keepAwake() {
   }
 }
 
-/** バックグラウンド解析: 依頼をサーバーに預け、端末の画像は保存用の大きさに縮める */
+/** バックグラウンド解析: 依頼をサーバーに預ける (送り直しに備えて、結果が来るまで画像は元の大きさのまま) */
 async function sendToServer(job: OcrJob, image: Blob) {
   const settings = loadSettings();
   await callServer(settings, "enqueue", {
@@ -156,12 +163,34 @@ async function sendToServer(job: OcrJob, image: Blob) {
     model: settings.geminiModel,
     body: buildGeminiBody(await blobToBase64(image), job.mode),
   });
-  try {
-    await db.putImage(await shrinkForGallery(image), job.image_id);
-  } catch {
-    /* 縮小できなくても解析には影響しない */
-  }
   await update(job, { status: "remote" });
+  kickServer();
+}
+
+let kicking = false;
+/**
+ * 新しいサーバー (版 2 以降) に「すぐ解析を始めて」と合図する。1 分ごとの自動起動を待たずに始まる。
+ * サーバーは解析が終わるまで応答しないので、返事は待たずに 1 つだけ送っておく。
+ */
+function kickServer() {
+  const settings = loadSettings();
+  if (kicking || serverVersion < KICK_MIN_VERSION || !bgActive(settings)) return;
+  kicking = true;
+  void callServer(settings, "kick")
+    .catch(() => {})
+    .finally(() => {
+      kicking = false;
+    });
+}
+
+/** 解析が終わった画像を保存用の大きさに縮めて容量を節約する */
+async function shrinkStoredImage(imageId: string) {
+  try {
+    const blob = await db.getImage(imageId);
+    if (blob) await db.putImage(await shrinkForGallery(blob), imageId);
+  } catch {
+    /* 縮小できなくても解析結果には影響しない */
+  }
 }
 
 async function processJob(job: OcrJob) {
@@ -231,10 +260,11 @@ async function worker() {
 }
 
 export async function runQueue() {
-  if (workers >= CONCURRENCY) return;
+  const limit = bgActive(loadSettings()) ? UPLOAD_CONCURRENCY : CONCURRENCY;
+  if (workers >= limit) return;
   if (!(await db.nextQueuedJob())) return;
   await keepAwake();
-  while (workers < CONCURRENCY) {
+  while (workers < limit) {
     workers++;
     notify();
     void worker().finally(async () => {
@@ -269,8 +299,9 @@ export async function pollServer() {
   polling = true;
   try {
     for (;;) {
-      const res = await callServer<{ results: RemoteResult[] }>(settings, "results", { limit: 30 });
+      const res = await callServer<{ results: RemoteResult[]; version?: number }>(settings, "results", { limit: 30 });
       serverCounts = { pending: res.pending ?? 0, ready: res.ready ?? 0, checkedAt: Date.now() };
+      if (res.version) serverVersion = res.version;
       serverError = "";
       if (res.results.length === 0) break;
       const received: string[] = [];
@@ -286,6 +317,7 @@ export async function pollServer() {
         break;
       }
     }
+    if (serverCounts && serverCounts.pending > 0) kickServer();
   } catch (err) {
     serverError = err instanceof Error ? err.message : String(err);
   } finally {
@@ -314,6 +346,7 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
         faction: job.faction ?? "",
       }),
     );
+    await shrinkStoredImage(job.image_id);
     await update(job, {
       status: "done",
       warlord_id: result.warlord.id,
@@ -322,15 +355,21 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
       warnings: result.warnings,
     });
   } catch (err) {
+    if (err instanceof OcrError && err.retryable && job.attempts < 3) {
+      // 応答の形が崩れていた・設定の調整が必要だった等: もう一度サーバーに送り直す
+      await update(job, { status: "queued" });
+      void runQueue();
+      return;
+    }
     await update(job, { status: "error", error: err instanceof Error ? err.message : String(err) });
   }
 }
 
-// アプリを開いている間は 20 秒ごとに結果を確かめる
+// アプリを開いている間は 10 秒ごとに結果を確かめる
 if (typeof window !== "undefined") {
   setInterval(() => {
     if (!document.hidden) void pollServer();
-  }, 20_000);
+  }, 10_000);
 }
 
 /** サーバーの状況だけを確認する (設定画面・キュー画面の表示用) */
@@ -338,8 +377,9 @@ export async function refreshServerStatus() {
   const settings = loadSettings();
   if (!bgActive(settings)) return;
   try {
-    const res = await callServer(settings, "status");
+    const res = await callServer<{ version?: number }>(settings, "status");
     serverCounts = { pending: res.pending ?? 0, ready: res.ready ?? 0, checkedAt: Date.now() };
+    if (res.version) serverVersion = res.version;
     serverError = "";
   } catch (err) {
     serverError = err instanceof Error ? err.message : String(err);

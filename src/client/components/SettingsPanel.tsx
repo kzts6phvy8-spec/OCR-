@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Cloud, Copy, Eye, EyeOff, HardDrive, KeyRound, Loader2, Share, Smartphone, SquarePlus } from "lucide-react";
 import { CLAUDE_MODELS, DEFAULT_GEMINI_MODEL, newToken, saveSettings, type Settings } from "../lib/settings.ts";
 import { callServer } from "../lib/remote.ts";
-import { refreshServerStatus } from "../lib/queue.ts";
+import { getServerVersion, refreshServerStatus } from "../lib/queue.ts";
 import { useToast } from "../lib/toast.tsx";
 
 const EFFORTS = [
@@ -279,6 +279,13 @@ function BackgroundSection({ draft, setDraft }: { draft: Settings; setDraft: (s:
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [showCode, setShowCode] = useState(false);
+  const [version, setVersion] = useState(getServerVersion());
+  const LATEST = 2;
+
+  useEffect(() => {
+    if (!draft.bgUrl || !draft.bgToken) return;
+    void refreshServerStatus().then(() => setVersion(getServerVersion()));
+  }, [draft.bgUrl, draft.bgToken]);
 
   // iPhone ではボタンを押した瞬間にコピーする必要があるので、先に読み込んでおく
   useEffect(() => {
@@ -307,7 +314,8 @@ function BackgroundSection({ draft, setDraft }: { draft: Settings; setDraft: (s:
       if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(next.bgUrl)) {
         throw new Error("URL は https://script.google.com/macros/s/… で始まるウェブアプリの URL を貼り付けてください");
       }
-      const res = await callServer(next, "config", { geminiKey: next.geminiKey.trim() });
+      const res = await callServer<{ version?: number }>(next, "config", { geminiKey: next.geminiKey.trim() });
+      setVersion(res.version ?? 1);
       setDraft(next);
       saveSettings(next);
       void refreshServerStatus();
@@ -379,6 +387,18 @@ function BackgroundSection({ draft, setDraft }: { draft: Settings; setDraft: (s:
           >
             {testing && <Loader2 className="size-4 animate-spin" />} 接続テスト
           </button>
+          {version > 0 && version < LATEST && (
+            <div className="mt-4 rounded-lg border border-amber-500/50 bg-amber-900/20 p-3 text-sm text-amber-200">
+              <p className="font-bold">サーバーのコードを更新すると、解析が速くなります (今: 版 {version} → 最新: 版 {LATEST})</p>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-amber-100/90">
+                <li>上の「サーバー用コードをコピー」を押す</li>
+                <li>iPad などで script.google.com のプロジェクトを開き、コードをすべて消して貼り付け、保存</li>
+                <li>「デプロイ」→「デプロイを管理」→ 鉛筆マーク →「バージョン」で「新バージョン」→「デプロイ」(URL は変わりません)</li>
+              </ol>
+              <p className="mt-2 text-xs text-amber-100/70">更新しなくても今まで通り使えます。更新すると、1 分ごとの自動起動を待たずにすぐ解析が始まり、1 日の実行時間の上限も気にしなくてよくなります。</p>
+            </div>
+          )}
+          {version >= LATEST && <p className="mt-3 text-xs text-emerald-300">サーバーは最新版 (版 {version}) です。</p>}
           {message &&
             (message.ok ? (
               <p className="mt-3 rounded-lg border border-emerald-700/60 bg-emerald-900/20 p-3 text-sm text-emerald-300">{message.text}</p>

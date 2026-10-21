@@ -22,7 +22,7 @@ export class ServerError extends Error {}
 
 export async function callServer<T = Record<string, unknown>>(
   settings: Settings,
-  action: "config" | "enqueue" | "results" | "ack" | "cancel" | "status",
+  action: "config" | "enqueue" | "results" | "ack" | "cancel" | "status" | "kick",
   payload: Record<string, unknown> = {},
 ): Promise<T & { ok: true } & Partial<ServerCounts>> {
   if (!settings.bgUrl) throw new ServerError("サーバーの URL が未設定です");

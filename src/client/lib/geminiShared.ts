@@ -13,6 +13,26 @@ export const RESPONSE_SCHEMA = (() => {
   return s;
 })();
 
+// 文字を書き写すだけなので、AI の「考える時間」は短くして速度を優先する。
+// この設定に対応していないモデルだった場合は、端末に記録して以後は付けない。
+const NO_THINKING_KEY = "gemini-thinking-level-unsupported";
+
+export function thinkingLevelAllowed(): boolean {
+  try {
+    return localStorage.getItem(NO_THINKING_KEY) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+function markThinkingLevelUnsupported() {
+  try {
+    localStorage.setItem(NO_THINKING_KEY, "1");
+  } catch {
+    /* 保存できなくても、この回の再試行は付けずに送る */
+  }
+}
+
 export const userText = (mode: UploadMode) => `このスクリーンショットから武将情報を読み取り、JSON で返してください。${modeHint(mode)}`;
 
 /** REST API (generateContent) にそのまま送れる本文 */
@@ -31,6 +51,7 @@ export function buildGeminiBody(imageBase64: string, mode: UploadMode) {
       // 小さな文字まで読めるよう、画像を高解像度で解析させる
       mediaResolution: "MEDIA_RESOLUTION_HIGH",
       temperature: 0,
+      ...(thinkingLevelAllowed() ? { thinkingConfig: { thinkingLevel: "LOW" } } : {}),
     },
   };
 }
@@ -76,6 +97,11 @@ export function parseGeminiRestBody(body: string): OcrExtraction {
 
 /** Gemini の HTTP エラー (状態コードと本文) を、利用者向けの説明に直す */
 export function geminiHttpError(status: number, message: string, model: string): OcrError {
+  if (status === 400 && /thinking/i.test(message)) {
+    // 「考える時間」の設定に未対応のモデル: 設定を外してすぐやり直す (同時に送っていた他の依頼も同じく再試行)
+    markThinkingLevelUnsupported();
+    return new OcrError("AI の設定を調整して再試行します", true, 0);
+  }
   if (status === 400 && /API_KEY_INVALID|API key not valid/i.test(message)) {
     return new OcrError("Gemini の API キーが無効です。設定画面で確認してください", false);
   }

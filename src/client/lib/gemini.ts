@@ -1,8 +1,8 @@
-import { ApiError, GoogleGenAI, MediaResolution } from "@google/genai";
+import { ApiError, GoogleGenAI, MediaResolution, ThinkingLevel } from "@google/genai";
 import type { UploadMode } from "../../core/types.ts";
 import type { OcrExtraction } from "../../core/ocrSchema.ts";
 import { SYSTEM_PROMPT } from "../../core/prompt.ts";
-import { RESPONSE_SCHEMA, geminiHttpError, parseExtractionText, userText } from "./geminiShared.ts";
+import { RESPONSE_SCHEMA, geminiHttpError, parseExtractionText, thinkingLevelAllowed, userText } from "./geminiShared.ts";
 import { blobToBase64 } from "./images.ts";
 import { OcrError } from "./ocrCommon.ts";
 import type { Settings } from "./settings.ts";
@@ -48,6 +48,8 @@ export async function analyzeScreenshot(image: Blob, mode: UploadMode, settings:
         // 小さな文字まで読めるよう、画像を高解像度で解析させる
         mediaResolution: MediaResolution.MEDIA_RESOLUTION_HIGH,
         temperature: 0,
+        // 文字を書き写すだけなので「考える時間」を短くして速度を優先 (未対応モデルなら自動で外す)
+        ...(thinkingLevelAllowed() ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {}),
       },
     });
     const finish = res.candidates?.[0]?.finishReason;
