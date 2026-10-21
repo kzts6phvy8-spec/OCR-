@@ -6,6 +6,8 @@ export class OcrError extends Error {
     readonly retryable: boolean,
     /** 再試行までの待ち時間 (ミリ秒) */
     readonly retryAfterMs = 1500,
+    /** 利用回数の上限 (無料枠など) に達した: キュー全体を一時停止して待つ */
+    readonly rateLimited = false,
   ) {
     super(message);
   }

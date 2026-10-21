@@ -30,7 +30,7 @@ function toOcrError(err: unknown, settings: Settings): OcrError {
       ? new OcrError("API のクレジット残高が不足しています (Anthropic Console でチャージしてください)", false)
       : new OcrError(`リクエストが不正です: ${err.message}`, false);
   }
-  if (err instanceof Anthropic.RateLimitError) return new OcrError("利用上限に達しました。しばらく待って再試行してください", false);
+  if (err instanceof Anthropic.RateLimitError) return new OcrError("API の利用上限に達しました", false, 0, true);
   if (err instanceof Anthropic.APIConnectionTimeoutError) {
     return new OcrError(`AI の応答がタイムアウトしました (${TIMEOUT_MS / 1000} 秒 × ${MAX_RETRIES + 1} 回)`, false);
   }

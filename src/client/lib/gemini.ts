@@ -41,7 +41,7 @@ function toOcrError(err: unknown, settings: Settings): OcrError {
       return new OcrError(`この API キーでは Gemini を利用できません (権限エラー): ${msg.slice(0, 200)}`, false);
     }
     if (err.status === 404) return new OcrError(`モデル「${settings.geminiModel}」が見つかりません。設定の「接続テスト」で選び直してください`, false);
-    if (err.status === 429) return new OcrError("無料枠の利用上限に達しました。時間をおいて再試行してください", true, 30_000);
+    if (err.status === 429) return new OcrError("無料枠の利用上限に達しました", false, 0, true);
     if (err.status >= 500) return new OcrError(`Gemini 側のエラー (${err.status})。しばらくして再試行してください`, true, 5_000);
     return new OcrError(`Gemini API エラー (${err.status}): ${msg}`, false);
   }

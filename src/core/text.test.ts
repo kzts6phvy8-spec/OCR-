@@ -57,6 +57,10 @@ describe("warlordToText", () => {
       ].join("\n"),
     );
   });
+  it("値の無い能力は書かない", () => {
+    const text = warlordToText(w({ name: "武将A", attack_base: 90, attack_growth: "+2.0" }));
+    expect(text).toBe("武将名:武将A\n攻：90 （+2.0）");
+  });
   it("スキル名・特異・武器覚醒を書き出す", () => {
     const text = warlordToText(
       w({

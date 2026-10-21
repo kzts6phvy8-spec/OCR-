@@ -28,14 +28,33 @@ export const api = {
   },
 
   async deleteWarlord(id: string) {
-    const current = await db.getWarlord(id);
-    if (!current) return;
-    await db.deleteWarlord(id);
-    await db.removeUnreferencedImages(current.gallery_images);
+    await api.deleteWarlords([id]);
+  },
+
+  async deleteWarlords(ids: string[]) {
+    const images: string[] = [];
+    for (const id of ids) {
+      const current = await db.getWarlord(id);
+      if (!current) continue;
+      await db.deleteWarlord(id);
+      images.push(...current.gallery_images);
+    }
+    await db.removeUnreferencedImages(images);
+  },
+
+  /** 武将・画像・解析履歴をすべて消す (設定と API キーは残る) */
+  async deleteEverything() {
+    await db.deleteEverything();
+    queue.notifyQueueChange();
   },
 
   jobs: () => db.listJobs(),
   retryJob: (id: string) => queue.retryJob(id),
+  async retryAllFailed() {
+    const failed = (await db.listJobs()).filter((j) => j.status === "error").map((j) => j.id);
+    await queue.retryJobs(failed);
+    return failed.length;
+  },
 
   async clearFinishedJobs() {
     const failedImages = await db.deleteFinishedJobs();

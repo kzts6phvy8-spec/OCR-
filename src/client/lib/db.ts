@@ -96,6 +96,14 @@ export async function deleteAllWarlords() {
   await (await db()).clear("warlords");
 }
 
+/** 武将・画像・解析履歴をすべて消す (設定と API キーは残る) */
+export async function deleteEverything() {
+  const d = await db();
+  await d.clear("warlords");
+  await d.clear("images");
+  await d.clear("jobs");
+}
+
 export const repo: WarlordRepo = {
   get: getWarlord,
   find: findWarlord,

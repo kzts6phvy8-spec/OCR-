@@ -104,6 +104,8 @@ export interface OcrJob {
   merged: boolean;
   warnings: string[];
   attempts: number;
+  /** 解析を始めた時刻 (残り時間の目安に使う) */
+  started_at?: string | null;
   created_at: string;
   updated_at: string;
 }

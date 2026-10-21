@@ -1,9 +1,17 @@
-import { useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Clock, ImagePlus, Loader2, RotateCcw, ScanLine, XCircle } from "lucide-react";
 import { FACTIONS, type Faction, type OcrJob, type UploadMode, type Warlord } from "../../core/types.ts";
 import { api } from "../lib/api.ts";
+import { CONCURRENCY, getQueueState, resumeNow } from "../lib/queue.ts";
 import { useToast } from "../lib/toast.tsx";
 import { StoredImage } from "./StoredImage.tsx";
+
+function formatDuration(ms: number) {
+  const min = Math.round(ms / 60_000);
+  if (min < 1) return "1 分以内";
+  if (min < 60) return `${min} 分`;
+  return `${Math.floor(min / 60)} 時間 ${min % 60} 分`;
+}
 
 const isImage = (f: File) => f.type.startsWith("image/") || /\.(png|jpe?g|webp|heic|heif)$/i.test(f.name);
 
@@ -82,7 +90,31 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
     return jobs.filter((j) => Date.parse(j.created_at) >= since);
   }, [jobs, pending]);
   const batchDone = batch.filter((j) => j.status === "done" || j.status === "error").length;
-  const processing = jobs.find((j) => j.status === "processing");
+  const processing = jobs.filter((j) => j.status === "processing");
+  const failedCount = jobs.filter((j) => j.status === "error").length;
+  const [showFailedOnly, setShowFailedOnly] = useState(false);
+  const shownJobs = (showFailedOnly ? jobs.filter((j) => j.status === "error") : jobs).slice(0, 100);
+
+  // 利用上限による一時停止の残り時間 (1 秒ごとに表示を更新)
+  const [, setTick] = useState(0);
+  const qs = getQueueState();
+  useEffect(() => {
+    if (!qs.pausedUntil) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [qs.pausedUntil]);
+
+  // 残り時間の目安: 直近に終わったジョブの所要時間の平均から計算
+  const eta = useMemo(() => {
+    const recent = jobs
+      .filter((j) => j.status === "done" && j.started_at)
+      .slice(0, 20)
+      .map((j) => Date.parse(j.updated_at) - Date.parse(j.started_at!))
+      .filter((ms) => ms > 0);
+    if (recent.length === 0 || pending.length === 0) return null;
+    const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+    return (pending.length * avg) / CONCURRENCY;
+  }, [jobs, pending.length]);
 
   const retry = async (id: string) => {
     try {
@@ -111,6 +143,7 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
           アップロード & 自動OCR保存
         </h2>
         <p className="mx-auto mt-3 max-w-xl text-center text-sm leading-relaxed text-ash">
+          <span className="mb-1 block text-xs text-shu-300">大量にある場合は 100〜200 枚ずつに分けると、途中で止まっても扱いやすくなります</span>
           武将詳細画面のスクリーンショットを何枚でもまとめて選べます。同じ武将の写真・情報は 1 人に自動統合されます。通常武将と特異武将
           (同名) は別武将として保存されます。
         </p>
@@ -203,10 +236,25 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
           )}
         </div>
 
+        {qs.pausedUntil && (
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-900/20 p-3 text-xs text-amber-200">
+            <Clock className="size-4 shrink-0" />
+            <span className="flex-1">
+              {qs.pauseReason}。{Math.ceil((qs.pausedUntil - Date.now()) / 1000)} 秒後に自動で再開します
+              <span className="block text-[11px] text-amber-200/70">1 日の上限に達した場合は、翌日まで待つと再開できます (アプリは開いたままに)</span>
+            </span>
+            <button onClick={resumeNow} className="shrink-0 rounded-md border border-amber-400/60 px-2 py-1 font-bold">
+              今すぐ再開
+            </button>
+          </div>
+        )}
+
         {batch.length > 0 && (
           <div className="mb-4 rounded-lg border border-ebony-700 bg-ebony-900 p-3">
-            <div className="mb-1.5 flex justify-between text-xs">
-              <span className="truncate text-ash">{processing ? `解析中: ${processing.file_name}` : "待機中…"}</span>
+            <div className="mb-1.5 flex justify-between gap-2 text-xs">
+              <span className="truncate text-ash">
+                {processing.length ? `解析中: ${processing.map((j) => j.file_name).join("、")}` : "待機中…"}
+              </span>
               <span className="font-bold text-shu-300">
                 {batchDone} / {batch.length}
               </span>
@@ -217,6 +265,25 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
                 style={{ width: `${(batchDone / batch.length) * 100}%` }}
               />
             </div>
+            <p className="mt-1.5 text-[11px] text-ebony-500">
+              残り {pending.length} 枚{eta ? ` / 目安 約${formatDuration(eta)}` : ""}・解析中はアプリを開いたままにしてください
+            </p>
+          </div>
+        )}
+
+        {failedCount > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-hi-400">失敗 {failedCount} 枚</span>
+            <button
+              onClick={async () => toast("info", `${await api.retryAllFailed()} 枚を再解析します`)}
+              className="flex items-center gap-1 rounded-md border border-ebony-600 px-2 py-1 text-washi"
+            >
+              <RotateCcw className="size-3.5" /> 失敗をすべて再試行
+            </button>
+            <label className="ml-auto flex items-center gap-1 text-ash">
+              <input type="checkbox" checked={showFailedOnly} onChange={(e) => setShowFailedOnly(e.target.checked)} className="accent-hi-500" />
+              失敗だけ表示
+            </label>
           </div>
         )}
 
@@ -224,9 +291,12 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
           <div className="grid place-items-center py-10 text-sm text-ebony-500">まだ解析履歴はありません</div>
         ) : (
           <ul className="scroll-thin -mr-2 space-y-2 overflow-y-auto pr-2" style={{ maxHeight: "36rem" }}>
-            {jobs.map((job) => (
+            {shownJobs.map((job) => (
               <JobRow key={job.id} job={job} onRetry={retry} onOpen={onOpenWarlord} />
             ))}
+            {jobs.length > shownJobs.length && !showFailedOnly && (
+              <li className="py-2 text-center text-[11px] text-ebony-500">ほか {jobs.length - shownJobs.length} 件 (新しい 100 件を表示中)</li>
+            )}
           </ul>
         )}
       </section>
