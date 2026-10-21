@@ -13,6 +13,7 @@ import {
   type QueueState,
 } from "../lib/queue.ts";
 import { formatClock, formatReset, nextDailyReset } from "../lib/quota.ts";
+import { isStalled, lastProbe } from "../lib/probe.ts";
 import { bgActive, loadSettings } from "../lib/settings.ts";
 import { useToast } from "../lib/toast.tsx";
 import { StoredImage } from "./StoredImage.tsx";
@@ -566,18 +567,44 @@ function serverNotice(qs: QueueState, jobs: OcrJob[]): { tone: "limit" | "stuck"
       detail: `最後に動いたのは ${formatClock(s.lastRunAt)} です。iPad などで Apps Script のプロジェクトを開き、もう一度「setup」を実行して許可してください。`,
     };
   }
+  if (!isStalled(jobs, getLastResultAt())) return null;
   const oldest = Math.min(...remote.map((j) => Date.parse(j.updated_at)));
-  const stalledMin = (Date.now() - Math.max(getLastResultAt(), oldest)) / 60_000;
-  if (stalledMin > 10) {
-    return {
-      tone: "stuck",
-      title: `${Math.floor(stalledMin)} 分以上、新しい結果が届いていません`,
-      detail:
-        version < 3
-          ? "Gemini 無料枠の 1 日の上限に達している可能性があります。サーバーのコードを版 3 に更新すると、上限に達しているかどうかがここに表示されるようになります (設定 → バックグラウンド解析)。"
-          : "電波状況を確認して、↻ で結果を確認してください。",
-    };
+  const lastDone = Math.max(0, ...jobs.filter((j) => j.status === "done").map((j) => Date.parse(j.updated_at)));
+  const stalledMin = Math.floor((Date.now() - Math.max(getLastResultAt(), oldest, lastDone)) / 60_000);
+
+  // アプリから Gemini に確かめた結果 (版 2 以前のサーバーの時)
+  const probe = lastProbe();
+  if (probe && Date.now() - probe.at < 60 * 60_000) {
+    if (probe.status === "limit") {
+      return probe.daily
+        ? {
+            tone: "limit",
+            title: `Gemini 無料枠の 1 日の上限に達しています (${formatClock(probe.at)} に確認)`,
+            detail: `${formatReset(nextDailyReset())}に上限が戻り、サーバーが自動で続きを解析します。アプリは閉じていて大丈夫です。`,
+          }
+        : {
+            tone: "limit",
+            title: `Gemini 無料枠の 1 分あたりの上限に達しています (${formatClock(probe.at)} に確認)`,
+            detail: "少し待つと、サーバーが自動で続きを解析します。",
+          };
+    }
+    if (probe.status === "ok") {
+      return {
+        tone: "stuck",
+        title: `${stalledMin} 分以上、新しい結果が届いていません (Gemini の上限には達していません)`,
+        detail:
+          "Google 側 (Apps Script) の 1 日の実行時間の上限に達しているか、自動起動が止まっている可能性があります。実行時間の上限なら、1 日たつと自動で再開します。",
+      };
+    }
   }
+  return {
+    tone: "stuck",
+    title: `${stalledMin} 分以上、新しい結果が届いていません`,
+    detail:
+      version < 3
+        ? "Gemini 無料枠の上限に達しているか確認しています。しばらくするとここに結果が表示されます。"
+        : "電波状況を確認して、↻ で結果を確認してください。",
+  };
   return null;
 }
 

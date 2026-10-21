@@ -10,6 +10,7 @@ import { analyzeWithRetry } from "./analyze.ts";
 import { OcrError } from "./ocrCommon.ts";
 import { shrinkForGallery } from "./images.ts";
 import { nextDailyReset } from "./quota.ts";
+import { isStalled, probeIfNeeded } from "./probe.ts";
 
 // 画像を解析するキュー。AI への問い合わせは 2 枚同時に進め、保存 (同じ武将への統合) は 1 件ずつ順番に行う。
 // iPhone ではアプリを閉じる・画面を消すと処理が止まるため、処理中は画面消灯を防ぎ、戻ったら自動で再開する。
@@ -335,6 +336,10 @@ export async function pollServer() {
       }
     }
     if (serverCounts && serverCounts.pending > 0) kickServer();
+    // 版 2 以前のサーバーは止まっている理由を返さないので、止まっていればアプリから上限を確かめる
+    if (!serverCounts?.limit && serverVersion < 3 && isStalled(await db.listJobs(), lastResultAt)) {
+      await probeIfNeeded(settings);
+    }
   } catch (err) {
     serverError = err instanceof Error ? err.message : String(err);
   } finally {
