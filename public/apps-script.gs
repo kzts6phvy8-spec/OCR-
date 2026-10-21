@@ -10,9 +10,9 @@
  * Gemini の API キーと合言葉は、アプリの「接続テスト」で自動的に登録されます。
  */
 
-const VERSION = 1;
+const VERSION = 2;
 const FOLDER_NAME = "武将図鑑_解析キュー";
-const BATCH = 4; // 1 回の問い合わせで同時に送る枚数
+const BATCH = 8; // 1 回の問い合わせで同時に送る枚数
 const MAX_RUN_MS = 4.5 * 60 * 1000; // 1 回の起動で使う最大時間 (上限 6 分)
 const MAX_ATTEMPTS = 3; // サーバーエラー時の再試行回数
 
@@ -45,7 +45,7 @@ function doPost(e) {
       case "enqueue":
         return json(enqueue(req));
       case "results":
-        return json({ ok: true, results: takeResults(req.limit || 50), ...counts() });
+        return json({ ok: true, version: VERSION, results: takeResults(req.limit || 50), ...counts() });
       case "ack":
         trashByIds(req.ids || [], "result_");
         return json({ ok: true });
@@ -53,6 +53,11 @@ function doPost(e) {
         trashByIds(req.ids || [], "job_");
         return json({ ok: true });
       case "status":
+        return json({ ok: true, version: VERSION, ...counts() });
+      case "kick":
+        // アプリからの「すぐ解析を始めて」の合図。1 分ごとの自動起動を待たずに解析する
+        // (ウェブアプリとしての実行は、自動起動の 1 日の実行時間の上限にも数えられない)
+        processQueue();
         return json({ ok: true, version: VERSION, ...counts() });
       default:
         return json({ ok: false, error: "不明な操作です: " + req.action });
