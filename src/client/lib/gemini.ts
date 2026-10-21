@@ -1,4 +1,4 @@
-import { ApiError, GoogleGenAI } from "@google/genai";
+import { ApiError, GoogleGenAI, MediaResolution } from "@google/genai";
 import { z } from "zod";
 import type { UploadMode } from "../../core/types.ts";
 import { OcrExtractionSchema, type OcrExtraction } from "../../core/ocrSchema.ts";
@@ -72,6 +72,8 @@ export async function analyzeScreenshot(image: Blob, mode: UploadMode, settings:
         systemInstruction: SYSTEM_PROMPT,
         responseMimeType: "application/json",
         responseJsonSchema: RESPONSE_SCHEMA,
+        // 小さな文字まで読めるよう、画像を高解像度で解析させる
+        mediaResolution: MediaResolution.MEDIA_RESOLUTION_HIGH,
         temperature: 0,
       },
     });

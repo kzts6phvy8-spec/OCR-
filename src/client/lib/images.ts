@@ -1,6 +1,7 @@
 // 画像の前処理 (端末内で縮小・JPEG 化してから保存・送信する)
 
-const MAX_EDGE = 2000;
+// 長辺 3072px まで残す (ゲーム画面の小さな文字をつぶさないため)
+const MAX_EDGE = 3072;
 
 async function decode(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
   try {
@@ -19,7 +20,7 @@ async function decode(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
   }
 }
 
-/** 長辺 2000px 以内の JPEG に変換する。API の画像サイズ上限と端末の保存容量の両方に効く */
+/** 長辺 3072px 以内の JPEG に変換する。API の画像サイズ上限と端末の保存容量の両方に効く */
 export async function compressImage(file: Blob): Promise<Blob> {
   const src = await decode(file);
   const w = "naturalWidth" in src ? src.naturalWidth : src.width;
@@ -33,7 +34,7 @@ export async function compressImage(file: Blob): Promise<Blob> {
   if (!ctx) throw new Error("画像を処理できませんでした");
   ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
   if ("close" in src) src.close();
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95));
   canvas.width = canvas.height = 0; // iOS のキャンバスメモリを早めに解放
   if (!blob) throw new Error("画像を変換できませんでした");
   return blob;
