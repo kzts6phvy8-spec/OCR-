@@ -6,6 +6,7 @@ import {
   mergeWarlord,
   normalizeFaction,
   normalizeName,
+  normalizePriority,
   splitAwakeningName,
 } from "./domain.ts";
 import { makeExtraction } from "./testUtils.ts";
@@ -55,6 +56,22 @@ describe("extractionToPatch", () => {
     expect(patch.awakening_priority).toBe("極高");
     expect(patch.has_weapon_awakening).toBeUndefined();
     expect(patch.awakening_after_weapon).toBeUndefined();
+  });
+  it("発動優先度を「甲・1」の形にそろえる", () => {
+    expect(normalizePriority("丁·4")).toBe("丁・4");
+    expect(normalizePriority("（癸・10）")).toBe("癸・10");
+    expect(normalizePriority("壬9")).toBe("壬・9");
+    expect(normalizePriority("乙")).toBe("乙・2");
+    expect(normalizePriority("3")).toBe("丙・3");
+    expect(normalizePriority("低")).toBe("低");
+    expect(normalizePriority("11")).toBe("");
+    expect(normalizePriority("不明")).toBe("");
+    expect(splitAwakeningName("覚醒B（戊·5）")).toEqual({ name: "覚醒B", priority: "戊・5" });
+    expect(splitAwakeningName("覚醒C(特別)")).toEqual({ name: "覚醒C(特別)", priority: "" });
+    const old = { ...emptyWarlordInput(), name: "武将A", awakening_priority: "低" };
+    const { merged, warnings } = mergeWarlord(old, { awakening_priority: "丁・4" });
+    expect(merged.awakening_priority).toBe("丁・4");
+    expect(warnings).toEqual([]);
   });
   it("成長率に符号を付ける", () => {
     const patch = extractionToPatch(makeExtraction({ attack: { base: 120, growth: "2.6" } }));

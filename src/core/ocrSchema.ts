@@ -47,7 +47,7 @@ export const OcrExtractionSchema = z.object({
   awakening: z.object({
     visible: z.boolean().describe("覚醒スキルの情報が画面に写っている場合 true"),
     skill_name: nullableString("覚醒スキル名 (優先度の括弧書きは除く)"),
-    priority: nullableString("覚醒優先度: 極高 / 高 / 中 / 低"),
+    priority: nullableString("覚醒スキルの発動優先度。十干と数字の組 (甲·1 / 乙·2 / … / 癸·10)。古い画面なら 極高 / 高 / 中 / 低"),
     before_weapon_effect: nullableString("通常の (武器覚醒前の) 覚醒スキル効果の全文"),
     weapon_awakening_visible: z
       .boolean()

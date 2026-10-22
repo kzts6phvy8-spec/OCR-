@@ -617,7 +617,7 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
           <Field label="優先度">
             <select className="field" value={draft.awakening_priority} onChange={(e) => set("awakening_priority", e.target.value)}>
               <option value="">—</option>
-              {AWAKENING_PRIORITIES.map((p) => (
+              {[...AWAKENING_PRIORITIES, ...(draft.awakening_priority && !AWAKENING_PRIORITIES.includes(draft.awakening_priority) ? [draft.awakening_priority] : [])].map((p) => (
                 <option key={p}>{p}</option>
               ))}
             </select>
