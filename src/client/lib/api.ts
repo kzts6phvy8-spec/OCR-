@@ -98,6 +98,14 @@ export const api = {
     return queue.enqueue(stored, opts.mode, opts.targetId, opts.faction);
   },
 
+  /** この武将に登録済みの画像を、もう一度解析してこの武将に統合する (空欄の補完用) */
+  async reanalyzeWarlord(id: string): Promise<OcrJob[]> {
+    const w = await db.getWarlord(id);
+    if (!w || w.gallery_images.length === 0) return [];
+    const images = w.gallery_images.map((imageId, i) => ({ fileName: `${w.name} の画像${i + 1} (再解析)`, imageId }));
+    return queue.enqueue(images, "auto", id, "");
+  },
+
   async exportText(): Promise<Blob> {
     const list = (await db.listWarlords()).sort((a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
     return new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" });

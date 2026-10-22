@@ -2,6 +2,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   Camera,
   ChevronLeft,
+  ImagePlus,
+  Loader2,
+  RotateCcw,
   Copy,
   ChevronRight,
   Lock,
@@ -19,6 +22,7 @@ import {
   AWAKENING_PRIORITIES,
   FACTIONS,
   RARITIES,
+  isPending,
   type Talent,
   type Warlord,
   type WarlordInput,
@@ -28,6 +32,7 @@ import { useToast } from "../lib/toast.tsx";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { warlordToText } from "../../core/text.ts";
 import { StoredImage } from "./StoredImage.tsx";
+import { onQueueChange } from "../lib/queue.ts";
 
 const EMPTY: WarlordInput = {
   name: "",
@@ -103,6 +108,39 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [lightbox, onClose]);
+
+  // この武将に統合する解析 (スクショ追加・再解析) の残り枚数
+  const [pendingCount, setPendingCount] = useState(0);
+  useEffect(() => {
+    if (!warlord) return;
+    const refresh = () =>
+      void api.jobs().then((jobs) => setPendingCount(jobs.filter((j) => j.target_id === warlord.id && isPending(j.status)).length));
+    refresh();
+    const off = onQueueChange(refresh);
+    return () => void off();
+  }, [warlord?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [adding, setAdding] = useState(false);
+  const addScreenshots = async (files: FileList | null) => {
+    if (!warlord || !files) return;
+    const images = Array.from(files).filter((f) => f.type.startsWith("image/") || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name));
+    if (images.length === 0) return;
+    setAdding(true);
+    try {
+      const jobs = await api.upload(images, { mode: "auto", targetId: warlord.id, faction: "" }, () => {});
+      toast("info", `${jobs.length} 枚を「${warlord.name}」に統合するよう解析します`, "空欄の項目だけが埋まります。すでに入っている値は変わりません");
+    } catch (e) {
+      toast("error", "画像の読み込みに失敗しました", (e as Error).message);
+    } finally {
+      setAdding(false);
+    }
+  };
+  const reanalyze = async () => {
+    if (!warlord) return;
+    if (!confirm(`登録済みの ${warlord.gallery_images.length} 枚を、もう一度解析して「${warlord.name}」に統合しますか？\n空欄の項目だけが埋まります。`)) return;
+    const jobs = await api.reanalyzeWarlord(warlord.id);
+    toast("info", `${jobs.length} 枚を再解析します`, "進み具合は「スクショ解析」タブでも見られます");
+  };
 
   const counterpart = warlord
     ? allWarlords.find((w) => w.name === warlord.name && w.is_special !== warlord.is_special)
@@ -215,6 +253,34 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                     <Camera className="size-4" /> {view.screenshot_count}枚統合
                   </span>
                   {view.title_alias && <span className="rounded-full border border-ebony-600 px-3 py-1 text-gold-400">「{view.title_alias}」</span>}
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-sm">
+                  <label
+                    className={`flex cursor-pointer items-center gap-1.5 rounded-lg bg-gradient-to-b from-shu-400 to-shu-600 px-3 py-1.5 font-bold text-white ${adding ? "opacity-50" : ""}`}
+                  >
+                    {adding ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />} スクショを追加して統合
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      hidden
+                      disabled={adding}
+                      onChange={(e) => {
+                        void addScreenshots(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {view.gallery_images.length > 0 && (
+                    <button onClick={reanalyze} className="flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-ash hover:text-washi">
+                      <RotateCcw className="size-4" /> 登録画像を再解析
+                    </button>
+                  )}
+                  {pendingCount > 0 && (
+                    <span className="flex items-center gap-1.5 text-xs text-gold-300">
+                      <Loader2 className="size-3.5 animate-spin" /> この武将に統合する解析が残り {pendingCount} 枚
+                    </span>
+                  )}
                 </div>
               </>
             ) : (
