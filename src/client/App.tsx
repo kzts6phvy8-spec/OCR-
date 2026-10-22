@@ -101,6 +101,19 @@ export default function App() {
   }, [refreshWarlords, toast]);
 
   useEffect(() => {
+    // 古い表記の優先度を、覚醒スキルの発動条件から新しい表記 (甲・1 など) に直す
+    void api.fillPriorities().then(({ updated, unmatched }) => {
+      if (updated === 0) return;
+      toast(
+        "success",
+        `${updated} 人の覚醒スキルの優先度を、発動条件から新しい表記に直しました`,
+        unmatched ? `発動条件が一覧に無かった ${unmatched} 人は、そのままです (武将の編集画面で直せます)` : undefined,
+      );
+      void refreshWarlords();
+    });
+  }, [refreshWarlords, toast]);
+
+  useEffect(() => {
     void refreshWarlords();
     void refreshJobs().then(() => resumeQueue());
     const offQueue = onQueueChange(() => void refreshJobs());
