@@ -28,6 +28,8 @@ export const CLAUDE_MODELS = [
 
 /** Google が常に最新の Flash モデルを指すように用意している名前 */
 export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest";
+/** 最新の Flash-Lite。無料枠の 1 日の回数が Flash よりずっと多い (Flash 約 20 回・Flash-Lite 約 500 回) */
+export const LITE_GEMINI_MODEL = "gemini-flash-lite-latest";
 
 const KEY = "sengoku-fubu-settings";
 const DEFAULTS: Settings = {
@@ -77,6 +79,11 @@ export const hasActiveKey = (s: Settings) => Boolean(s.provider === "claude" ? s
 export const activeModelLabel = (s: Settings) => (s.provider === "claude" ? `Claude / ${s.model}` : `Gemini / ${s.geminiModel}`);
 
 const listeners = new Set<(s: Settings) => void>();
+/** Gemini のモデルだけを切り替えて保存する */
+export function setGeminiModel(model: string) {
+  saveSettings({ ...loadSettings(), geminiModel: model });
+}
+
 export function onSettingsChange(fn: (s: Settings) => void) {
   listeners.add(fn);
   return () => listeners.delete(fn);

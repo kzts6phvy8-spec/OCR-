@@ -14,7 +14,7 @@ import {
 } from "../lib/queue.ts";
 import { formatClock, formatReset, nextDailyReset } from "../lib/quota.ts";
 import { isStalled, lastProbe } from "../lib/probe.ts";
-import { bgActive, loadSettings } from "../lib/settings.ts";
+import { LITE_GEMINI_MODEL, bgActive, loadSettings, setGeminiModel } from "../lib/settings.ts";
 import { useToast } from "../lib/toast.tsx";
 import { StoredImage } from "./StoredImage.tsx";
 
@@ -270,9 +270,21 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
                 アプリを閉じても、次に開いた時に続きから再開します。急ぐ時は「今すぐ再開」で試せます
               </span>
             </span>
-            <button onClick={resumeNow} className="shrink-0 rounded-md border border-amber-400/60 px-2 py-1 font-bold">
-              今すぐ再開
-            </button>
+            {qs.pausedUntil - Date.now() > 120_000 && loadSettings().provider === "gemini" && loadSettings().geminiModel !== LITE_GEMINI_MODEL ? (
+              <button
+                onClick={() => {
+                  setGeminiModel(LITE_GEMINI_MODEL);
+                  resumeNow();
+                }}
+                className="shrink-0 rounded-md border border-amber-400/60 px-2 py-1 font-bold"
+              >
+                Flash-Lite で続ける
+              </button>
+            ) : (
+              <button onClick={resumeNow} className="shrink-0 rounded-md border border-amber-400/60 px-2 py-1 font-bold">
+                今すぐ再開
+              </button>
+            )}
           </div>
         )}
 
@@ -556,7 +568,7 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
 }
 
 /** サーバーで止まっている理由 (無料枠の上限・自動起動の停止など) を分かる範囲で表示する */
-function serverNotice(qs: QueueState, jobs: OcrJob[]): { tone: "limit" | "stuck"; title: string; detail: string } | null {
+function serverNotice(qs: QueueState, jobs: OcrJob[]): { tone: "limit" | "stuck"; title: string; detail: string; daily?: boolean } | null {
   const remote = jobs.filter((j) => j.status === "remote");
   if (remote.length === 0) return null;
   const s = qs.server;
@@ -564,6 +576,7 @@ function serverNotice(qs: QueueState, jobs: OcrJob[]): { tone: "limit" | "stuck"
     return s.limit.daily
       ? {
           tone: "limit",
+          daily: true,
           title: `Gemini 無料枠の 1 日の上限に達しています (${formatClock(s.limit.at)} 時点)`,
           detail: `${formatReset(nextDailyReset())}に上限が戻り、サーバーが自動で続きを解析します。アプリは閉じていて大丈夫です。`,
         }
@@ -596,6 +609,7 @@ function serverNotice(qs: QueueState, jobs: OcrJob[]): { tone: "limit" | "stuck"
       return probe.daily
         ? {
             tone: "limit",
+            daily: true,
             title: `Gemini 無料枠の 1 日の上限に達しています (${formatClock(probe.at)} に確認)`,
             detail: `${formatReset(nextDailyReset())}に上限が戻り、サーバーが自動で続きを解析します。アプリは閉じていて大丈夫です。`,
           }
@@ -635,6 +649,17 @@ function ServerNotice({ qs, jobs }: { qs: QueueState; jobs: OcrJob[] }) {
     const moved = await api.takeOverRemoteJobs();
     toast("info", `${moved} 枚をこの iPhone で解析します`, "終わるまでアプリを開いたままにしてください");
   };
+  const canSwitch = n.daily && loadSettings().provider === "gemini" && loadSettings().geminiModel !== LITE_GEMINI_MODEL;
+  const switchToLite = async () => {
+    if (!confirm(`AI モデルを Flash-Lite (無料で 1 日 約 500 枚) に切り替えて、解析待ちの ${remoteCount} 枚を送り直しますか？\n送り終わるまでアプリを開いたままにしてください。モデルは設定画面でいつでも戻せます。`)) return;
+    setGeminiModel(LITE_GEMINI_MODEL);
+    try {
+      const sent = await api.resendRemoteJobs();
+      toast("success", `Flash-Lite に切り替えました。${sent} 枚を送り直します`, "送信完了の表示が出たらアプリを閉じて大丈夫です");
+    } catch (e) {
+      toast("error", "送り直せませんでした", (e as Error).message);
+    }
+  };
   return (
     <div
       className={`mb-4 flex items-start gap-3 rounded-xl border p-3 ${
@@ -648,6 +673,11 @@ function ServerNotice({ qs, jobs }: { qs: QueueState; jobs: OcrJob[] }) {
         {n.tone === "stuck" && (
           <button onClick={takeOver} className="mt-2 rounded-lg border border-current px-3 py-1.5 text-xs font-bold">
             待たずに、この iPhone で解析する ({remoteCount} 枚)
+          </button>
+        )}
+        {canSwitch && (
+          <button onClick={switchToLite} className="mt-2 block rounded-lg border border-current px-3 py-1.5 text-xs font-bold">
+            Flash-Lite に切り替えて今すぐ続ける (1 日 約 500 枚)
           </button>
         )}
       </div>
