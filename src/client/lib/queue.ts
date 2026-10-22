@@ -436,6 +436,22 @@ export async function takeOverRemoteJobs() {
   return remote.length;
 }
 
+/**
+ * サーバーで解析待ちの依頼を取り消し、今の設定のモデルで送り直す。
+ * 依頼にはモデルが書き込まれているので、モデルを切り替えた後は送り直さないと新しいモデルで解析されない。
+ */
+export async function resendRemoteJobs() {
+  const settings = loadSettings();
+  const remote = (await db.listJobs()).filter((j) => j.status === "remote");
+  if (remote.length === 0 || !bgActive(settings)) return 0;
+  await callServer(settings, "cancel", { ids: remote.map((j) => j.id) });
+  for (const job of remote) {
+    await db.saveJob({ ...job, status: "queued", local: false, attempts: 0, updated_at: new Date().toISOString() });
+  }
+  resumeNow();
+  return remote.length;
+}
+
 /** 待機中・サーバーで解析待ち・失敗のジョブを取り除く (解析中のものは取り除けない) */
 export async function removeJobs(ids: string[]) {
   const settings = loadSettings();

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Cloud, Copy, Eye, EyeOff, HardDrive, KeyRound, Loader2, Share, Smartphone, SquarePlus } from "lucide-react";
-import { CLAUDE_MODELS, DEFAULT_GEMINI_MODEL, newToken, saveSettings, type Settings } from "../lib/settings.ts";
+import { CLAUDE_MODELS, DEFAULT_GEMINI_MODEL, LITE_GEMINI_MODEL, newToken, saveSettings, type Settings } from "../lib/settings.ts";
 import { callServer } from "../lib/remote.ts";
 import { getServerVersion, refreshServerStatus } from "../lib/queue.ts";
 import { useToast } from "../lib/toast.tsx";
@@ -156,13 +156,18 @@ export function SettingsPanel({ settings }: { settings: Settings }) {
             <label className="mt-4 block">
               <span className="mb-1 block text-xs font-bold tracking-wider text-ash">AI モデル</span>
               <select className="field" value={draft.geminiModel} onChange={(e) => setDraft({ ...draft, geminiModel: e.target.value })}>
-                {[...new Set([DEFAULT_GEMINI_MODEL, draft.geminiModel, ...draft.geminiModels])].map((m) => (
+                {[...new Set([DEFAULT_GEMINI_MODEL, LITE_GEMINI_MODEL, draft.geminiModel, ...draft.geminiModels])].map((m) => (
                   <option key={m} value={m}>
-                    {m === DEFAULT_GEMINI_MODEL ? `${m} (最新の Flash・おすすめ)` : m}
+                    {m === DEFAULT_GEMINI_MODEL
+                      ? `${m} (高精度・無料は 1 日 約 20 枚)`
+                      : m === LITE_GEMINI_MODEL
+                        ? `${m} (大量向け・無料は 1 日 約 500 枚)`
+                        : m}
                   </option>
                 ))}
               </select>
-              <span className="mt-1 block text-[11px] text-ebony-500">「接続テスト」を押すと、このキーで使えるモデルが一覧に追加されます。Pro 系は無料枠外のことがあります</span>
+              <span className="mt-1 block text-[11px] text-ebony-500">無料枠の 1 日の回数はモデルごとに別々です。たくさん解析する時は Flash-Lite がおすすめです。
+                「接続テスト」を押すと、このキーで使えるモデルが一覧に追加されます。Pro 系は無料枠外のことがあります</span>
             </label>
           </>
         ) : (
