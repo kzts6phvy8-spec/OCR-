@@ -1,3 +1,4 @@
+import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
 import { normalizeInput } from "../../core/domain.ts";
@@ -25,6 +26,23 @@ export const api = {
     const updated = await db.updateWarlord(id, record);
     await db.removeUnreferencedImages(current.gallery_images.filter((g) => !updated.gallery_images.includes(g)));
     return updated;
+  },
+
+  /**
+   * 優先度が無い・古い表記 (極高 など) の武将に、覚醒スキルの発動条件から新しい表記の優先度を入れる。
+   * 起動時に呼ぶ。直した件数と、条件が一覧に無くて直せなかった件数を返す。
+   */
+  async fillPriorities(): Promise<{ updated: number; unmatched: number }> {
+    let updated = 0;
+    let unmatched = 0;
+    for (const w of await db.listWarlords()) {
+      const record = normalizeInput(toInput(w));
+      if (record.awakening_priority !== w.awakening_priority) {
+        await db.updateWarlord(w.id, record);
+        updated++;
+      } else if (record.has_awakening && !AWAKENING_PRIORITIES.includes(record.awakening_priority)) unmatched++;
+    }
+    return { updated, unmatched };
   },
 
   async deleteWarlord(id: string) {

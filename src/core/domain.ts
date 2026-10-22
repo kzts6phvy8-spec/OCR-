@@ -15,6 +15,7 @@ import {
   type Warlord,
   type WarlordInput,
 } from "./types.ts";
+import { inferPriorityFromCondition } from "./priorityRules.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
 
 const SPECIAL_MARKER_RE = /【\s*特\s*】/g;
@@ -440,6 +441,11 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     gallery_images: gallery,
   };
   if (out.has_weapon_awakening || out.awakening_after_weapon || out.awakening_skill_name) out.has_awakening = true;
+  // 優先度が無い・古い表記 (極高 など) の時は、覚醒スキルの発動条件から一覧表で判断する
+  if (!AWAKENING_PRIORITIES.includes(out.awakening_priority)) {
+    const inferred = inferPriorityFromCondition(out.awakening_before_weapon || out.awakening_after_weapon);
+    if (inferred) out.awakening_priority = inferred;
+  }
   return out;
 }
 

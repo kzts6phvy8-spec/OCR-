@@ -5,6 +5,7 @@ import {
   extractionToPatch,
   mergeWarlord,
   normalizeFaction,
+  normalizeInput,
   normalizeName,
   normalizePriority,
   splitAwakeningName,
@@ -72,6 +73,20 @@ describe("extractionToPatch", () => {
     const { merged, warnings } = mergeWarlord(old, { awakening_priority: "丁・4" });
     expect(merged.awakening_priority).toBe("丁・4");
     expect(warnings).toEqual([]);
+  });
+  it("優先度が無い・古い表記なら覚醒スキルの発動条件から判断する", () => {
+    const make = (awakening_priority: string, awakening_before_weapon: string) =>
+      normalizeInput({ name: "武将A", has_awakening: true, awakening_priority, awakening_before_weapon }).awakening_priority;
+    expect(make("低", "戦闘進入時、自身の攻+20%")).toBe("甲・1");
+    expect(make("", "敵部隊が撃破された後、自身の兵力を回復")).toBe("乙・2");
+    expect(make("高", "撃破された後、味方全体に防壁")).toBe("甲・1");
+    expect(make("中", "味方部隊（自身を除く）の通常攻撃が終了した後、追撃する")).toBe("辛・8");
+    expect(make("", "自身が行動した後(覚醒&突破スキル・重撃による行動を除く)、…")).toBe("丁・4");
+    expect(make("極高", "通常攻撃or奥義スキルで相手の兵力を55%以下に減らせると、…")).toBe("戊・5");
+    expect(make("", "【覚醒】敵が覚醒スキルを2回発動する度に、…")).toBe("癸・10");
+    // 一覧に無い条件はそのまま、新しい表記はそのまま
+    expect(make("低", "よくわからない条件で、…")).toBe("低");
+    expect(make("壬・9", "戦闘進入時、…")).toBe("壬・9");
   });
   it("成長率に符号を付ける", () => {
     const patch = extractionToPatch(makeExtraction({ attack: { base: 120, growth: "2.6" } }));
