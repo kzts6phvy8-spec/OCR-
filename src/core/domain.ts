@@ -4,6 +4,8 @@
 import {
   AWAKENING_PRIORITIES,
   FACTIONS,
+  LEGACY_AWAKENING_PRIORITIES,
+  PRIORITY_STEMS,
   RARITIES,
   type Faction,
   type Rarity,
@@ -102,19 +104,30 @@ export function normalizeFaction(value: string | null | undefined): Faction | ""
   return FACTION_ALIASES[v] ?? "";
 }
 
+/**
+ * 発動優先度を「甲・1」〜「癸・10」の形にそろえる。
+ * 「甲·1」「甲1」「甲」「1」などの書き方も受け付ける (十干と数字は一対一なので片方から補う)。
+ * アップデート前の「極高 / 高 / 中 / 低」は、保存済みのデータのためにそのまま残す。
+ */
 export function normalizePriority(value: string | null | undefined): string {
-  const v = (value ?? "").normalize("NFKC").replace(/[\s()（）優先度]/g, "");
-  return (AWAKENING_PRIORITIES as readonly string[]).includes(v) ? v : "";
+  const v = (value ?? "").normalize("NFKC").replace(/[\s()（）]|発動|優先度/g, "");
+  if (!v) return "";
+  if ((LEGACY_AWAKENING_PRIORITIES as readonly string[]).includes(v)) return v;
+  const m = v.match(/^([甲乙丙丁戊己庚辛壬癸])?[・·‧･.\-]?(\d{1,2})?$/);
+  if (!m || (!m[1] && !m[2])) return "";
+  const index = m[1] ? PRIORITY_STEMS.indexOf(m[1] as (typeof PRIORITY_STEMS)[number]) : Number(m[2]) - 1;
+  return AWAKENING_PRIORITIES[index] ?? "";
 }
 
-/** 覚醒スキル名から「(極高)」などの優先度表記を分離する */
+/** 覚醒スキル名から「(甲·1)」「(極高)」などの優先度表記を分離する */
 export function splitAwakeningName(raw: string | null | undefined): {
   name: string;
   priority: string;
 } {
   const text = (raw ?? "").normalize("NFKC").trim();
-  const m = text.match(/^(.*?)[(（]\s*(極高|高|中|低)\s*[)）]\s*$/);
-  if (m) return { name: m[1].trim(), priority: m[2] };
+  const m = text.match(/^(.*?)[(（]\s*([^()（）]+?)\s*[)）]\s*$/);
+  const priority = m ? normalizePriority(m[2]) : "";
+  if (m && priority) return { name: m[1].trim(), priority };
   return { name: text, priority: "" };
 }
 
@@ -322,6 +335,14 @@ export function mergeWarlord(
     gallery_images: [...existing.gallery_images],
   };
   const warnings: string[] = [];
+
+  // アップデート前の優先度表記 (極高 など) は、新しい表記 (甲・1 など) が読めたら置き換える
+  if (
+    (LEGACY_AWAKENING_PRIORITIES as readonly string[]).includes(merged.awakening_priority) &&
+    AWAKENING_PRIORITIES.includes(patch.awakening_priority ?? "")
+  ) {
+    merged.awakening_priority = patch.awakening_priority!;
+  }
 
   for (const key of STABLE_TEXT_FIELDS) {
     const next = patch[key];

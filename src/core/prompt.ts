@@ -16,7 +16,7 @@ export const SYSTEM_PROMPT = `あなたはスマホゲーム『戦国布武～�
 - rarity: SSR / SR / R / N / SP のアイコンや表記。
 - 成長値: 「成長値」「成長」の合計値を growth_total に (例 "9")。攻・防・計・兵それぞれの基礎数値を base、括弧内の成長率を growth に (例: 攻 92 (+2.3) → base 92, growth "+2.3")。攻/防/計/兵の対応を取り違えない。
 - skill (奥義スキル): 見出しや表記にある奥義ゲージの数を gauge に。スキル名が別に表示されていれば name、効果の文章を desc に。スキル名と効果文を混同しない。
-- awakening (覚醒スキル): 「覚醒スキル (低)」のような括弧内の 極高 / 高 / 中 / 低 を priority に。覚醒スキル名が表示されていれば skill_name (優先度の括弧書きは除く)、効果の文章を before_weapon_effect に。
+- awakening (覚醒スキル): 発動優先度を priority に。優先度は「甲·1」「丁·4」「癸·10」のような十干と数字の組 (甲·1 〜 癸·10) で、表示どおり書き写す (古い画面の 極高 / 高 / 中 / 低 ならそのまま)。覚醒スキル名が表示されていれば skill_name (優先度の括弧書きは除く)、効果の文章を before_weapon_effect に。
 - talents (天賦): 星1〜星5 それぞれ 1 件。天賦に名前が無く「物理防御+50%」のように効果だけの場合は name を空文字にし、effect に効果をそのまま書く (例: star_level 1, name "", effect "物理防御+50%")。鍵マーク・グレーアウトなど未解放なら unlocked=false。
 - troop_type / troop_variants (兵種): 選択できる兵種名をすべて troop_variants に、表示順のまま入れる。選択中 (強調表示) のものがわかれば troop_type に。
 - synergy_skills (連携スキル): 1 行ごとに 1 件。partner はこの武将以外の連携相手の武将名 (複数なら「、」区切り)。effect には条件を含む文章を全文そのまま書く (例: 「〇〇、△△が同時に場内にいる場合、計略防御+20%」)。

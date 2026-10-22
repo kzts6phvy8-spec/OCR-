@@ -16,7 +16,12 @@ export const FACTIONS = [
 ] as const;
 export type Faction = (typeof FACTIONS)[number];
 
-export const AWAKENING_PRIORITIES = ["極高", "高", "中", "低"] as const;
+/** 覚醒・突破スキルの発動優先度の十干 (甲 が最も早い)。数字は十干の順番と同じ (甲・1 〜 癸・10) */
+export const PRIORITY_STEMS = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"] as const;
+/** 発動優先度 (ゲームのアップデート後の表記)。「甲・1」〜「癸・10」 */
+export const AWAKENING_PRIORITIES = PRIORITY_STEMS.map((s, i) => `${s}・${i + 1}`);
+/** アップデート前の表記。保存済みのデータのためだけに残す */
+export const LEGACY_AWAKENING_PRIORITIES = ["極高", "高", "中", "低"] as const;
 
 export interface Talent {
   star_level: number;
