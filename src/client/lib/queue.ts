@@ -11,6 +11,7 @@ import { OcrError } from "./ocrCommon.ts";
 import { shrinkForGallery } from "./images.ts";
 import { nextDailyReset } from "./quota.ts";
 import { isStalled, probeIfNeeded } from "./probe.ts";
+import { visualMatcher } from "./visual.ts";
 
 // 画像を解析するキュー。AI への問い合わせは 2 枚同時に進め、保存 (同じ武将への統合) は 1 件ずつ順番に行う。
 // iPhone ではアプリを閉じる・画面を消すと処理が止まるため、処理中は画面消灯を防ぎ、戻ったら自動で再開する。
@@ -223,6 +224,7 @@ async function processJob(job: OcrJob) {
         targetId: job.target_id,
         imageId: job.image_id,
         faction: job.faction ?? "",
+        matchVisual: visualMatcher(job.image_id),
       }),
     );
     // 解析が終わった画像は保存用の大きさに縮めて容量を節約する
@@ -368,6 +370,7 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
         targetId: job.target_id,
         imageId: job.image_id,
         faction: job.faction ?? "",
+        matchVisual: visualMatcher(job.image_id),
       }),
     );
     await shrinkStoredImage(job.image_id);

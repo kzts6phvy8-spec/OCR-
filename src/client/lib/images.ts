@@ -61,3 +61,24 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
 export async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   return (await fetch(dataUrl)).blob();
 }
+
+/** 画面の左側 (武将の立ち絵がある所) だけを切り出す。立ち絵の見比べに使うので小さくてよい */
+export async function cropLeft(blob: Blob, ratio = 0.45, maxEdge = 640): Promise<Blob> {
+  const src = await decode(blob);
+  const w = "naturalWidth" in src ? src.naturalWidth : src.width;
+  const h = "naturalHeight" in src ? src.naturalHeight : src.height;
+  if (!w || !h) throw new Error("画像を読み込めませんでした");
+  const cw = Math.round(w * ratio);
+  const scale = Math.min(1, maxEdge / Math.max(cw, h));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(cw * scale);
+  canvas.height = Math.round(h * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("画像を処理できませんでした");
+  ctx.drawImage(src, 0, 0, cw, h, 0, 0, canvas.width, canvas.height);
+  if ("close" in src) src.close();
+  const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  canvas.width = canvas.height = 0;
+  if (!out) throw new Error("画像を変換できませんでした");
+  return out;
+}
