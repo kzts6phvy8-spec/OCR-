@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, CheckSquare, Images, LayoutGrid, List, Plus, ScanLine, Search, SlidersHorizontal, Trash2, UserRound } from "lucide-react";
+import { Check, CheckSquare, CircleDashed, Images, LayoutGrid, List, Plus, ScanLine, Search, SlidersHorizontal, Trash2, UserRound } from "lucide-react";
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
 import { FACTIONS, RARITIES, type Warlord } from "../../core/types.ts";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { StoredImage } from "./StoredImage.tsx";
+import { MISSING_FIELDS, hasAnyMissing, missingLabels } from "../../core/missing.ts";
 
 type SpecialFilter = "all" | "normal" | "special";
 type SortKey = "growth" | "created" | "name" | "faction";
@@ -55,6 +56,8 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
   const [rarities, setRarities] = useState<string[]>([]);
   const [special, setSpecial] = useState<SpecialFilter>("all");
   const [weaponOnly, setWeaponOnly] = useState(false);
+  /** 未入力の項目で絞り込み ("" = しない / "any" = どれか 1 つでも / 項目の id) */
+  const [missing, setMissing] = useState("");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("growth");
   const [layout, setLayoutState] = useState<"grid" | "list">(() => {
@@ -84,6 +87,8 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
         if (special === "normal" && w.is_special) return false;
         if (special === "special" && !w.is_special) return false;
         if (weaponOnly && !w.has_weapon_awakening) return false;
+        if (missing === "any" && !hasAnyMissing(w)) return false;
+        if (missing && missing !== "any" && !MISSING_FIELDS.find((f) => f.id === missing)?.missing(w)) return false;
         return terms.every((t) => text.includes(t));
       })
       .map(({ w }) => w);
@@ -102,10 +107,17 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
           return factionIdx(a) - factionIdx(b) || byName(a, b);
       }
     });
-  }, [indexed, faction, rarities, special, weaponOnly, query, sort]);
+  }, [indexed, faction, rarities, special, weaponOnly, missing, query, sort]);
 
   // 絞り込みを変えたら表示件数を最初に戻す
-  useEffect(() => setLimit(PAGE), [faction, rarities, special, weaponOnly, query, sort]);
+  useEffect(() => setLimit(PAGE), [faction, rarities, special, weaponOnly, missing, query, sort]);
+
+  // 未入力の項目ごとの人数 (選択肢に表示する)
+  const missingCounts = useMemo(() => {
+    const map = new Map<string, number>([["any", warlords.filter(hasAnyMissing).length]]);
+    for (const f of MISSING_FIELDS) map.set(f.id, warlords.filter(f.missing).length);
+    return map;
+  }, [warlords]);
 
   const toggle = (id: string) =>
     setSelected((cur) => {
@@ -188,6 +200,23 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
           <input type="checkbox" checked={weaponOnly} onChange={(e) => setWeaponOnly(e.target.checked)} className="accent-hi-500" />
           武器覚醒のみ
         </label>
+        <div className="flex items-center gap-1.5">
+          <CircleDashed className={`size-4 ${missing ? "text-hi-400" : "text-ebony-500"}`} />
+          <select
+            className={`field w-auto py-1 text-xs ${missing ? "border-hi-500 text-hi-400" : ""}`}
+            value={missing}
+            onChange={(e) => setMissing(e.target.value)}
+            aria-label="未入力の項目で絞り込み"
+          >
+            <option value="">未入力で絞り込み: しない</option>
+            <option value="any">未入力の項目がある武将 ({missingCounts.get("any")})</option>
+            {MISSING_FIELDS.map((f) => (
+              <option key={f.id} value={f.id}>
+                未入力: {f.label} ({missingCounts.get(f.id)})
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="flex items-center gap-1.5">
           <SlidersHorizontal className="size-4 text-ebony-500" />
           <select className="field w-auto py-1 text-xs" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
@@ -288,7 +317,7 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {visible.slice(0, limit).map((w) => (
                 <Selectable key={w.id} active={selecting} checked={selected.has(w.id)}>
-                  <WarlordCard w={w} onClick={() => (selecting ? toggle(w.id) : onOpen(w.id))} />
+                  <WarlordCard w={w} showMissing={Boolean(missing)} onClick={() => (selecting ? toggle(w.id) : onOpen(w.id))} />
                 </Selectable>
               ))}
             </div>
@@ -297,7 +326,7 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
               {visible.slice(0, limit).map((w) => (
                 <li key={w.id}>
                   <Selectable active={selecting} checked={selected.has(w.id)}>
-                    <WarlordRow w={w} onClick={() => (selecting ? toggle(w.id) : onOpen(w.id))} />
+                    <WarlordRow w={w} showMissing={Boolean(missing)} onClick={() => (selecting ? toggle(w.id) : onOpen(w.id))} />
                   </Selectable>
                 </li>
               ))}
@@ -333,7 +362,14 @@ function Selectable({ active, checked, children }: { active: boolean; checked: b
   );
 }
 
-function WarlordCard({ w, onClick }: { w: Warlord; onClick: () => void }) {
+/** 絞り込み中だけ、その武将で未入力の項目を表示する */
+function MissingNote({ w }: { w: Warlord }) {
+  const labels = missingLabels(w);
+  if (labels.length === 0) return null;
+  return <p className="w-full text-[11px] leading-snug text-hi-400">未入力: {labels.join("、")}</p>;
+}
+
+function WarlordCard({ w, showMissing, onClick }: { w: Warlord; showMissing: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -376,12 +412,13 @@ function WarlordCard({ w, onClick }: { w: Warlord; onClick: () => void }) {
         {w.faction && <span className="rounded bg-ebony-800 px-1.5 py-0.5">{w.faction}</span>}
         {w.skill_name && <span className="truncate">『{w.skill_name}』</span>}
         {w.has_weapon_awakening && <WeaponBadge />}
+        {showMissing && <MissingNote w={w} />}
       </div>
     </button>
   );
 }
 
-function WarlordRow({ w, onClick }: { w: Warlord; onClick: () => void }) {
+function WarlordRow({ w, showMissing, onClick }: { w: Warlord; showMissing: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -403,6 +440,7 @@ function WarlordRow({ w, onClick }: { w: Warlord; onClick: () => void }) {
           {w.skill_name && `『${w.skill_name}』`}
           {w.awakening_skill_name && ` 覚醒『${w.awakening_skill_name}』`}
         </p>
+        {showMissing && <MissingNote w={w} />}
       </div>
       <div className="shrink-0 text-right">
         {w.growth_total && (
