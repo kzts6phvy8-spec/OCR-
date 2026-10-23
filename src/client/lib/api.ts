@@ -106,6 +106,24 @@ export const api = {
     return queue.enqueue(images, "auto", id, "");
   },
 
+  /**
+   * 同じ名前の武将 (通常・特異) を、登録画像から作り直す。混ざってしまった情報を立ち絵で分け直す時に使う。
+   * 武将の記録だけを消し (画像は残す)、すべての画像をもう一度解析する。手で直した内容は消える。
+   */
+  async rebuildWarlords(name: string): Promise<{ removed: number; jobs: OcrJob[] }> {
+    const targets = (await db.listWarlords()).filter((w) => w.name === name);
+    // 画像の重複を除き、【特】表記のある画面が先に来やすいよう特異武将の画像を先に並べる
+    const images = [...new Set(targets.sort((a, b) => Number(b.is_special) - Number(a.is_special)).flatMap((w) => w.gallery_images))];
+    for (const w of targets) await db.deleteWarlord(w.id);
+    const jobs = await queue.enqueue(
+      images.map((imageId, i) => ({ fileName: `${name} の画像${i + 1} (作り直し)`, imageId })),
+      "auto",
+      null,
+      "",
+    );
+    return { removed: targets.length, jobs };
+  },
+
   async exportText(): Promise<Blob> {
     const list = (await db.listWarlords()).sort((a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
     return new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" });

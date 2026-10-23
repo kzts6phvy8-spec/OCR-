@@ -82,3 +82,54 @@ export async function cropLeft(blob: Blob, ratio = 0.45, maxEdge = 640): Promise
   if (!out) throw new Error("画像を変換できませんでした");
   return out;
 }
+
+/**
+ * 立ち絵の「指紋」: 画面左側を 16×32 の色の並びに縮めたもの。
+ * 同じ立ち絵なら画面が違ってもほぼ同じ並びになるので、AI に尋ねる前に端末だけで見比べられる。
+ */
+export async function artSignature(blob: Blob): Promise<Float32Array> {
+  const W = 16;
+  const H = 32;
+  const src = await decode(blob);
+  const w = "naturalWidth" in src ? src.naturalWidth : src.width;
+  const h = "naturalHeight" in src ? src.naturalHeight : src.height;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx || !w || !h) throw new Error("画像を処理できませんでした");
+  ctx.drawImage(src, 0, Math.round(h * 0.1), Math.round(w * 0.45), Math.round(h * 0.85), 0, 0, W, H);
+  if ("close" in src) src.close();
+  const data = ctx.getImageData(0, 0, W, H).data;
+  const out = new Float32Array(W * H * 3);
+  for (let i = 0, j = 0; i < data.length; i += 4) {
+    out[j++] = data[i];
+    out[j++] = data[i + 1];
+    out[j++] = data[i + 2];
+  }
+  return out;
+}
+
+/** 2 つの指紋の似ている度合い (正規化相互相関、1 に近いほど同じ) */
+export function signatureSimilarity(a: Float32Array, b: Float32Array): number {
+  const n = Math.min(a.length, b.length);
+  let ma = 0;
+  let mb = 0;
+  for (let i = 0; i < n; i++) {
+    ma += a[i];
+    mb += b[i];
+  }
+  ma /= n;
+  mb /= n;
+  let num = 0;
+  let da = 0;
+  let db = 0;
+  for (let i = 0; i < n; i++) {
+    const x = a[i] - ma;
+    const y = b[i] - mb;
+    num += x * y;
+    da += x * x;
+    db += y * y;
+  }
+  return da && db ? num / Math.sqrt(da * db) : 0;
+}

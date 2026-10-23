@@ -1,5 +1,7 @@
 // アプリ全体で使う型定義 (データはすべて端末内の IndexedDB に保存する)
 
+import type { OcrExtraction } from "./ocrSchema.ts";
+
 export const RARITIES = ["SSR", "SR", "R", "N", "SP"] as const;
 export type Rarity = (typeof RARITIES)[number];
 
@@ -117,6 +119,8 @@ export interface OcrJob {
   started_at?: string | null;
   /** バックグラウンド解析がオンでも、この端末で直接解析する (サーバーで止まった分の引き取り) */
   local?: boolean;
+  /** 読み取りは済んだが保存の途中で止まった時の読み取り結果 (やり直す時に読み取りを繰り返さない) */
+  extraction?: OcrExtraction | null;
   created_at: string;
   updated_at: string;
 }

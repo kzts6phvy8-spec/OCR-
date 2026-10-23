@@ -11,7 +11,8 @@ import { OcrError } from "./ocrCommon.ts";
 import { shrinkForGallery } from "./images.ts";
 import { nextDailyReset } from "./quota.ts";
 import { isStalled, probeIfNeeded } from "./probe.ts";
-import { visualMatcher } from "./visual.ts";
+import { artChecker } from "./visual.ts";
+import type { OcrExtraction } from "../../core/ocrSchema.ts";
 
 // 画像を解析するキュー。AI への問い合わせは 2 枚同時に進め、保存 (同じ武将への統合) は 1 件ずつ順番に行う。
 // iPhone ではアプリを閉じる・画面を消すと処理が止まるため、処理中は画面消灯を防ぎ、戻ったら自動で再開する。
@@ -211,22 +212,37 @@ async function shrinkStoredImage(imageId: string) {
   }
 }
 
+/** 読み取り結果を図鑑に保存する。同じ名前の武将がいれば立ち絵を見比べてから統合する */
+function ingestJob(job: OcrJob, extraction: OcrExtraction) {
+  return ingestLock(() =>
+    ingestExtraction(db.repo, extraction, {
+      mode: job.mode,
+      targetId: job.target_id,
+      imageId: job.image_id,
+      faction: job.faction ?? "",
+      sameArt: artChecker(job.image_id),
+    }),
+  );
+}
+
+/** 無料枠などの上限: キュー全体を少し休ませる (30 秒 → 最大 10 分。1 日の上限なら戻る時刻まで) */
+function pauseForRateLimit(err: OcrError) {
+  backoffMs = Math.min(MAX_BACKOFF_MS, Math.max(30_000, backoffMs * 2));
+  pausedUntil = err.dailyLimit ? nextDailyReset().getTime() + 60_000 : Date.now() + backoffMs;
+  pauseReason = err.message;
+}
+
 async function processJob(job: OcrJob) {
   const startedAt = Date.now();
+  let extraction: OcrExtraction | null = job.extraction ?? null;
   try {
     const image = await db.getImage(job.image_id);
     if (!image) throw new Error("画像が見つかりません");
-    if (bgActive(loadSettings()) && !job.local) return await sendToServer(job, image);
-    const extraction = await analyzeWithRetry(image, job.mode, loadSettings());
-    const result = await ingestLock(() =>
-      ingestExtraction(db.repo, extraction, {
-        mode: job.mode,
-        targetId: job.target_id,
-        imageId: job.image_id,
-        faction: job.faction ?? "",
-        matchVisual: visualMatcher(job.image_id),
-      }),
-    );
+    if (!extraction) {
+      if (bgActive(loadSettings()) && !job.local) return await sendToServer(job, image);
+      extraction = await analyzeWithRetry(image, job.mode, loadSettings());
+    }
+    const result = await ingestJob(job, extraction);
     // 解析が終わった画像は保存用の大きさに縮めて容量を節約する
     try {
       await db.putImage(await shrinkForGallery(image), job.image_id);
@@ -240,20 +256,18 @@ async function processJob(job: OcrJob) {
       warlord_label: warlordLabel(result.warlord),
       merged: result.merged,
       warnings: result.warnings,
+      extraction: null,
     });
   } catch (err) {
     if (err instanceof OcrError && err.rateLimited) {
-      // 上限に達した: このジョブは待機に戻し、キュー全体を少し休ませる (30 秒 → 最大 10 分)
-      backoffMs = Math.min(MAX_BACKOFF_MS, Math.max(30_000, backoffMs * 2));
-      // 1 日の上限なら、上限が戻る時刻 (日本時間の夕方) まで待つ
-      pausedUntil = err.dailyLimit ? nextDailyReset().getTime() + 60_000 : Date.now() + backoffMs;
-      pauseReason = err.message;
-      await update(job, { status: "queued", attempts: Math.max(0, job.attempts - 1) });
+      // 上限に達した: このジョブは (読み取り済みならその結果を残して) 待機に戻し、キュー全体を少し休ませる
+      pauseForRateLimit(err);
+      await update(job, { status: "queued", attempts: Math.max(0, job.attempts - 1), extraction });
       return;
     }
-    if (lastHiddenAt >= startedAt) {
-      // アプリを離れたせいで止まった分は失敗にせず、戻ってきた時にやり直す
-      await update(job, { status: "queued", attempts: Math.max(0, job.attempts - 1) });
+    if (lastHiddenAt >= startedAt || (extraction && err instanceof OcrError && err.retryable && job.attempts < 3)) {
+      // アプリを離れたせいで止まった・立ち絵の確認が一時的に失敗した分は、失敗にせずやり直す
+      await update(job, { status: "queued", attempts: Math.max(0, job.attempts - 1), extraction });
       return;
     }
     console.error(`[ocr] ${job.file_name}:`, err);
@@ -353,6 +367,7 @@ export async function pollServer() {
 }
 
 async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
+  let extraction: OcrExtraction | null = null;
   try {
     if (!r.ok) {
       let message = r.error ?? "";
@@ -363,16 +378,8 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
       }
       throw geminiHttpError(r.status, message, model);
     }
-    const extraction = parseGeminiRestBody(r.body ?? "");
-    const result = await ingestLock(() =>
-      ingestExtraction(db.repo, extraction, {
-        mode: job.mode,
-        targetId: job.target_id,
-        imageId: job.image_id,
-        faction: job.faction ?? "",
-        matchVisual: visualMatcher(job.image_id),
-      }),
-    );
+    extraction = parseGeminiRestBody(r.body ?? "");
+    const result = await ingestJob(job, extraction);
     await shrinkStoredImage(job.image_id);
     await update(job, {
       status: "done",
@@ -382,6 +389,13 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
       warnings: result.warnings,
     });
   } catch (err) {
+    if (extraction && err instanceof OcrError && (err.rateLimited || err.retryable)) {
+      // 読み取りは済んで、立ち絵の確認だけが失敗した: 読み取り結果を残し、この端末で保存だけやり直す
+      if (err.rateLimited) pauseForRateLimit(err);
+      await update(job, { status: "queued", local: true, extraction });
+      void runQueue();
+      return;
+    }
     if (err instanceof OcrError && err.retryable && job.attempts < 3) {
       // 応答の形が崩れていた・設定の調整が必要だった等: もう一度サーバーに送り直す
       await update(job, { status: "queued" });
