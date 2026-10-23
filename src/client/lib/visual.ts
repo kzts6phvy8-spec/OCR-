@@ -1,36 +1,42 @@
 import type { Warlord } from "../../core/types.ts";
-import type { VisualMatcher } from "../../core/ingest.ts";
+import type { ArtCheck } from "../../core/ingest.ts";
 import * as db from "./db.ts";
-import { blobToBase64, cropLeft } from "./images.ts";
+import { artSignature, blobToBase64, cropLeft, signatureSimilarity } from "./images.ts";
+import { geminiHttpError } from "./geminiShared.ts";
+import { OcrError } from "./ocrCommon.ts";
 import { loadSettings, type Settings } from "./settings.ts";
 
-// 【特】表記が写っていない画面を、通常武将と特異武将のどちらの画像か、画面左側の立ち絵で見分ける。
-// 同じ名前の特異武将が登録済みの時だけ、AI に 1 回だけ追加で尋ねる (無料枠の回数を 1 回使う)。
+// 同じ名前の武将が登録済みの時、画面左側の立ち絵が同じかを確かめる (通常武将と特異武将は立ち絵が違う)。
+// まず端末だけで見比べ、ほぼ同じ絵なら AI には尋ねない。迷う時だけ AI に 1 回尋ねる (無料枠の回数を 1 回使う)。
 
-const LETTERS = ["A", "B", "C"];
-/** 1 人あたりの見本の枚数 (代表画像 + もう 1 枚) */
-const SAMPLES = 2;
+/** これ以上似ていれば、同じ立ち絵とみなして AI に尋ねない */
+const SAME_THRESHOLD = 0.95;
+/** 見比べに使う登録画像の枚数 */
+const LOCAL_SAMPLES = 6;
+const AI_SAMPLES = 2;
 
-const PROMPT = (labels: string[]) =>
-  [
-    "スマホゲーム『戦国布武』の武将画面のスクリーンショットから、画面左側の武将の立ち絵 (キャラクターのイラスト) だけを切り出した画像です。",
-    "同じ武将名でも、通常武将と特異武将は立ち絵 (衣装・髪型・色・ポーズ・背景) が違います。文字は無視し、立ち絵の見た目だけで比べてください。",
-    "",
-    ...labels,
-    "",
-    "最後の「判定する画像」の立ち絵は、どの見本と同じ立ち絵ですか。",
-    `次のどれか 1 つだけを答えてください: ${LETTERS.slice(0, labels.length).join(" / ")} / none (立ち絵はあるが、どの見本とも違う) / unknown (立ち絵が写っていない・判断できない)`,
-  ].join("\n");
-
-async function samplesOf(w: Warlord): Promise<string[]> {
-  const ids = [...new Set([w.image_url, ...w.gallery_images].filter(Boolean))].slice(0, SAMPLES);
-  const out: string[] = [];
-  for (const id of ids) {
-    const blob = await db.getImage(id);
-    if (blob) out.push(await blobToBase64(await cropLeft(blob)));
+const signatures = new Map<string, Promise<Float32Array | null>>();
+function signatureOf(imageId: string) {
+  let p = signatures.get(imageId);
+  if (!p) {
+    p = db
+      .getImage(imageId)
+      .then((blob) => (blob ? artSignature(blob) : null))
+      .catch(() => null);
+    signatures.set(imageId, p);
   }
-  return out;
+  return p;
 }
+
+const imagesOf = (w: Warlord) => [...new Set([w.image_url, ...w.gallery_images].filter(Boolean))];
+
+const PROMPT = [
+  "スマホゲーム『戦国布武』の武将画面のスクリーンショットから、画面左側の武将の立ち絵 (キャラクターのイラスト) を切り出した画像です。",
+  "最初の画像 (見本) は登録済みの武将の立ち絵、最後の画像は判定する画像です。",
+  "同じ武将名でも、通常武将と特異武将は立ち絵 (衣装・髪型・色・持ち物・ポーズ) が違います。文字・枠・背景は無視し、人物のイラストだけを比べてください。",
+  "判定する画像の人物のイラストは、見本と同じイラストですか。",
+  "次のどれか 1 語だけを答えてください: SAME (同じイラスト) / DIFFERENT (違うイラスト) / UNKNOWN (判定する画像に人物のイラストが写っていない)",
+].join("\n");
 
 type Part = { text: string } | { image: string };
 
@@ -38,58 +44,71 @@ async function ask(parts: Part[], settings: Settings): Promise<string> {
   if (settings.provider === "claude") {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true, timeout: 45_000, maxRetries: 1 });
-    const res = await client.messages.create({
-      model: settings.model,
-      max_tokens: 50,
-      messages: [
-        {
-          role: "user",
-          content: parts.map((p) =>
-            "text" in p
-              ? { type: "text" as const, text: p.text }
-              : { type: "image" as const, source: { type: "base64" as const, media_type: "image/jpeg" as const, data: p.image } },
-          ),
-        },
-      ],
-    });
-    return res.content.map((c) => (c.type === "text" ? c.text : "")).join("");
+    try {
+      const res = await client.messages.create({
+        model: settings.model,
+        max_tokens: 20,
+        messages: [
+          {
+            role: "user",
+            content: parts.map((p) =>
+              "text" in p
+                ? { type: "text" as const, text: p.text }
+                : { type: "image" as const, source: { type: "base64" as const, media_type: "image/jpeg" as const, data: p.image } },
+            ),
+          },
+        ],
+      });
+      return res.content.map((c) => (c.type === "text" ? c.text : "")).join("");
+    } catch (err) {
+      if (err instanceof Anthropic.RateLimitError) throw new OcrError("API の利用上限に達しました", false, 0, true);
+      throw new OcrError(`立ち絵の確認に失敗しました: ${err instanceof Error ? err.message : String(err)}`, true, 5_000);
+    }
   }
-  const { GoogleGenAI } = await import("@google/genai");
+  const { ApiError, GoogleGenAI } = await import("@google/genai");
   const client = new GoogleGenAI({ apiKey: settings.geminiKey, httpOptions: { timeout: 45_000 } });
-  const res = await client.models.generateContent({
-    model: settings.geminiModel,
-    contents: [{ role: "user", parts: parts.map((p) => ("text" in p ? { text: p.text } : { inlineData: { mimeType: "image/jpeg", data: p.image } })) }],
-    config: { temperature: 0 },
-  });
-  return res.text ?? "";
+  try {
+    const res = await client.models.generateContent({
+      model: settings.geminiModel,
+      contents: [{ role: "user", parts: parts.map((p) => ("text" in p ? { text: p.text } : { inlineData: { mimeType: "image/jpeg", data: p.image } })) }],
+      config: { temperature: 0 },
+    });
+    return res.text ?? "";
+  } catch (err) {
+    if (err instanceof ApiError) throw geminiHttpError(err.status, err.message ?? "", settings.geminiModel);
+    throw new OcrError(`立ち絵の確認に失敗しました: ${err instanceof Error ? err.message : String(err)}`, true, 5_000);
+  }
 }
 
-/** 判定する画像 (端末内の画像 ID) ごとに、立ち絵で見分ける関数を作る */
-export function visualMatcher(imageId: string): VisualMatcher {
-  return async (candidates) => {
-    const settings = loadSettings();
-    const target = await db.getImage(imageId);
-    if (!target) return null;
-    const parts: Part[] = [];
-    const labels: string[] = [];
-    const used: Warlord[] = [];
-    for (const w of candidates.slice(0, LETTERS.length)) {
-      const samples = await samplesOf(w);
-      if (samples.length === 0) continue;
-      const letter = LETTERS[used.length];
-      used.push(w);
-      labels.push(`見本 ${letter}: ${w.is_special ? "特異武将" : "通常武将"}「${w.name}」の立ち絵 (${samples.length} 枚)`);
-      parts.push({ text: `見本 ${letter} (${w.is_special ? "特異武将" : "通常武将"}):` }, ...samples.map((image) => ({ image })));
-    }
-    if (used.length === 0) return null;
-    parts.unshift({ text: PROMPT(labels) });
-    parts.push({ text: "判定する画像:" }, { image: await blobToBase64(await cropLeft(target)) });
+/** 判定する画像 (端末内の画像 ID) が、登録済みの武将と同じ立ち絵かを確かめる関数を作る */
+export function artChecker(imageId: string): ArtCheck {
+  return async (candidate) => {
+    const ids = imagesOf(candidate).filter((id) => id !== imageId);
+    if (ids.length === 0) return "unknown";
 
-    const answer = (await ask(parts, settings)).trim().toUpperCase();
-    if (/UNKNOWN/.test(answer)) return null;
-    if (/NONE/.test(answer)) return "none";
-    const letter = answer.match(/\b([A-C])\b/)?.[1] ?? answer.match(/^([A-C])/)?.[1];
-    const idx = letter ? LETTERS.indexOf(letter) : -1;
-    return used[idx]?.id ?? null;
+    // 端末だけで見比べる: ほぼ同じ絵なら同じ武将
+    const target = await signatureOf(imageId);
+    if (target) {
+      let best = -1;
+      for (const id of ids.slice(0, LOCAL_SAMPLES)) {
+        const sig = await signatureOf(id);
+        if (sig) best = Math.max(best, signatureSimilarity(target, sig));
+      }
+      if (best >= SAME_THRESHOLD) return "same";
+    }
+
+    // 迷う時は AI に尋ねる
+    const targetBlob = await db.getImage(imageId);
+    if (!targetBlob) return "unknown";
+    const parts: Part[] = [{ text: PROMPT }, { text: "見本:" }];
+    for (const id of ids.slice(0, AI_SAMPLES)) {
+      const blob = await db.getImage(id);
+      if (blob) parts.push({ image: await blobToBase64(await cropLeft(blob)) });
+    }
+    parts.push({ text: "判定する画像:" }, { image: await blobToBase64(await cropLeft(targetBlob)) });
+    const answer = (await ask(parts, loadSettings())).toUpperCase();
+    if (/DIFFERENT/.test(answer)) return "different";
+    if (/SAME/.test(answer)) return "same";
+    return "unknown";
   };
 }

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ingestExtraction as ingest } from "./ingest.ts";
 import { createMemoryRepo } from "./memoryRepo.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
+import type { Warlord } from "./types.ts";
 import { makeExtraction } from "./testUtils.ts";
 
 let repo: ReturnType<typeof createMemoryRepo>;
@@ -36,41 +37,60 @@ describe("ingestExtraction", async () => {
     expect(repo.all()).toHaveLength(1);
   });
 
-  it("【特】表記が無い画面は、同じ名前の特異武将がいれば立ち絵で判断する", async () => {
-    await ingestExtraction(makeExtraction({ name: "武将A" }), opts("img-n.png"));
-    const special = (await ingestExtraction(makeExtraction({ name: "武将A", special_marker_visible: true }), opts("img-s.png"))).warlord;
-    const normal = (await repo.find("武将A", false))!;
+  describe("立ち絵で見分ける", () => {
+    // 画像 ID の頭文字が同じなら同じ立ち絵とみなす (n = 通常の絵, s = 特異の絵, x = 立ち絵なし)
+    const art = (imageId: string) => (c: Warlord) =>
+      Promise.resolve(
+        imageId.startsWith("x") ? ("unknown" as const) : c.gallery_images.some((g) => g[0] === imageId[0]) ? ("same" as const) : ("different" as const),
+      );
+    const add = (imageId: string, ext: Parameters<typeof makeExtraction>[0] = {}) =>
+      ingestExtraction(makeExtraction({ name: "武将A", ...ext }), { ...opts(imageId), sameArt: art(imageId) });
 
-    // 立ち絵が特異武将と一致 → 特異武将に統合
-    const asked: string[][] = [];
-    const toSpecial = await ingestExtraction(makeExtraction({ name: "武将A", talents: [] }), {
-      ...opts("img-t1.png"),
-      matchVisual: async (c) => (asked.push(c.map((w) => w.id)), special.id),
+    it("立ち絵が違えば、名前が同じでも統合しない", async () => {
+      const n = (await add("n1", { skill: { name: "通常の奥義" } })).warlord;
+      const s = await add("s1", { skill: { name: "特異の奥義" } }); // 【特】表記の無い画面
+      expect(s.warlord.is_special).toBe(true);
+      expect(s.merged).toBe(false);
+      expect((await repo.get(n.id))!.skill_name).toBe("通常の奥義");
+      // 以後、それぞれの絵の画面はそれぞれに統合される
+      expect((await add("s2")).warlord.id).toBe(s.warlord.id);
+      expect((await add("n2")).warlord.id).toBe(n.id);
+      expect(repo.all()).toHaveLength(2);
     });
-    expect(asked).toEqual([[normal.id, special.id]]);
-    expect(toSpecial.warlord.id).toBe(special.id);
-    expect(toSpecial.warnings.join()).toMatch(/立ち絵から特異武将/);
 
-    // 立ち絵が通常武将と一致 → 通常武将に統合
-    const toNormal = await ingestExtraction(makeExtraction({ name: "武将A" }), { ...opts("img-t2.png"), matchVisual: async () => normal.id });
-    expect(toNormal.warlord.id).toBe(normal.id);
-
-    // 【特】表記があれば立ち絵は見ない
-    let called = false;
-    await ingestExtraction(makeExtraction({ name: "武将A", special_marker_visible: true }), {
-      ...opts("img-t3.png"),
-      matchVisual: async () => ((called = true), null),
+    it("先に【特】表記の無い画面から登録された特異武将は、【特】表記の画面が来たら特異武将に直す", async () => {
+      const first = (await add("s1")).warlord;
+      expect(first.is_special).toBe(false);
+      const marked = await add("s2", { special_marker_visible: true });
+      expect(marked.warlord.id).toBe(first.id);
+      expect(marked.warlord.is_special).toBe(true);
+      // その後の通常の絵は、通常武将として別に登録される
+      const normal = await add("n1");
+      expect(normal.warlord.is_special).toBe(false);
+      expect(normal.merged).toBe(false);
+      expect(repo.all()).toHaveLength(2);
     });
-    expect(called).toBe(false);
-  });
 
-  it("特異武将だけが登録済みなら、立ち絵が違えば通常武将を新しく作り、判断できなければ特異武将にまとめる", async () => {
-    const special = (await ingestExtraction(makeExtraction({ name: "武将B", special_marker_visible: true }), opts("img-s.png"))).warlord;
-    const unknown = await ingestExtraction(makeExtraction({ name: "武将B" }), { ...opts("img-1.png"), matchVisual: async () => null });
-    expect(unknown.warlord.id).toBe(special.id);
-    const other = await ingestExtraction(makeExtraction({ name: "武将B" }), { ...opts("img-2.png"), matchVisual: async () => "none" });
-    expect(other.warlord.is_special).toBe(false);
-    expect(other.merged).toBe(false);
+    it("立ち絵が見えない画面は、同じ名前が 1 人ならそこへ、2 人なら判断を求める", async () => {
+      const n = (await add("n1")).warlord;
+      expect((await add("x1")).warlord.id).toBe(n.id);
+      await add("s1");
+      await expect(add("x2")).rejects.toThrow(/判断できません/);
+    });
+
+    it("通常・特異の両方と違えば統合しない", async () => {
+      await add("n1");
+      await add("s1");
+      await expect(add("t1")).rejects.toThrow(/どちらとも一致しません/);
+    });
+
+    it("AI に届かない時は例外のまま (後でやり直す)", async () => {
+      await add("n1");
+      await expect(
+        ingestExtraction(makeExtraction({ name: "武将A" }), { ...opts("n2"), sameArt: () => Promise.reject(new Error("429")) }),
+      ).rejects.toThrow("429");
+      expect(repo.all()).toHaveLength(1);
+    });
   });
 
   it("通常と特異は別レコードで、互いに混ざらない", async () => {

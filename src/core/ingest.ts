@@ -25,10 +25,77 @@ export function toInput(w: Warlord): WarlordInput {
 }
 
 /**
- * 立ち絵 (画面左側のキャラクターのイラスト) で、どの武将の画像かを判断する。
- * 戻り値: 一致した武将の id / "none" (立ち絵はあるが、どれとも違う) / null (立ち絵が無い・判断できなかった)
+ * 画像の立ち絵 (画面左側のキャラクターのイラスト) が、登録済みの武将の立ち絵と同じかを調べる。
+ * "unknown" は立ち絵が写っていない等で判断できない時。AI に届かない時は例外を投げる (後でやり直す)。
  */
-export type VisualMatcher = (candidates: Warlord[]) => Promise<string | "none" | null>;
+export type ArtCheck = (candidate: Warlord) => Promise<"same" | "different" | "unknown">;
+
+/**
+ * 同じ名前の武将が登録済みの時、立ち絵を見比べて統合先を決める。
+ * 通常武将と特異武将は名前が同じでも立ち絵が違うので、立ち絵が違う武将には統合しない。
+ */
+async function chooseByArt(
+  repo: WarlordRepo,
+  name: string,
+  marked: boolean,
+  sameArt: ArtCheck,
+): Promise<{ existing: Warlord | null; isSpecial: boolean; becomesSpecial: boolean; warnings: string[] }> {
+  const normal = await repo.find(name, false);
+  const special = await repo.find(name, true);
+
+  if (marked) {
+    // 【特】表記あり: 特異武将が登録済みならそこへ。
+    // 未登録で、通常武将として登録された立ち絵と同じなら、それは先に【特】表記の無い画面から登録された特異武将
+    if (special) return { existing: special, isSpecial: true, becomesSpecial: false, warnings: [] };
+    if (normal && (await sameArt(normal)) === "same") {
+      return {
+        existing: normal,
+        isSpecial: true,
+        becomesSpecial: true,
+        warnings: ["通常武将として登録されていた武将が、立ち絵が同じ【特】表記の画面だったため、特異武将に直しました"],
+      };
+    }
+    return { existing: null, isSpecial: true, becomesSpecial: false, warnings: [] };
+  }
+
+  const candidates = [normal, special].filter((w): w is Warlord => w !== null);
+  if (candidates.length === 0) return { existing: null, isSpecial: false, becomesSpecial: false, warnings: [] };
+
+  const results: ("same" | "different" | "unknown")[] = [];
+  for (const c of candidates) {
+    const r = await sameArt(c);
+    results.push(r);
+    if (r === "same") {
+      const warnings = c.is_special ? ["【特】表記が無いため、立ち絵から特異武将と判断しました"] : [];
+      return { existing: c, isSpecial: c.is_special, becomesSpecial: false, warnings };
+    }
+  }
+  if (results.every((r) => r === "different")) {
+    // 登録済みの武将と立ち絵が違う = もう片方 (通常なら特異、特異なら通常)
+    if (!special) {
+      return { existing: null, isSpecial: true, becomesSpecial: false, warnings: ["立ち絵が通常武将と違うため、特異武将として登録しました"] };
+    }
+    if (!normal) {
+      return { existing: null, isSpecial: false, becomesSpecial: false, warnings: ["立ち絵が特異武将と違うため、通常武将として登録しました"] };
+    }
+    throw new IngestError(
+      `立ち絵が登録済みの「${name}」(通常・特異) のどちらとも一致しません。武将の画面の「スクショを追加して統合」から追加してください`,
+    );
+  }
+  if (candidates.length === 1) {
+    // 立ち絵が写っていない画面: 同じ名前の武将が 1 人だけなら、そこにまとめる
+    const only = candidates[0];
+    return {
+      existing: only,
+      isSpecial: only.is_special,
+      becomesSpecial: false,
+      warnings: ["立ち絵が見えず確かめられなかったため、同じ名前の武将に統合しました"],
+    };
+  }
+  throw new IngestError(
+    `立ち絵で通常武将か特異武将か判断できませんでした。「${name}」の画面の「スクショを追加して統合」から追加してください`,
+  );
+}
 
 export interface IngestResult {
   warlord: Warlord;
@@ -49,8 +116,8 @@ export async function ingestExtraction(
     targetId: string | null;
     imageId: string;
     faction?: Faction | "";
-    /** 同じ名前の特異武将がいて、画面に【特】表記が無い時だけ使う */
-    matchVisual?: VisualMatcher;
+    /** 同じ名前の武将が登録済みの時、立ち絵が同じかを調べる (無ければ名前と【特】表記だけで決める) */
+    sameArt?: ArtCheck;
   },
 ): Promise<IngestResult> {
   const decision = decideSpecial(ext, opts.mode);
@@ -60,6 +127,8 @@ export async function ingestExtraction(
   let existing: Warlord | null;
   let name: string;
   let isSpecial: boolean;
+  /** 通常武将として登録されていたが、【特】表記の画面と立ち絵が同じだった (= 本当は特異武将) */
+  let becomesSpecial = false;
 
   if (opts.targetId) {
     existing = await repo.get(opts.targetId);
@@ -77,37 +146,12 @@ export async function ingestExtraction(
     name = readName;
     isSpecial = decision.is_special;
     existing = await repo.find(name, isSpecial);
-
-    // 【特】表記が写っていない画面 (天賦だけ等) は通常武将か特異武将か文字ではわからない。
-    // 同じ名前の特異武将が登録済みなら、画面左側の立ち絵を登録済みの画像と見比べて判断する。
-    if (opts.mode === "auto" && !isSpecial && opts.matchVisual) {
-      const special = await repo.find(name, true);
-      if (special) {
-        const normal = existing;
-        const candidates = normal ? [normal, special] : [special];
-        let match: string | "none" | null = null;
-        try {
-          match = await opts.matchVisual(candidates);
-        } catch {
-          match = null;
-        }
-        const hit = candidates.find((c) => c.id === match);
-        if (hit) {
-          existing = hit;
-          isSpecial = hit.is_special;
-          warnings.push(`【特】表記が無いため、立ち絵から${hit.is_special ? "特異" : "通常"}武将と判断しました`);
-        } else if (match === "none") {
-          if (normal) warnings.push("立ち絵がどの登録画像とも一致しませんでした。通常武将として統合しました");
-          else warnings.push("立ち絵が特異武将と違うため、通常武将として新しく登録しました");
-        } else if (!normal) {
-          // 判断できない時は、新しく作るより登録済みの特異武将にまとめる
-          existing = special;
-          isSpecial = true;
-          warnings.push("立ち絵で判断できなかったため、同じ名前の特異武将に統合しました (違う場合は武将の画面から直してください)");
-        } else {
-          warnings.push("立ち絵で通常か特異か判断できなかったため、通常武将に統合しました");
-        }
-      }
+    if (opts.mode === "auto" && opts.sameArt) {
+      const found = await chooseByArt(repo, name, decision.is_special, opts.sameArt);
+      existing = found.existing;
+      isSpecial = found.isSpecial;
+      becomesSpecial = found.becomesSpecial;
+      warnings.push(...found.warnings);
     }
   }
 
@@ -115,7 +159,7 @@ export async function ingestExtraction(
   patch.gallery_images = [opts.imageId];
   patch.image_url = opts.imageId;
 
-  const base = existing ? toInput(existing) : { ...emptyWarlordInput(), name, is_special: isSpecial };
+  const base = existing ? { ...toInput(existing), ...(becomesSpecial ? { is_special: true } : {}) } : { ...emptyWarlordInput(), name, is_special: isSpecial };
   const { merged, warnings: mergeWarnings } = mergeWarlord(base, patch);
   warnings.push(...mergeWarnings.filter((w) => !(opts.faction && w.startsWith("勢力"))));
   // アップロード時に選んだ勢力は、画像の読み取り結果より優先する

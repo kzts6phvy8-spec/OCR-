@@ -5,6 +5,7 @@ import {
   ImagePlus,
   Loader2,
   RotateCcw,
+  Split,
   Copy,
   ChevronRight,
   Lock,
@@ -142,6 +143,23 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
     toast("info", `${jobs.length} 枚を再解析します`, "進み具合は「スクショ解析」タブでも見られます");
   };
 
+  const rebuild = async () => {
+    if (!warlord) return;
+    const same = allWarlords.filter((w) => w.name === warlord.name);
+    const images = new Set(same.flatMap((w) => w.gallery_images)).size;
+    if (
+      !confirm(
+        `「${warlord.name}」(${same.length > 1 ? "通常・特異の両方" : warlord.is_special ? "特異" : "通常"}) を、登録画像 ${images} 枚から作り直しますか？\n\n` +
+          "立ち絵を見比べて通常・特異を分け直します。手で直した内容は消えます。画像は残ります。\n" +
+          `AI の回数を ${images} 回以上使います。`,
+      )
+    )
+      return;
+    const { jobs } = await api.rebuildWarlords(warlord.name);
+    toast("info", `「${warlord.name}」を ${jobs.length} 枚の画像から作り直します`, "進み具合は「スクショ解析」タブで見られます");
+    onDeleted();
+  };
+
   const counterpart = warlord
     ? allWarlords.find((w) => w.name === warlord.name && w.is_special !== warlord.is_special)
     : undefined;
@@ -274,6 +292,11 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                   {view.gallery_images.length > 0 && (
                     <button onClick={reanalyze} className="flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-ash hover:text-washi">
                       <RotateCcw className="size-4" /> 登録画像を再解析
+                    </button>
+                  )}
+                  {view.gallery_images.length > 0 && (
+                    <button onClick={rebuild} className="flex items-center gap-1.5 rounded-lg border border-hi-600/60 px-3 py-1.5 text-hi-400">
+                      <Split className="size-4" /> 情報が混ざった時: 画像から作り直す
                     </button>
                   )}
                   {pendingCount > 0 && (
