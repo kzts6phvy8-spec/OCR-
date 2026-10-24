@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ImagePlus,
   Loader2,
+  Merge,
   RotateCcw,
   Split,
   Copy,
@@ -34,6 +35,7 @@ import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { warlordToText } from "../../core/text.ts";
 import { StoredImage } from "./StoredImage.tsx";
 import { onQueueChange } from "../lib/queue.ts";
+import { differsByOneChar } from "../../core/ingest.ts";
 
 const EMPTY: WarlordInput = {
   name: "",
@@ -158,6 +160,31 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
     const { jobs } = await api.rebuildWarlords(warlord.name);
     toast("info", `「${warlord.name}」を ${jobs.length} 枚の画像から作り直します`, "進み具合は「スクショ解析」タブで見られます");
     onDeleted();
+  };
+
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeId, setMergeId] = useState("");
+  // まとめる候補: 同じ名前・似た名前の武将を先に並べる
+  const mergeCandidates = warlord
+    ? allWarlords
+        .filter((w) => w.id !== warlord.id)
+        .map((w) => ({ w, near: w.name === warlord.name ? 0 : differsByOneChar(w.name, warlord.name) ? 1 : 2 }))
+        .sort((a, b) => a.near - b.near || a.w.name.localeCompare(b.w.name, "ja"))
+    : [];
+  const mergeOther = async () => {
+    const other = allWarlords.find((w) => w.id === mergeId);
+    if (!warlord || !other) return;
+    const label = (w: Warlord) => `${w.is_special ? "【特】" : ""}${w.name}`;
+    if (!confirm(`「${label(other)}」を「${label(warlord)}」にまとめますか？\n\n空欄だけが「${label(other)}」の内容で埋まり、画像は両方残ります。「${label(other)}」は消えます。`)) return;
+    try {
+      const saved = await api.mergeWarlords(warlord.id, other.id);
+      toast("success", `「${label(other)}」をまとめました`, label(saved));
+      setMergeOpen(false);
+      setMergeId("");
+      onSaved(saved);
+    } catch (e) {
+      toast("error", "まとめられませんでした", (e as Error).message);
+    }
   };
 
   const counterpart = warlord
@@ -299,12 +326,44 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                       <Split className="size-4" /> 情報が混ざった時: 画像から作り直す
                     </button>
                   )}
+                  {allWarlords.length > 1 && (
+                    <button
+                      onClick={() => setMergeOpen((v) => !v)}
+                      className="flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-ash hover:text-washi"
+                    >
+                      <Merge className="size-4" /> 別の武将に分かれた時: まとめる
+                    </button>
+                  )}
                   {pendingCount > 0 && (
                     <span className="flex items-center gap-1.5 text-xs text-gold-300">
                       <Loader2 className="size-3.5 animate-spin" /> この武将に統合する解析が残り {pendingCount} 枚
                     </span>
                   )}
                 </div>
+                {mergeOpen && (
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-ebony-700 bg-ebony-900 p-2.5 text-sm">
+                    <span className="text-xs text-ash">この武将にまとめる武将:</span>
+                    <select className="field min-w-0 flex-1 py-1 text-sm" value={mergeId} onChange={(e) => setMergeId(e.target.value)}>
+                      <option value="">選んでください</option>
+                      {mergeCandidates.map(({ w, near }) => (
+                        <option key={w.id} value={w.id}>
+                          {near < 2 ? "★ " : ""}
+                          {w.is_special ? "【特】" : ""}
+                          {w.name}
+                          {w.title_alias ? ` (${w.title_alias})` : ""} ・画像 {w.screenshot_count} 枚
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      disabled={!mergeId}
+                      onClick={mergeOther}
+                      className="rounded-lg bg-gradient-to-b from-shu-400 to-shu-600 px-3 py-1.5 font-bold text-white disabled:opacity-40"
+                    >
+                      まとめる
+                    </button>
+                    <span className="w-full text-[11px] text-ebony-500">★ は同じ名前・1 文字違いの武将です。まとめた後も、この武将の通常/特異はそのままです。</span>
+                  </div>
+                )}
               </>
             ) : (
               <div className="flex items-center gap-2">

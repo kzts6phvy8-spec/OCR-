@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { normalizeInput } from "../../core/domain.ts";
+import { mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import * as db from "./db.ts";
 import { blobToDataUrl, compressImage, dataUrlToBlob } from "./images.ts";
@@ -122,6 +122,32 @@ export const api = {
       "",
     );
     return { removed: targets.length, jobs };
+  },
+
+  /**
+   * 別の武将として登録されてしまった武将を、この武将にまとめる (同じ武将だった時の手直し)。
+   * まとめる側の空欄だけを埋め、画像は両方を残す。まとめられた側は消える。
+   */
+  async mergeWarlords(keepId: string, otherId: string): Promise<Warlord> {
+    const keep = await db.getWarlord(keepId);
+    const other = await db.getWarlord(otherId);
+    if (!keep || !other) throw new Error("武将が見つかりません");
+    const { name: _n, is_special: _s, ...rest } = toInput(other);
+    const { merged } = mergeWarlord(toInput(keep), {
+      ...rest,
+      image_url: keep.image_url || other.image_url,
+      gallery_images: other.gallery_images,
+    });
+    await db.deleteWarlord(other.id);
+    const saved = await db.updateWarlord(keep.id, normalizeInput(merged));
+    // まとめた側を指していた解析結果の表示も付け替える
+    for (const job of await db.listJobs()) {
+      if (job.warlord_id === other.id || job.target_id === other.id) {
+        await db.saveJob({ ...job, warlord_id: job.warlord_id === other.id ? keep.id : job.warlord_id, target_id: job.target_id === other.id ? keep.id : job.target_id });
+      }
+    }
+    queue.notifyQueueChange();
+    return saved;
   },
 
   async exportText(): Promise<Blob> {
