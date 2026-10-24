@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { ingestExtraction as ingest } from "./ingest.ts";
+import { differsByOneChar, ingestExtraction as ingest } from "./ingest.ts";
 import { createMemoryRepo } from "./memoryRepo.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
 import type { Warlord } from "./types.ts";
@@ -82,6 +82,21 @@ describe("ingestExtraction", async () => {
       await add("n1");
       await add("s1");
       await expect(add("t1")).rejects.toThrow(/どちらとも一致しません/);
+    });
+
+    it("名前を 1 文字読み違えても、立ち絵が同じなら統合する", async () => {
+      const a = (await add("n1")).warlord;
+      const res = await ingestExtraction(makeExtraction({ name: "武将Ａ゙" }), {
+        ...opts("n2"),
+        sameArt: art("n2"),
+        similarNames: async (name) => repo.all().filter((w) => differsByOneChar(w.name, name)),
+      });
+      expect(res.warlord.id).toBe(a.id);
+      expect(res.warnings.join()).toMatch(/1 文字違います/);
+      expect(differsByOneChar("豊臣秀吉", "豐臣秀吉")).toBe(true);
+      expect(differsByOneChar("豊臣秀吉", "豊臣秀長")).toBe(true);
+      expect(differsByOneChar("織田信長", "明智光秀")).toBe(false);
+      expect(differsByOneChar("信長", "信長公")).toBe(true);
     });
 
     it("AI に届かない時は例外のまま (後でやり直す)", async () => {

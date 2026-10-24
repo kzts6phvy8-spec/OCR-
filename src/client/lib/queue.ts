@@ -1,5 +1,5 @@
 import type { Faction, OcrJob, UploadMode } from "../../core/types.ts";
-import { ingestExtraction } from "../../core/ingest.ts";
+import { differsByOneChar, ingestExtraction } from "../../core/ingest.ts";
 import { warlordLabel } from "../../core/domain.ts";
 import * as db from "./db.ts";
 import { bgActive, loadSettings } from "./settings.ts";
@@ -221,6 +221,7 @@ function ingestJob(job: OcrJob, extraction: OcrExtraction) {
       imageId: job.image_id,
       faction: job.faction ?? "",
       sameArt: artChecker(job.image_id),
+      similarNames: async (name) => (await db.listWarlords()).filter((w) => differsByOneChar(w.name, name)),
     }),
   );
 }

@@ -28,7 +28,11 @@ export function toInput(w: Warlord): WarlordInput {
  * 画像の立ち絵 (画面左側のキャラクターのイラスト) が、登録済みの武将の立ち絵と同じかを調べる。
  * "unknown" は立ち絵が写っていない等で判断できない時。AI に届かない時は例外を投げる (後でやり直す)。
  */
-export type ArtCheck = (candidate: Warlord) => Promise<"same" | "different" | "unknown">;
+export type ArtCheck = (
+  candidate: Warlord,
+  /** localOnly: AI に尋ねず端末だけで見比べる / strict: 確信が無くても「違う」は違うとする */
+  opts?: { localOnly?: boolean; strict?: boolean },
+) => Promise<"same" | "different" | "unknown">;
 
 /**
  * 同じ名前の武将が登録済みの時、立ち絵を見比べて統合先を決める。
@@ -47,7 +51,7 @@ async function chooseByArt(
     // 【特】表記あり: 特異武将が登録済みならそこへ。
     // 未登録で、通常武将として登録された立ち絵と同じなら、それは先に【特】表記の無い画面から登録された特異武将
     if (special) return { existing: special, isSpecial: true, becomesSpecial: false, warnings: [] };
-    if (normal && (await sameArt(normal)) === "same") {
+    if (normal && (await sameArt(normal, { strict: true })) === "same") {
       return {
         existing: normal,
         isSpecial: true,
@@ -61,14 +65,25 @@ async function chooseByArt(
   const candidates = [normal, special].filter((w): w is Warlord => w !== null);
   if (candidates.length === 0) return { existing: null, isSpecial: false, becomesSpecial: false, warnings: [] };
 
+  // 1 人だけなら、はっきり違う時以外はその武将とみなす (同じ武将が分かれてしまわないように)。
+  // 通常・特異の 2 人がいる時は、両方と見比べて、同じと言えるのが 1 人だけの時に決める
+  const strict = candidates.length > 1;
   const results: ("same" | "different" | "unknown")[] = [];
   for (const c of candidates) {
-    const r = await sameArt(c);
+    const r = await sameArt(c, { strict });
     results.push(r);
-    if (r === "same") {
-      const warnings = c.is_special ? ["【特】表記が無いため、立ち絵から特異武将と判断しました"] : [];
-      return { existing: c, isSpecial: c.is_special, becomesSpecial: false, warnings };
-    }
+    if (r === "same" && !strict) return { existing: c, isSpecial: c.is_special, becomesSpecial: false, warnings: [] };
+  }
+  const same = candidates.filter((_, i) => results[i] === "same");
+  if (same.length === 1) {
+    const c = same[0];
+    const warnings = c.is_special ? ["【特】表記が無いため、立ち絵から特異武将と判断しました"] : [];
+    return { existing: c, isSpecial: c.is_special, becomesSpecial: false, warnings };
+  }
+  if (same.length > 1) {
+    throw new IngestError(
+      `立ち絵で「${name}」の通常武将か特異武将か判断できませんでした。武将の画面の「スクショを追加して統合」から追加してください`,
+    );
   }
   if (results.every((r) => r === "different")) {
     // 登録済みの武将と立ち絵が違う = もう片方 (通常なら特異、特異なら通常)
@@ -118,6 +133,8 @@ export async function ingestExtraction(
     faction?: Faction | "";
     /** 同じ名前の武将が登録済みの時、立ち絵が同じかを調べる (無ければ名前と【特】表記だけで決める) */
     sameArt?: ArtCheck;
+    /** 1 文字だけ違う名前の武将 (名前の読み違いの救済用) */
+    similarNames?: (name: string) => Promise<Warlord[]>;
   },
 ): Promise<IngestResult> {
   const decision = decideSpecial(ext, opts.mode);
@@ -153,6 +170,19 @@ export async function ingestExtraction(
       becomesSpecial = found.becomesSpecial;
       warnings.push(...found.warnings);
     }
+    // 新しく登録しようとしている時、1 文字だけ違う名前の武将がいて立ち絵もほぼ同じなら、名前の読み違いとみなして統合する
+    if (!existing && opts.sameArt && opts.similarNames) {
+      for (const c of await opts.similarNames(name)) {
+        if (c.is_special !== isSpecial && opts.mode !== "auto") continue;
+        // 別の武将の可能性もあるので、AI には尋ねず、端末での見比べでほぼ同じ絵の時だけ
+        if ((await opts.sameArt(c, { localOnly: true })) !== "same") continue;
+        warnings.push(`読み取った名前「${name}」は「${c.name}」と 1 文字違いますが、立ち絵が同じなので統合しました`);
+        existing = c;
+        name = c.name;
+        isSpecial = c.is_special;
+        break;
+      }
+    }
   }
 
   const patch = extractionToPatch(ext);
@@ -168,4 +198,16 @@ export async function ingestExtraction(
   const record = normalizeInput(merged);
   const warlord = existing ? await repo.update(existing.id, record) : await repo.insert(record);
   return { warlord, merged: Boolean(existing), warnings };
+}
+
+/** 2 つの名前が 1 文字だけ違うか (置き換え・抜け・余分が 1 つ)。2 文字以下の名前は対象外 */
+export function differsByOneChar(a: string, b: string): boolean {
+  const x = [...a];
+  const y = [...b];
+  if (a === b || Math.min(x.length, y.length) < 2 || Math.abs(x.length - y.length) > 1) return false;
+  let i = 0;
+  while (i < x.length && i < y.length && x[i] === y[i]) i++;
+  let j = 0;
+  while (j < x.length - i && j < y.length - i && x[x.length - 1 - j] === y[y.length - 1 - j]) j++;
+  return x.length - i - j <= 1 && y.length - i - j <= 1;
 }
