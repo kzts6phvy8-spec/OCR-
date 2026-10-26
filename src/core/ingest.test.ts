@@ -48,14 +48,18 @@ describe("ingestExtraction", async () => {
 
     it("立ち絵が違えば、名前が同じでも統合しない", async () => {
       const n = (await add("n1", { skill: { name: "通常の奥義" } })).warlord;
-      const s = await add("s1", { skill: { name: "特異の奥義" } }); // 【特】表記の無い画面
-      expect(s.warlord.is_special).toBe(true);
+      const s = await add("s1", { skill: { name: "特異の奥義" } }); // 【特】表記も勢力も無い画面
       expect(s.merged).toBe(false);
       expect((await repo.get(n.id))!.skill_name).toBe("通常の奥義");
-      // 以後、それぞれの絵の画面はそれぞれに統合される
-      expect((await add("s2")).warlord.id).toBe(s.warlord.id);
+      // 以後、それぞれの絵の画面はそれぞれに統合され、【特】表記の画面が来たら特異武将になる
+      expect((await add("s2", { special_marker_visible: true })).warlord).toMatchObject({ id: s.warlord.id, is_special: true });
       expect((await add("n2")).warlord.id).toBe(n.id);
       expect(repo.all()).toHaveLength(2);
+      // 勢力が読めていれば、通常武将と違う立ち絵はすぐ特異武将として登録する
+      const t = await ingestExtraction(makeExtraction({ name: "武将C", faction: "東海" }), { ...opts("n9"), sameArt: art("n9") });
+      const u = await ingestExtraction(makeExtraction({ name: "武将C", faction: "東海" }), { ...opts("s9"), sameArt: art("s9") });
+      expect(t.warlord.is_special).toBe(false);
+      expect(u.warlord.is_special).toBe(true);
     });
 
     it("先に【特】表記の無い画面から登録された特異武将は、【特】表記の画面が来たら特異武将に直す", async () => {
@@ -78,12 +82,6 @@ describe("ingestExtraction", async () => {
       await expect(add("x2")).rejects.toThrow(/判断できません/);
     });
 
-    it("通常・特異の両方と違えば統合しない", async () => {
-      await add("n1");
-      await add("s1");
-      await expect(add("t1")).rejects.toThrow(/どちらとも一致しません/);
-    });
-
     it("名前を 1 文字読み違えても、立ち絵が同じなら統合する", async () => {
       const a = (await add("n1")).warlord;
       const res = await ingestExtraction(makeExtraction({ name: "武将Ａ゙" }), {
@@ -97,6 +95,26 @@ describe("ingestExtraction", async () => {
       expect(differsByOneChar("豊臣秀吉", "豊臣秀長")).toBe(true);
       expect(differsByOneChar("織田信長", "明智光秀")).toBe(false);
       expect(differsByOneChar("信長", "信長公")).toBe(true);
+    });
+
+    it("同じ名前の姫武将は、勢力が読めれば立ち絵を見ずに別の武将として登録する", async () => {
+      const normal = (await add("n1", { faction: "東海" })).warlord;
+      const hime = await add("h1", { faction: "姫武将" });
+      expect(hime.merged).toBe(false);
+      expect(hime.warlord.id).not.toBe(normal.id);
+      expect(hime.warlord.faction).toBe("姫武将");
+      // 勢力が写っていない画面 (天賦など) は立ち絵で振り分ける
+      expect((await add("h2")).warlord.id).toBe(hime.warlord.id);
+      expect((await add("n2")).warlord.id).toBe(normal.id);
+    });
+
+    it("通常・特異がいて、どちらとも違う立ち絵なら別の武将として登録する", async () => {
+      await add("n1");
+      await add("s1", { special_marker_visible: true });
+      const other = await add("h1");
+      expect(other.merged).toBe(false);
+      expect(repo.all()).toHaveLength(3);
+      expect((await add("h2")).warlord.id).toBe(other.warlord.id);
     });
 
     it("AI に届かない時は例外のまま (後でやり直す)", async () => {
@@ -117,7 +135,7 @@ describe("ingestExtraction", async () => {
     expect(special.warlord.is_special).toBe(true);
     expect(special.merged).toBe(false);
     expect(special.warlord.skill_name).toBe("スキルB");
-    const normal = (await repo.find("武将A", false))!;
+    const normal = (await repo.findByName("武将A")).find((w) => !w.is_special)!;
     expect(normal.skill_name).toBe("スキルA");
     expect(normal.gallery_images).toEqual(["img-n.png"]);
   });

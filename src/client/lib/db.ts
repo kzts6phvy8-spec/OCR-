@@ -2,12 +2,14 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { OcrJob, Warlord, WarlordInput } from "../../core/types.ts";
 import type { WarlordRepo } from "../../core/ingest.ts";
 
-// 端末内データベース (IndexedDB)。武将は (name, is_special) を一意キーとして別レコード管理する。
+// 端末内データベース (IndexedDB)。
+// 武将は名前が同じでも別の武将がいる (通常 / 特異 / 姫武将などの別版) ので、名前は一意にしない。
+// どの武将に統合するかは、解析時に立ち絵・通常/特異・勢力で決める (core/ingest.ts)。
 
-type StoredWarlord = Warlord & { key: string };
+type StoredWarlord = Warlord & { key?: string };
 
 interface Schema extends DBSchema {
-  warlords: { key: string; value: StoredWarlord; indexes: { by_key: string } };
+  warlords: { key: string; value: StoredWarlord; indexes: { by_name: string } };
   images: { key: string; value: { id: string; blob: Blob; created_at: string } };
   jobs: { key: string; value: OcrJob & { seq: number }; indexes: { by_seq: number } };
 }
@@ -15,19 +17,23 @@ interface Schema extends DBSchema {
 let dbPromise: Promise<IDBPDatabase<Schema>> | null = null;
 
 function db() {
-  dbPromise ??= openDB<Schema>("sengoku-fubu", 1, {
-    upgrade(d) {
-      d.createObjectStore("warlords", { keyPath: "id" }).createIndex("by_key", "key", { unique: true });
-      d.createObjectStore("images", { keyPath: "id" });
-      d.createObjectStore("jobs", { keyPath: "id" }).createIndex("by_seq", "seq");
+  dbPromise ??= openDB<Schema>("sengoku-fubu", 2, {
+    upgrade(d, oldVersion, _newVersion, tx) {
+      if (oldVersion < 1) {
+        d.createObjectStore("warlords", { keyPath: "id" });
+        d.createObjectStore("images", { keyPath: "id" });
+        d.createObjectStore("jobs", { keyPath: "id" }).createIndex("by_seq", "seq");
+      }
+      if (oldVersion < 2) {
+        // 版 1 は (名前, 通常/特異) を一意にしていたため、同じ名前の別の武将 (姫武将など) を登録できなかった
+        const store = tx.objectStore("warlords");
+        if ((store.indexNames as DOMStringList).contains("by_key")) (store as unknown as IDBObjectStore).deleteIndex("by_key");
+        store.createIndex("by_name", "name");
+      }
     },
   });
   return dbPromise;
 }
-
-const uniqueKey = (name: string, isSpecial: boolean) => `${name}\u0000${isSpecial ? 1 : 0}`;
-
-export class ConflictError extends Error {}
 
 function strip({ key: _k, ...w }: StoredWarlord): Warlord {
   return w;
@@ -45,25 +51,16 @@ export async function getWarlord(id: string): Promise<Warlord | null> {
   return w ? strip(w) : null;
 }
 
-export async function findWarlord(name: string, isSpecial: boolean): Promise<Warlord | null> {
-  const w = await (await db()).getFromIndex("warlords", "by_key", uniqueKey(name, isSpecial));
-  return w ? strip(w) : null;
-}
-
-async function assertUnique(input: WarlordInput, selfId: string | null) {
-  const other = await findWarlord(input.name, input.is_special);
-  if (other && other.id !== selfId) {
-    throw new ConflictError(`${input.is_special ? "特異" : "通常"}武将「${input.name}」は既に登録されています`);
-  }
+/** 同じ名前の武将すべて */
+export async function findByName(name: string): Promise<Warlord[]> {
+  return (await (await db()).getAllFromIndex("warlords", "by_name", name)).map(strip);
 }
 
 export async function insertWarlord(input: WarlordInput, opts: { id?: string; created_at?: string } = {}): Promise<Warlord> {
-  await assertUnique(input, null);
   const now = new Date().toISOString();
   const row: StoredWarlord = {
     ...input,
     id: opts.id ?? crypto.randomUUID(),
-    key: uniqueKey(input.name, input.is_special),
     screenshot_count: input.gallery_images.length,
     created_at: opts.created_at ?? now,
     updated_at: now,
@@ -73,13 +70,11 @@ export async function insertWarlord(input: WarlordInput, opts: { id?: string; cr
 }
 
 export async function updateWarlord(id: string, input: WarlordInput): Promise<Warlord> {
-  await assertUnique(input, id);
   const current = await (await db()).get("warlords", id);
   if (!current) throw new Error("武将が見つかりません");
   const row: StoredWarlord = {
     ...input,
     id,
-    key: uniqueKey(input.name, input.is_special),
     screenshot_count: input.gallery_images.length,
     created_at: current.created_at,
     updated_at: new Date().toISOString(),
@@ -106,7 +101,7 @@ export async function deleteEverything() {
 
 export const repo: WarlordRepo = {
   get: getWarlord,
-  find: findWarlord,
+  findByName,
   insert: (input) => insertWarlord(input),
   update: updateWarlord,
 };

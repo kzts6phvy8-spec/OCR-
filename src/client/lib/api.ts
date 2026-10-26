@@ -186,7 +186,12 @@ export const api = {
         errors.push(`${i + 1} 件目: 武将名がありません`);
         continue;
       }
-      const existing = await db.findWarlord(input.name, input.is_special);
+      // 同じ ID の武将、無ければ名前・通常/特異・勢力が同じ武将を上書きする
+      const sameId = typeof raw?.id === "string" ? await db.getWarlord(raw.id) : null;
+      const existing =
+        sameId ??
+        (await db.findByName(input.name)).find((w) => w.is_special === input.is_special && w.faction === input.faction) ??
+        null;
       if (existing) {
         await db.updateWarlord(existing.id, input);
         updated++;
