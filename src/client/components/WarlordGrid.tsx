@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, CheckSquare, CircleDashed, Images, LayoutGrid, List, Plus, ScanLine, Search, SlidersHorizontal, Trash2, UserRound } from "lucide-react";
+import { Check, CheckSquare, CircleDashed, Download, Flag, Images, LayoutGrid, List, Plus, ScanLine, Search, SlidersHorizontal, Trash2, UserRound } from "lucide-react";
 import { api } from "../lib/api.ts";
+import { saveFile, today } from "../lib/share.ts";
+import { warlordsToText } from "../../core/text.ts";
 import { useToast } from "../lib/toast.tsx";
 import { FACTIONS, RARITIES, type Warlord } from "../../core/types.ts";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
@@ -201,6 +203,23 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
           武器覚醒のみ
         </label>
         <div className="flex items-center gap-1.5">
+          <Flag className={`size-4 ${faction !== "all" ? "text-gold-400" : "text-ebony-500"}`} />
+          <select
+            className={`field w-auto py-1 text-xs ${faction !== "all" ? "border-gold-500 text-gold-300" : ""}`}
+            value={faction}
+            onChange={(e) => setFaction(e.target.value)}
+            aria-label="勢力で絞り込み"
+          >
+            <option value="all">勢力: すべて ({warlords.length})</option>
+            {FACTIONS.map((f) => (
+              <option key={f} value={f}>
+                勢力: {f} ({counts.get(f) ?? 0})
+              </option>
+            ))}
+            <option value="">勢力: 未入力 ({counts.get("") ?? 0})</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
           <CircleDashed className={`size-4 ${missing ? "text-hi-400" : "text-ebony-500"}`} />
           <select
             className={`field w-auto py-1 text-xs ${missing ? "border-hi-500 text-hi-400" : ""}`}
@@ -312,7 +331,21 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
         <p className="py-16 text-center text-sm text-ash">条件に一致する武将がいません</p>
       ) : (
         <>
-          <p className="mb-3 text-xs text-ash">{visible.length} 件</p>
+          <div className="mb-3 flex items-center gap-3 text-xs text-ash">
+            <span>{visible.length} 件</span>
+            <button
+              onClick={() =>
+                void saveFile(
+                  new Blob([warlordsToText([...visible].sort((a, b) => a.name.localeCompare(b.name, "ja")))], { type: "text/plain;charset=utf-8" }),
+                  `warlords-${faction === "all" ? "" : `${faction || "勢力未入力"}-`}${today()}.txt`,
+                  "戦国布武 武将図鑑",
+                )
+              }
+              className="flex items-center gap-1 rounded-md border border-ebony-600 px-2 py-1 text-ash hover:text-washi"
+            >
+              <Download className="size-3.5" /> 表示中の {visible.length} 件を .txt で保存
+            </button>
+          </div>
           {layout === "grid" ? (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {visible.slice(0, limit).map((w) => (
