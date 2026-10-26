@@ -16,8 +16,8 @@ export function createMemoryRepo(): WarlordRepo & { all(): Warlord[] } {
     async get(id) {
       return rows.get(id) ?? null;
     },
-    async find(name, isSpecial) {
-      return [...rows.values()].find((w) => w.name === name && w.is_special === isSpecial) ?? null;
+    async findByName(name) {
+      return [...rows.values()].filter((w) => w.name === name);
     },
     async insert(input) {
       const w = wrap(`w${++seq}`, input, new Date().toISOString());
