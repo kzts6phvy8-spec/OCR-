@@ -98,8 +98,12 @@ async function chooseByArt(all: Warlord[], marked: boolean, faction: string, sam
   }
 
   if (candidates.length === 0) return create(false);
-  // 新しく登録する時の通常/特異: 勢力が読めていて、同じ区分の通常武将だけがいるなら、立ち絵が違う方は特異武将
-  const newIsSpecial = Boolean(faction) && candidates.every((c) => !c.is_special);
+  // 新しく登録する時の通常/特異: 勢力が読めていて、同じ勢力の通常武将だけがいるなら、立ち絵が違う方は特異武将。
+  // 姫武将などの別区分は特異武将とは別物なので、こうして特異武将にすることはしない
+  const newIsSpecial =
+    Boolean(faction) &&
+    !SEPARATE_FACTIONS.includes(faction) &&
+    candidates.every((c) => !c.is_special && c.faction === faction);
   const newWarning = newIsSpecial
     ? "立ち絵が通常武将と違うため、特異武将として登録しました"
     : "立ち絵が同じ名前の武将と違うため、別の武将として登録しました";
@@ -149,7 +153,13 @@ export async function ingestExtraction(
     similarNames?: (name: string) => Promise<Warlord[]>;
   },
 ): Promise<IngestResult> {
-  const decision = decideSpecial(ext, opts.mode);
+  const readFaction = opts.faction || normalizeFaction(ext.faction);
+  // 姫武将などの別区分は特異武将とは別物: AI が姫のマーク等を【特】と取り違えても特異にしない
+  // (武将名そのものに【特】が付いている時だけは従う)
+  const decision = decideSpecial(
+    SEPARATE_FACTIONS.includes(readFaction) ? { ...ext, special_marker_visible: false } : ext,
+    opts.mode,
+  );
   const warnings = [...decision.warnings];
   const readName = normalizeName(ext.name).name;
 
@@ -174,7 +184,7 @@ export async function ingestExtraction(
     }
     name = readName;
     isSpecial = decision.is_special;
-    const faction = opts.faction || normalizeFaction(ext.faction);
+    const faction = readFaction;
     const all = await repo.findByName(name);
     // 立ち絵で確かめない時 (手動で通常/特異を指定した時など) は、名前・通常/特異・勢力の区分が合う武将へ
     existing =
