@@ -108,6 +108,19 @@ describe("ingestExtraction", async () => {
       expect((await add("n2")).warlord.id).toBe(normal.id);
     });
 
+    it("姫武将は特異武将にしない", async () => {
+      // 勢力が未入力の通常武将がいても、姫武将の画面は特異武将にならない
+      await add("n1");
+      const hime = await add("h1", { faction: "姫武将", special_marker_visible: true });
+      expect(hime.warlord.is_special).toBe(false);
+      expect(hime.merged).toBe(false);
+      expect(hime.warlord.faction).toBe("姫武将");
+      // 勢力が写っていない姫武将の画面も、通常武将と違う立ち絵なら特異にはしない
+      await ingestExtraction(makeExtraction({ name: "武将M", faction: "東海" }), { ...opts("m1"), sameArt: art("m1") });
+      const other = await ingestExtraction(makeExtraction({ name: "武将M" }), { ...opts("k1"), sameArt: art("k1") });
+      expect(other.warlord.is_special).toBe(false);
+    });
+
     it("通常・特異がいて、どちらとも違う立ち絵なら別の武将として登録する", async () => {
       await add("n1");
       await add("s1", { special_marker_visible: true });

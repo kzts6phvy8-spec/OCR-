@@ -45,6 +45,18 @@ export const api = {
     return { updated, unmatched };
   },
 
+  /** 特異武将として登録されてしまった姫武将を通常に戻す (姫武将は特異武将とは別物)。起動時に呼ぶ */
+  async fixHimeSpecial(): Promise<number> {
+    let fixed = 0;
+    for (const w of await db.listWarlords()) {
+      if (w.faction === "姫武将" && w.is_special) {
+        await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), is_special: false }));
+        fixed++;
+      }
+    }
+    return fixed;
+  },
+
   async deleteWarlord(id: string) {
     await api.deleteWarlords([id]);
   },

@@ -23,6 +23,7 @@ export const SYSTEM_PROMPT = `あなたはスマホゲーム『戦国布武～�
 
 # 【特】表記
 - 画面に【特】の表記が実際に写っている場合のみ special_marker_visible=true。それ以外は false。
+- 「姫」の文字・姫武将のマーク・勢力名などは【特】表記ではない (姫武将は特異武将とは別物)。【特】以外の印で true にしない。
 
 # 専用武器覚醒
 - 専用武器覚醒の表示が この画像に写っている場合に限り weapon_awakening_visible=true とし、その効果を after_weapon_effect に入れる。
