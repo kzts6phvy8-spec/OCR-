@@ -192,11 +192,24 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
     ? allWarlords.find((w) => w.name === warlord.name && w.is_special !== warlord.is_special)
     : undefined;
 
+  // 手動登録の時に添えるスクショ (保存した後で、この武将に統合するよう解析する)
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [analyzeNew, setAnalyzeNew] = useState(true);
+
   const save = async () => {
     if (!draft.name.trim()) return toast("error", "武将名を入力してください");
     setSaving(true);
     try {
-      const saved = warlord ? await api.updateWarlord(warlord.id, draft) : await api.createWarlord(draft);
+      let saved = warlord ? await api.updateWarlord(warlord.id, draft) : await api.createWarlord(draft);
+      if (!warlord && newFiles.length > 0) {
+        if (analyzeNew) {
+          await api.upload(newFiles, { mode: "auto", targetId: saved.id, faction: "" }, () => {});
+          toast("info", `${newFiles.length} 枚を「${saved.name}」に統合するよう解析します`, "空欄の項目が埋まります。入力した内容は変わりません");
+        } else {
+          saved = await api.attachImages(saved.id, newFiles);
+        }
+        setNewFiles([]);
+      }
       toast("success", "保存しました", saved.name);
       setEditing(false);
       onSaved(saved);
@@ -397,7 +410,10 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
             <EditForm draft={draft} setDraft={setDraft} />
           )}
 
+          {!warlord && <NewScreenshots files={newFiles} setFiles={setNewFiles} analyze={analyzeNew} setAnalyze={setAnalyzeNew} />}
+
           {/* ギャラリー */}
+          {(warlord || gallery.length > 0) && (
           <Section title={`スクリーンショット (${gallery.length})`}>
             {gallery.length === 0 ? (
               <p className="text-sm text-ebony-500">画像はありません</p>
@@ -440,6 +456,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
               </div>
             )}
           </Section>
+          )}
         </div>
       </div>
 
@@ -447,6 +464,71 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
         <Lightbox images={gallery} index={lightbox} onChange={setLightbox} onClose={() => setLightbox(null)} />
       )}
     </div>
+  );
+}
+
+/** 手動登録の時に添えるスクショの選択 */
+function NewScreenshots({
+  files,
+  setFiles,
+  analyze,
+  setAnalyze,
+}: {
+  files: File[];
+  setFiles: (f: File[]) => void;
+  analyze: boolean;
+  setAnalyze: (v: boolean) => void;
+}) {
+  const [urls, setUrls] = useState<string[]>([]);
+  useEffect(() => {
+    const list = files.map((f) => URL.createObjectURL(f));
+    setUrls(list);
+    return () => list.forEach((u) => URL.revokeObjectURL(u));
+  }, [files]);
+  return (
+    <Section title={`スクリーンショットを添える (${files.length})`}>
+      <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-lg bg-gradient-to-b from-shu-400 to-shu-600 px-3 py-1.5 text-sm font-bold text-white">
+        <ImagePlus className="size-4" /> 画像を選ぶ (複数可)
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            const picked = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith("image/") || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name));
+            setFiles([...files, ...picked]);
+            e.target.value = "";
+          }}
+        />
+      </label>
+      {files.length > 0 && (
+        <>
+          <div className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-6">
+            {urls.map((u, i) => (
+              <div key={u} className="relative">
+                <img src={u} alt="" className="aspect-[9/16] w-full rounded-md border border-ebony-700 object-cover" />
+                <button
+                  onClick={() => setFiles(files.filter((_, j) => j !== i))}
+                  className="absolute right-1 bottom-1 rounded bg-ebony-950/85 p-1 text-hi-400"
+                  aria-label="画像を外す"
+                >
+                  <Trash2 className="size-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={analyze} onChange={(e) => setAnalyze(e.target.checked)} className="accent-gold-500" />
+            保存した後、AI で解析して空欄を埋める
+          </label>
+          <p className="mt-1 text-[11px] text-ebony-500">
+            {analyze
+              ? "画像はこの武将に統合されます (別の武将として登録されることはありません)。入力した内容は上書きされません。"
+              : "解析せず、画像だけをこの武将に登録します。"}
+          </p>
+        </>
+      )}
+    </Section>
   );
 }
 
