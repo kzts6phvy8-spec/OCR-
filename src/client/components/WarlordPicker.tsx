@@ -48,7 +48,9 @@ export function WarlordPicker({
         <span className="min-w-0 flex-1 truncate font-bold text-gold-300">
           {label(selected)}
           {selected.title_alias && <span className="ml-1 font-normal text-ash">({selected.title_alias})</span>}
-          {selected.faction && <span className="ml-1.5 text-xs font-normal text-ash">{selected.faction}</span>}
+          {(selected.rarity || selected.faction) && (
+            <span className="ml-1.5 text-xs font-normal text-ash">{[selected.rarity, selected.faction].filter(Boolean).join(" ・")}</span>
+          )}
         </span>
         <button onClick={() => onChange("")} className="flex items-center gap-0.5 text-xs text-ash hover:text-washi" aria-label="選び直す">
           <X className="size-4" /> 選び直す
@@ -81,6 +83,7 @@ export function WarlordPicker({
                   {w.title_alias && <span className="ml-1 text-xs text-ash">({w.title_alias})</span>}
                 </span>
                 <span className="shrink-0 text-[11px] text-ash">
+                  {w.rarity && `${w.rarity} ・`}
                   {w.faction || "勢力未入力"} ・画像 {w.screenshot_count} 枚
                 </span>
               </button>

@@ -7,6 +7,7 @@ import {
   normalizeFaction,
   normalizeInput,
   normalizeName,
+  normalizeRarity,
 } from "./domain.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
 
@@ -45,6 +46,19 @@ const factionGroup = (f: string) => (SEPARATE_FACTIONS.includes(f) ? f : "");
 /** 読み取った勢力と、登録済みの武将の勢力が両立するか (どちらかが不明なら両立とみなす) */
 const factionCompatible = (w: Warlord, faction: string) => !faction || !w.faction || factionGroup(w.faction) === factionGroup(faction);
 
+/**
+ * レア度が違えば能力も違うので、同じ名前でも別の武将として扱う勢力 (例: 物語武将の「お宮」の SSR と SR)。
+ * 立ち絵が同じでも、レア度が読めて違えば統合しない。
+ */
+export const SPLIT_BY_RARITY_FACTIONS: readonly string[] = ["物語武将"];
+const rarityCompatible = (w: Warlord, faction: string, rarity: string) =>
+  !rarity ||
+  !w.rarity ||
+  w.rarity === rarity ||
+  !(SPLIT_BY_RARITY_FACTIONS.includes(faction) || SPLIT_BY_RARITY_FACTIONS.includes(w.faction));
+/** 読み取った勢力・レア度と、登録済みの武将が両立するか */
+const compatible = (w: Warlord, faction: string, rarity: string) => factionCompatible(w, faction) && rarityCompatible(w, faction, rarity);
+
 interface Choice {
   existing: Warlord | null;
   isSpecial: boolean;
@@ -70,8 +84,8 @@ async function compareAll(candidates: Warlord[], sameArt: ArtCheck, strict: bool
  * 同じ名前の武将が登録済みの時、立ち絵を見比べて統合先を決める。
  * 名前が同じでも立ち絵が違えば別の武将 (通常 / 特異 / 姫武将などの別版) なので統合しない。
  */
-async function chooseByArt(all: Warlord[], marked: boolean, faction: string, sameArt: ArtCheck): Promise<Choice> {
-  const candidates = all.filter((c) => factionCompatible(c, faction));
+async function chooseByArt(all: Warlord[], marked: boolean, faction: string, rarity: string, sameArt: ArtCheck): Promise<Choice> {
+  const candidates = all.filter((c) => compatible(c, faction, rarity));
   const name = all[0]?.name ?? "";
 
   if (marked) {
@@ -185,14 +199,15 @@ export async function ingestExtraction(
     name = readName;
     isSpecial = decision.is_special;
     const faction = readFaction;
+    const rarity = normalizeRarity(ext.rarity);
     const all = await repo.findByName(name);
     // 立ち絵で確かめない時 (手動で通常/特異を指定した時など) は、名前・通常/特異・勢力の区分が合う武将へ
     existing =
-      all.find((w) => w.is_special === isSpecial && factionCompatible(w, faction) && (!faction || w.faction === faction)) ??
-      all.find((w) => w.is_special === isSpecial && factionCompatible(w, faction)) ??
+      all.find((w) => w.is_special === isSpecial && compatible(w, faction, rarity) && (!faction || w.faction === faction)) ??
+      all.find((w) => w.is_special === isSpecial && compatible(w, faction, rarity)) ??
       null;
     if (opts.mode === "auto" && opts.sameArt && all.length > 0) {
-      const found = await chooseByArt(all, decision.is_special, faction, opts.sameArt);
+      const found = await chooseByArt(all, decision.is_special, faction, rarity, opts.sameArt);
       existing = found.existing;
       isSpecial = found.isSpecial;
       becomesSpecial = found.becomesSpecial;
@@ -202,7 +217,7 @@ export async function ingestExtraction(
     if (!existing && opts.sameArt && opts.similarNames) {
       for (const c of await opts.similarNames(name)) {
         if (c.is_special !== isSpecial && opts.mode !== "auto") continue;
-        if (!factionCompatible(c, faction)) continue;
+        if (!compatible(c, faction, rarity)) continue;
         // 別の武将の可能性もあるので、AI には尋ねず、端末での見比べでほぼ同じ絵の時だけ
         if ((await opts.sameArt(c, { localOnly: true })) !== "same") continue;
         warnings.push(`読み取った名前「${name}」は「${c.name}」と 1 文字違いますが、立ち絵が同じなので統合しました`);
