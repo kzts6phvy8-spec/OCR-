@@ -34,6 +34,7 @@ import { useToast } from "../lib/toast.tsx";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { warlordToText } from "../../core/text.ts";
 import { StoredImage } from "./StoredImage.tsx";
+import { WarlordPicker } from "./WarlordPicker.tsx";
 import { onQueueChange } from "../lib/queue.ts";
 import { differsByOneChar } from "../../core/ingest.ts";
 
@@ -343,17 +344,16 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                 {mergeOpen && (
                   <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-ebony-700 bg-ebony-900 p-2.5 text-sm">
                     <span className="text-xs text-ash">この武将にまとめる武将:</span>
-                    <select className="field min-w-0 flex-1 py-1 text-sm" value={mergeId} onChange={(e) => setMergeId(e.target.value)}>
-                      <option value="">選んでください</option>
-                      {mergeCandidates.map(({ w, near }) => (
-                        <option key={w.id} value={w.id}>
-                          {near < 2 ? "★ " : ""}
-                          {w.is_special ? "【特】" : ""}
-                          {w.name}
-                          {w.title_alias ? ` (${w.title_alias})` : ""} ・画像 {w.screenshot_count} 枚
-                        </option>
-                      ))}
-                    </select>
+<div className="min-w-0 flex-1">
+                      <WarlordPicker
+                        warlords={mergeCandidates.map(({ w }) => w)}
+                        value={mergeId}
+                        onChange={setMergeId}
+                        placeholder="まとめる武将を検索"
+                        priority={(w) => mergeCandidates.find((c) => c.w.id === w.id)?.near ?? 2}
+                        suggest={(w) => (mergeCandidates.find((c) => c.w.id === w.id)?.near ?? 2) < 2}
+                      />
+                    </div>
                     <button
                       disabled={!mergeId}
                       onClick={mergeOther}
@@ -361,7 +361,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                     >
                       まとめる
                     </button>
-                    <span className="w-full text-[11px] text-ebony-500">★ は同じ名前・1 文字違いの武将です。まとめた後も、この武将の通常/特異はそのままです。</span>
+                    <span className="w-full text-[11px] text-ebony-500">同じ名前・1 文字違いの武将は、検索しなくても候補に出ます。まとめた後も、この武将の通常/特異はそのままです。</span>
                   </div>
                 )}
               </>
