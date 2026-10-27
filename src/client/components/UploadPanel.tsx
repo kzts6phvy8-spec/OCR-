@@ -17,6 +17,7 @@ import { isStalled, lastProbe } from "../lib/probe.ts";
 import { LITE_GEMINI_MODEL, bgActive, loadSettings, setGeminiModel } from "../lib/settings.ts";
 import { useToast } from "../lib/toast.tsx";
 import { StoredImage } from "./StoredImage.tsx";
+import { WarlordPicker } from "./WarlordPicker.tsx";
 
 function formatDuration(ms: number) {
   const min = Math.round(ms / 60_000);
@@ -145,7 +146,6 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
     }
   };
 
-  const sortedWarlords = useMemo(() => [...warlords].sort((a, b) => a.name.localeCompare(b.name, "ja")), [warlords]);
 
   return (
     <div className="mx-auto grid max-w-3xl gap-6">
@@ -228,20 +228,17 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
             </div>
           </div>
 
-          <label className="block">
+          <div>
             <span className="mb-1 block text-xs font-bold tracking-wider text-ash">統合先の武将 (任意)</span>
-            <select className="field" value={targetId} onChange={(e) => setTargetId(e.target.value)}>
-              <option value="">自動 (読み取った武将名で統合)</option>
-              {sortedWarlords.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.is_special ? "【特】" : ""}
-                  {w.name}
-                  {w.title_alias ? ` (${w.title_alias})` : ""}
-                </option>
-              ))}
-            </select>
+            <WarlordPicker
+              warlords={warlords}
+              value={targetId}
+              onChange={setTargetId}
+              placeholder="統合先の武将を検索 (名前・二つ名・勢力)"
+              emptyLabel="自動 (読み取った武将名で統合)"
+            />
             <span className="mt-1 block text-[11px] text-ebony-500">武将名が写っていない画面 (天賦だけ等) を追加する時に指定します</span>
-          </label>
+          </div>
           {model && <p className="text-[11px] text-ebony-500">AI モデル: {model}</p>}
         </div>
       </section>
