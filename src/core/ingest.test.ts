@@ -121,6 +121,23 @@ describe("ingestExtraction", async () => {
       expect(other.warlord.is_special).toBe(false);
     });
 
+    it("物語武将はレア度が違えば、立ち絵が同じでも別の武将にする", async () => {
+      const ssr = (await add("m1", { faction: "物語武将", rarity: "SSR" })).warlord;
+      const sr = await add("m2", { faction: "物語武将", rarity: "SR" }); // 同じ立ち絵 (m)
+      expect(sr.merged).toBe(false);
+      expect(sr.warlord.id).not.toBe(ssr.id);
+      expect(sr.warlord.is_special).toBe(false);
+      // レア度が読めた画面は、そのレア度の武将へ
+      expect((await add("m3", { rarity: "SSR" })).warlord.id).toBe(ssr.id);
+      expect((await add("m4", { rarity: "SR" })).warlord.id).toBe(sr.warlord.id);
+      // レア度も勢力も写っていない画面は、立ち絵が同じで見分けられないので判断を求める
+      await expect(add("m5")).rejects.toThrow(/判断できませんでした/);
+      // 物語武将以外は、レア度の読み違いがあっても立ち絵が同じなら統合する
+      const n = (await ingestExtraction(makeExtraction({ name: "武将Z", faction: "東海", rarity: "SSR" }), { ...opts("z1"), sameArt: art("z1") })).warlord;
+      const z = await ingestExtraction(makeExtraction({ name: "武将Z", rarity: "SR" }), { ...opts("z2"), sameArt: art("z2") });
+      expect(z.warlord.id).toBe(n.id);
+    });
+
     it("通常・特異がいて、どちらとも違う立ち絵なら別の武将として登録する", async () => {
       await add("n1");
       await add("s1", { special_marker_visible: true });
