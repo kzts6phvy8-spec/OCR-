@@ -4,7 +4,7 @@ import { warlordsToText } from "../../core/text.ts";
 import { mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import * as db from "./db.ts";
-import { blobToDataUrl, compressImage, dataUrlToBlob } from "./images.ts";
+import { blobToDataUrl, compressImage, dataUrlToBlob, shrinkForGallery } from "./images.ts";
 import * as queue from "./queue.ts";
 
 // 画面から使う操作。サーバーは無く、すべて端末内で完結する。
@@ -160,6 +160,18 @@ export const api = {
     }
     queue.notifyQueueChange();
     return saved;
+  },
+
+  /** 画像を AI で解析せず、そのまま武将の画像に加える */
+  async attachImages(id: string, files: File[]): Promise<Warlord> {
+    const current = await db.getWarlord(id);
+    if (!current) throw new Error("武将が見つかりません");
+    const ids: string[] = [];
+    for (const file of files) ids.push(await db.putImage(await shrinkForGallery(await compressImage(file))));
+    return db.updateWarlord(
+      id,
+      normalizeInput({ ...toInput(current), gallery_images: [...current.gallery_images, ...ids], image_url: current.image_url || ids[0] || "" }),
+    );
   },
 
   async exportText(): Promise<Blob> {
