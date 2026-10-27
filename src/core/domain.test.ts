@@ -147,3 +147,10 @@ describe("misc normalizers", () => {
     expect(splitAwakeningName("覚醒A（高）")).toEqual({ name: "覚醒A", priority: "高" });
   });
 });
+
+describe("勢力", () => {
+  it("物語武将を読み取れる", () => {
+    expect(normalizeFaction("物語武将")).toBe("物語武将");
+    expect(normalizeFaction("物語")).toBe("物語武将");
+  });
+});

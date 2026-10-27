@@ -95,6 +95,7 @@ const FACTION_ALIASES: Record<string, Faction> = {
   姫: "姫武将",
   限定: "限定武将",
   頂点: "頂点武将",
+  物語: "物語武将",
 };
 
 export function normalizeFaction(value: string | null | undefined): Faction | "" {
