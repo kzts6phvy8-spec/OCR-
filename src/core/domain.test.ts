@@ -152,5 +152,7 @@ describe("勢力", () => {
   it("物語武将を読み取れる", () => {
     expect(normalizeFaction("物語武将")).toBe("物語武将");
     expect(normalizeFaction("物語")).toBe("物語武将");
+    expect(normalizeFaction("コラボ武将")).toBe("コラボ武将");
+    expect(normalizeFaction("コラボ")).toBe("コラボ武将");
   });
 });

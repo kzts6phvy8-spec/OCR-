@@ -26,7 +26,7 @@ export const OcrExtractionSchema = z.object({
   name: nullableString("画面に表示された武将名をそのまま (接頭辞・【特】も含めてよい)"),
   title_alias: nullableString("二つ名"),
   rarity: nullableString("SSR / SR / R / N / SP"),
-  faction: nullableString("勢力 (奥.関.甲 / 東海 / 畿内 / 中.九 / 姫武将 / 限定武将 / 鬼憑武将 / 旧時代 / 頂点武将 / 物語武将 のどれか)"),
+  faction: nullableString("勢力 (奥.関.甲 / 東海 / 畿内 / 中.九 / 姫武将 / 限定武将 / 鬼憑武将 / 旧時代 / 頂点武将 / 物語武将 / コラボ武将 のどれか)"),
   level: nullableNumber(),
   stars: nullableNumber("星の数 0〜5"),
 

@@ -16,6 +16,7 @@ export const FACTIONS = [
   "旧時代",
   "頂点武将",
   "物語武将",
+  "コラボ武将",
 ] as const;
 export type Faction = (typeof FACTIONS)[number];
 
