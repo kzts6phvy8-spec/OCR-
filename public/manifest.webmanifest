@@ -1,7 +1,7 @@
 {
-  "name": "戦国布武 武将図鑑",
-  "short_name": "武将図鑑",
-  "description": "戦国布武のスクリーンショットを AI で解析して武将図鑑を作るアプリ",
+  "name": "開発用データ",
+  "short_name": "開発用",
+  "description": "スクショをOCR解析",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",
