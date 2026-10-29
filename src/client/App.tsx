@@ -43,6 +43,16 @@ export default function App() {
     }
   }, [toast]);
 
+  // 結果が続けて届く間は、図鑑の読み直しを 2 秒に 1 回までにまとめる (600 人以上を毎回読み直すと遅くなるため)
+  const warlordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshWarlordsSoon = useCallback(() => {
+    if (warlordTimer.current) return;
+    warlordTimer.current = setTimeout(() => {
+      warlordTimer.current = null;
+      void refreshWarlords();
+    }, 2000);
+  }, [refreshWarlords]);
+
   // バッチ (未完了が 0 になるまで) の集計。大量に解析してもトーストが溢れないよう、まとめて通知する
   const batchStats = useRef({ done: 0, merged: 0, failed: 0, warnings: 0 });
 
@@ -97,8 +107,8 @@ export default function App() {
     sendingRef.current = sendingNow;
     knownStatus.current = new Map(list.map((j) => [j.id, j.status]));
     setJobs(list);
-    if (changed) void refreshWarlords();
-  }, [refreshWarlords, toast]);
+    if (changed) refreshWarlordsSoon();
+  }, [refreshWarlordsSoon, toast]);
 
   useEffect(() => {
     // 特異武将として登録されてしまった姫武将を通常に戻す
