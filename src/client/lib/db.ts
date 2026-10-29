@@ -213,7 +213,7 @@ export const deleteFinishedJobs = retrying(async function deleteFinishedJobs(): 
   const failedImages: string[] = [];
   for (const j of await d.getAll("jobs")) {
     if (j.status === "done" || j.status === "error") {
-      if (j.status === "error") failedImages.push(j.image_id);
+      if (j.status === "error" && !j.keep_image) failedImages.push(j.image_id);
       await d.delete("jobs", j.id);
     }
   }

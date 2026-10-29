@@ -80,6 +80,8 @@ export const api = {
 
   jobs: () => db.listJobs(),
   retryJob: (id: string) => queue.retryJob(id),
+  /** 失敗したジョブを、選んだ武将に統合してやり直す */
+  retryJobWithTarget: (id: string, targetId: string) => queue.retryJobs([id], targetId),
   removeJobs: (ids: string[]) => queue.removeJobs(ids),
   takeOverRemoteJobs: () => queue.takeOverRemoteJobs(),
   resendRemoteJobs: () => queue.resendRemoteJobs(),
@@ -115,7 +117,7 @@ export const api = {
     const w = await db.getWarlord(id);
     if (!w || w.gallery_images.length === 0) return [];
     const images = w.gallery_images.map((imageId, i) => ({ fileName: `${w.name} の画像${i + 1} (再解析)`, imageId }));
-    return queue.enqueue(images, "auto", id, "");
+    return queue.enqueue(images, "auto", id, "", true);
   },
 
   /**
@@ -132,6 +134,7 @@ export const api = {
       "auto",
       null,
       "",
+      true,
     );
     return { removed: targets.length, jobs };
   },

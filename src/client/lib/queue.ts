@@ -117,9 +117,12 @@ export async function enqueue(
   mode: UploadMode,
   targetId: string | null,
   faction: Faction | "",
+  /** 登録済みの画像をもう一度解析する時 (失敗しても画像は消さない) */
+  keepImage = false,
 ) {
   const now = new Date().toISOString();
   const jobs: OcrJob[] = imageIds.map((f) => ({
+    ...(keepImage ? { keep_image: true } : {}),
     id: crypto.randomUUID(),
     file_name: f.fileName,
     image_id: f.imageId,
@@ -143,11 +146,20 @@ export async function enqueue(
   return jobs;
 }
 
-export async function retryJobs(ids: string[]) {
+/** 失敗したジョブをやり直す。targetId を渡すと、その武将に統合する (読み取り済みなら読み取りは繰り返さない) */
+export async function retryJobs(ids: string[], targetId?: string) {
   for (const id of ids) {
     const job = await db.getJob(id);
     if (!job || job.status !== "error") continue;
-    await db.saveJob({ ...job, status: "queued", error: null, warnings: [], updated_at: new Date().toISOString() });
+    await db.saveJob({
+      ...job,
+      status: "queued",
+      error: null,
+      warnings: [],
+      attempts: 0,
+      ...(targetId ? { target_id: targetId } : {}),
+      updated_at: new Date().toISOString(),
+    });
   }
   notify();
   void runQueue();
@@ -290,7 +302,8 @@ async function processJob(job: OcrJob) {
       return;
     }
     console.error(`[ocr] ${job.file_name}:`, err);
-    await update(job, { status: "error", error: err instanceof Error ? err.message : String(err) });
+    // 読み取り済みなら結果を残す (再試行や「統合先を選んで保存」で読み取りを繰り返さない)
+    await update(job, { status: "error", error: err instanceof Error ? err.message : String(err), extraction, ...(extraction ? { local: true } : {}) });
   }
 }
 
@@ -440,7 +453,8 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
       void runQueue();
       return;
     }
-    await update(job, { status: "error", error: err instanceof Error ? err.message : String(err) });
+    // 読み取り済みなら結果を残す (再試行や「統合先を選んで保存」で読み取りを繰り返さない)
+    await update(job, { status: "error", error: err instanceof Error ? err.message : String(err), extraction, ...(extraction ? { local: true } : {}) });
   }
 }
 
