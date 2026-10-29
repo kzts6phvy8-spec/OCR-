@@ -87,7 +87,15 @@ export function onQueueChange(fn: () => void) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
-const notify = () => listeners.forEach((fn) => fn());
+// 画面への知らせはまとめて送る (結果を何十件も続けて保存する時に、1 件ごとに画面全体を作り直さないように)
+let notifyTimer: ReturnType<typeof setTimeout> | null = null;
+const notify = () => {
+  if (notifyTimer) return;
+  notifyTimer = setTimeout(() => {
+    notifyTimer = null;
+    listeners.forEach((fn) => fn());
+  }, 300);
+};
 export const notifyQueueChange = notify;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -195,12 +203,18 @@ function kickServer() {
   const settings = loadSettings();
   if (kicking || serverVersion < KICK_MIN_VERSION || !bgActive(settings)) return;
   kicking = true;
-  void callServer(settings, "kick")
-    .catch(() => {})
-    .finally(() => {
+  void callServer<ServerCounts>(settings, "kick")
+    .then((res) => {
+      kicking = false;
+      // サーバーは解析し終えてから返事をするので、結果ができていればすぐ受け取りに行く (1 分ごとの確認を待たない)
+      if (res?.ready > 0 && (typeof document === "undefined" || !document.hidden)) void pollServer();
+    })
+    .catch(() => {
       kicking = false;
     });
 }
+
+let shrinkChain: Promise<void> = Promise.resolve();
 
 /** 解析が終わった画像を保存用の大きさに縮めて容量を節約する */
 async function shrinkStoredImage(imageId: string) {
@@ -221,7 +235,11 @@ function ingestJob(job: OcrJob, extraction: OcrExtraction) {
       imageId: job.image_id,
       faction: job.faction ?? "",
       sameArt: artChecker(job.image_id),
-      similarNames: async (name) => (await db.listWarlords()).filter((w) => differsByOneChar(w.name, name)),
+      similarNames: async (name) => {
+        // 名前だけを索引から読む (全武将の中身を毎回読むと遅い)
+        const names = (await db.listNames()).filter((n) => differsByOneChar(n, name));
+        return (await Promise.all(names.map((n) => db.findByName(n)))).flat();
+      },
     }),
   );
 }
@@ -327,9 +345,15 @@ export async function resumeQueue() {
 let polling = false;
 
 /** サーバーで解析が終わった結果を受け取り、図鑑に反映する */
-export async function pollServer() {
+let pollAgain = false;
+export async function pollServer(): Promise<void> {
   const settings = loadSettings();
-  if (polling || !bgActive(settings)) return;
+  if (!bgActive(settings)) return;
+  if (polling) {
+    pollAgain = true; // 受け取り中に新しい結果ができた: 今の受け取りが終わったらもう一度
+    return;
+  }
+  pollAgain = false;
   const jobs = await db.listJobs();
   if (!jobs.some((j) => j.status === "remote")) return;
   polling = true;
@@ -342,13 +366,24 @@ export async function pollServer() {
       serverError = "";
       if (res.results.length === 0) break;
       const received: string[] = [];
+      let unacked: string[] = [];
+      // 受け取り済みを少しずつサーバーに知らせる (途中でアプリを閉じても、やり直す分が少なくて済む)
+      const flushAck = async () => {
+        if (unacked.length === 0) return;
+        const ids = unacked;
+        unacked = [];
+        await callServer(settings, "ack", { ids });
+      };
       for (const r of res.results) {
         received.push(r.id);
+        unacked.push(r.id);
         const job = await db.getJob(r.id);
-        if (!job || job.status !== "remote") continue; // 取り消し済みなど
-        await applyServerResult(job, r, settings.geminiModel);
+        if (job && job.status === "remote") await applyServerResult(job, r, settings.geminiModel); // 取り消し済みなどは飛ばす
+        if (unacked.length >= 10) await flushAck();
+        if (typeof document !== "undefined" && document.hidden) break; // 裏に回ったら、残りは次に開いた時に
       }
-      await callServer(settings, "ack", { ids: received });
+      await flushAck();
+      if (typeof document !== "undefined" && document.hidden) break;
       if (res.results.length < 30) {
         if (serverCounts) serverCounts = { ...serverCounts, ready: Math.max(0, serverCounts.ready - received.length) };
         break;
@@ -365,6 +400,7 @@ export async function pollServer() {
     polling = false;
     notify();
   }
+  if (pollAgain) return pollServer();
 }
 
 async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
@@ -381,7 +417,8 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
     }
     extraction = parseGeminiRestBody(r.body ?? "");
     const result = await ingestJob(job, extraction);
-    await shrinkStoredImage(job.image_id);
+    // 縮小は待たずに次の結果へ (ただし iPhone のメモリを食わないよう、縮小どうしは 1 枚ずつ)
+    shrinkChain = shrinkChain.then(() => shrinkStoredImage(job.image_id));
     await update(job, {
       status: "done",
       warlord_id: result.warlord.id,

@@ -86,6 +86,17 @@ export const getWarlord = retrying(async function getWarlord(id: string): Promis
   return w ? strip(w) : null;
 });
 
+/** 登録済みの武将名の一覧 (重複なし)。武将の中身は読まないので速い */
+export const listNames = retrying(async function listNames(): Promise<string[]> {
+  const names = new Set<string>();
+  let cursor = await (await db()).transaction("warlords").store.index("by_name").openKeyCursor(null, "nextunique");
+  while (cursor) {
+    names.add(String(cursor.key));
+    cursor = await cursor.continue();
+  }
+  return [...names];
+});
+
 /** 同じ名前の武将すべて */
 export const findByName = retrying(async function findByName(name: string): Promise<Warlord[]> {
   return (await (await db()).getAllFromIndex("warlords", "by_name", name)).map(strip);
