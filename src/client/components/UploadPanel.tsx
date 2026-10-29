@@ -360,7 +360,7 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
         ) : (
           <ul className="scroll-thin -mr-2 space-y-2 overflow-y-auto pr-2" style={{ maxHeight: "36rem" }}>
             {shownJobs.map((job) => (
-              <JobRow key={job.id} job={job} onRetry={retry} onOpen={onOpenWarlord} onRemove={(id) => void remove([id])} />
+              <JobRow key={job.id} job={job} warlords={warlords} onRetry={retry} onOpen={onOpenWarlord} onRemove={(id) => void remove([id])} />
             ))}
             {jobs.length > shownJobs.length && !showFailedOnly && (
               <li className="py-2 text-center text-[11px] text-ebony-500">ほか {jobs.length - shownJobs.length} 件 (新しい 100 件を表示中)</li>
@@ -374,15 +374,25 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
 
 function JobRow({
   job,
+  warlords,
   onRetry,
   onOpen,
   onRemove,
 }: {
   job: OcrJob;
+  warlords: Warlord[];
   onRetry: (id: string) => void;
   onOpen: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
+  const toast = useToast();
+  const [picking, setPicking] = useState(false);
+  const saveTo = async (targetId: string) => {
+    if (!targetId) return;
+    await api.retryJobWithTarget(job.id, targetId);
+    setPicking(false);
+    toast("info", "選んだ武将に統合します", job.extraction ? "読み取り済みの内容で保存します (AI の回数は使いません)" : "もう一度解析してから保存します");
+  };
   return (
     <li className="flex gap-3 rounded-lg border border-ebony-700 bg-ebony-900/70 p-2">
       <div className="relative h-16 w-10 shrink-0 overflow-hidden rounded border border-ebony-700 bg-ebony-800">
@@ -413,6 +423,17 @@ function JobRow({
             <span className="ml-2 rounded bg-ebony-700 px-1 text-[10px]">{job.mode === "force_special" ? "強制: 特異" : "強制: 通常"}</span>
           )}
         </p>
+        {job.status === "error" && (
+          <div className="mt-1.5">
+            {picking ? (
+              <WarlordPicker warlords={warlords} value="" onChange={(id) => void saveTo(id)} placeholder="統合先の武将を検索" />
+            ) : (
+              <button onClick={() => setPicking(true)} className="rounded-md border border-ebony-600 px-2 py-1 text-[11px] text-gold-300">
+                統合先を選んで保存
+              </button>
+            )}
+          </div>
+        )}
         {job.warnings.length > 0 && (
           <ul className="mt-1 space-y-0.5">
             {job.warnings.map((w, i) => (

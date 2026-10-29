@@ -123,6 +123,8 @@ export interface OcrJob {
   local?: boolean;
   /** 読み取りは済んだが保存の途中で止まった時の読み取り結果 (やり直す時に読み取りを繰り返さない) */
   extraction?: OcrExtraction | null;
+  /** 登録済みの画像の再解析・作り直し (失敗したジョブを消しても画像は残す) */
+  keep_image?: boolean;
   created_at: string;
   updated_at: string;
 }

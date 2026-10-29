@@ -96,7 +96,7 @@ async function chooseByArt(all: Warlord[], marked: boolean, faction: string, rar
       const { same } = await compareAll(specials, sameArt, true);
       if (same.length === 1) return use(same[0]);
       if (same.length === 0) return create(true, ["立ち絵が登録済みの特異武将と違うため、別の武将として登録しました"]);
-      throw new IngestError(`立ち絵で「${name}」のどの特異武将か判断できませんでした。武将の画面の「スクショを追加して統合」から追加してください`);
+      throw new IngestError(`立ち絵で「${name}」のどの特異武将か判断できませんでした。下の「統合先を選んで保存」で武将を選んでください`);
     }
     // 特異武将が未登録: 先に【特】表記の無い画面から「通常」として登録されていた同じ立ち絵の武将なら、特異武将に直す
     const { same } = await compareAll(candidates, sameArt, true);
@@ -138,7 +138,7 @@ async function chooseByArt(all: Warlord[], marked: boolean, faction: string, rar
   }
   if (same.length === 0 && !unknown) return create(newIsSpecial, [newWarning]);
   throw new IngestError(
-    `立ち絵で「${name}」のどの武将か判断できませんでした。武将の画面の「スクショを追加して統合」から追加してください`,
+    `立ち絵で「${name}」のどの武将か判断できませんでした。下の「統合先を選んで保存」で武将を選んでください`,
   );
 }
 
@@ -194,7 +194,7 @@ export async function ingestExtraction(
     }
   } else {
     if (!readName) {
-      throw new IngestError("武将名を読み取れませんでした。「統合先の武将」を指定して再解析してください");
+      throw new IngestError("武将名を読み取れませんでした。下の「統合先を選んで保存」で武将を選んでください");
     }
     name = readName;
     isSpecial = decision.is_special;
