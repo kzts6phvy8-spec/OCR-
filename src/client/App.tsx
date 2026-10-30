@@ -111,14 +111,13 @@ export default function App() {
   }, [refreshWarlordsSoon, toast]);
 
   useEffect(() => {
-    // 特異武将として登録されてしまった姫武将を通常に戻す
+    // 特異武将として登録されてしまった姫武将を通常に戻し、
+    // 古い表記の優先度を、覚醒スキルの発動条件から新しい表記 (甲・1 など) に直す (順番に行う)
     void api.fixHimeSpecial().then((n) => {
       if (n === 0) return;
       toast("success", `特異武将になっていた姫武将 ${n} 人を、姫武将 (特異ではない) に直しました`);
       void refreshWarlords();
-    });
-    // 古い表記の優先度を、覚醒スキルの発動条件から新しい表記 (甲・1 など) に直す
-    void api.fillPriorities().then(({ updated, unmatched }) => {
+    }).then(() => api.fillPriorities()).then(({ updated, unmatched }) => {
       if (updated === 0) return;
       toast(
         "success",

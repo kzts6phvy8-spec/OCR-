@@ -231,3 +231,10 @@ export const api = {
     return { created, updated, errors };
   },
 };
+
+// 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
+// ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
+for (const key of ["updateWarlord", "fillPriorities", "fixHimeSpecial", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+  const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
+  (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
+}
