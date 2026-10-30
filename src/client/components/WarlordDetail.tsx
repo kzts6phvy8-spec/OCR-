@@ -100,10 +100,28 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
   const [saving, setSaving] = useState(false);
   const [lightbox, setLightbox] = useState<number | null>(null);
 
+  // 編集を始めた時の内容。保存する時は、ここから変えた項目だけを送る
+  // (編集中に解析結果がこの武将に統合されても、その内容を古い値で上書きしない)
+  const [original, setOriginal] = useState<WarlordInput | null>(() => (warlord ? toInput(warlord) : null));
+  const [updatedWhileEditing, setUpdatedWhileEditing] = useState(false);
+
   useEffect(() => {
     setEditing(warlord === null);
     setDraft(warlord ? toInput(warlord) : structuredClone(EMPTY));
-  }, [warlord?.id, warlord?.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
+    setOriginal(warlord ? toInput(warlord) : null);
+    setUpdatedWhileEditing(false);
+  }, [warlord?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!warlord) return;
+    if (editing) {
+      // 編集中は入力中の内容を消さない (知らせだけ出す)
+      if (original && warlord.updated_at && JSON.stringify(toInput(warlord)) !== JSON.stringify(original)) setUpdatedWhileEditing(true);
+      return;
+    }
+    setDraft(toInput(warlord));
+    setOriginal(toInput(warlord));
+  }, [warlord?.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -200,7 +218,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
     if (!draft.name.trim()) return toast("error", "武将名を入力してください");
     setSaving(true);
     try {
-      let saved = warlord ? await api.updateWarlord(warlord.id, draft) : await api.createWarlord(draft);
+      let saved = warlord ? await api.updateWarlord(warlord.id, changedFields(original ?? toInput(warlord), draft)) : await api.createWarlord(draft);
       if (!warlord && newFiles.length > 0) {
         if (analyzeNew) {
           await api.upload(newFiles, { mode: "auto", targetId: saved.id, faction: "" }, () => {});
@@ -212,6 +230,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
       }
       toast("success", "保存しました", saved.name);
       setEditing(false);
+      setUpdatedWhileEditing(false);
       onSaved(saved);
     } catch (e) {
       toast("error", "保存に失敗しました", (e as Error).message);
@@ -383,7 +402,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                 <h2 className="font-serif text-xl font-bold text-gold-400">{warlord ? "武将データを編集" : "武将を手動登録"}</h2>
                 <div className="ml-auto flex items-center gap-1">
                   {warlord && (
-                    <button onClick={() => (setEditing(false), setDraft(toInput(warlord)))} className="rounded-md px-3 py-1.5 text-sm text-ash hover:text-washi">
+                    <button onClick={() => (setEditing(false), setDraft(toInput(warlord)), setOriginal(toInput(warlord)), setUpdatedWhileEditing(false))} className="rounded-md px-3 py-1.5 text-sm text-ash hover:text-washi">
                       キャンセル
                     </button>
                   )}
@@ -407,7 +426,14 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
           {view ? (
             <DetailView w={view} counterpart={counterpart} allWarlords={allWarlords} onOpenOther={onOpenOther} />
           ) : (
-            <EditForm draft={draft} setDraft={setDraft} />
+            <>
+              {updatedWhileEditing && (
+                <p className="mb-4 rounded-lg border border-amber-500/50 bg-amber-900/20 p-3 text-xs text-amber-200">
+                  編集中に、この武将へ解析結果が統合されました。保存すると、あなたが変えた項目だけが書き換わり、解析で入った内容は残ります。
+                </p>
+              )}
+              <EditForm draft={draft} setDraft={setDraft} />
+            </>
           )}
 
           {!warlord && <NewScreenshots files={newFiles} setFiles={setNewFiles} analyze={analyzeNew} setAnalyze={setAnalyzeNew} />}
@@ -530,6 +556,15 @@ function NewScreenshots({
       )}
     </Section>
   );
+}
+
+/** 編集前と比べて変わった項目だけを取り出す */
+function changedFields(before: WarlordInput, after: WarlordInput): Partial<WarlordInput> {
+  const out: Partial<WarlordInput> = {};
+  for (const key of Object.keys(after) as (keyof WarlordInput)[]) {
+    if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) (out as Record<string, unknown>)[key] = after[key];
+  }
+  return out;
 }
 
 function IconButton({ children, title, onClick, danger }: { children: ReactNode; title: string; onClick: () => void; danger?: boolean }) {

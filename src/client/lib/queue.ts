@@ -111,6 +111,11 @@ function serial() {
 }
 const claimLock = serial();
 const ingestLock = serial();
+/**
+ * 武将の読み書き (手での編集・まとめる・起動時の手直しなど) を、解析結果の保存と重ならないように 1 つずつ行う。
+ * 重なると、片方が読んだ古い内容で上書きして、もう片方の変更が消えてしまう。
+ */
+export const exclusive = <T>(fn: () => Promise<T>) => ingestLock(fn);
 
 export async function enqueue(
   imageIds: { fileName: string; imageId: string }[],
