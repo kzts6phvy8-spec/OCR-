@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, BookOpen, Database, Download, Save, ScanLine, Settings as SettingsIcon, Upload } from "lucide-react";
+import { AlertTriangle, BookOpen, Loader2, Database, Download, Save, ScanLine, Settings as SettingsIcon, Upload } from "lucide-react";
 import { isPending, type OcrJob, type Warlord } from "../core/types.ts";
 import { api } from "./lib/api.ts";
-import { onQueueChange, resumeQueue } from "./lib/queue.ts";
+import { getQueueState, onQueueChange, resumeQueue } from "./lib/queue.ts";
+import { backfillSignatures } from "./lib/visual.ts";
 import { activeModelLabel, bgActive, hasActiveKey, loadSettings, onSettingsChange, type Settings } from "./lib/settings.ts";
 import { useToast } from "./lib/toast.tsx";
 import { saveFile, today } from "./lib/share.ts";
@@ -117,7 +118,9 @@ export default function App() {
       if (n === 0) return;
       toast("success", `特異武将になっていた姫武将 ${n} 人を、姫武将 (特異ではない) に直しました`);
       void refreshWarlords();
-    }).then(() => api.fillPriorities()).then(({ updated, unmatched }) => {
+    })
+      .then(() => api.fillPriorities())
+      .then(({ updated, unmatched }) => {
       if (updated === 0) return;
       toast(
         "success",
@@ -125,7 +128,9 @@ export default function App() {
         unmatched ? `発動条件が一覧に無かった ${unmatched} 人は、そのままです (武将の編集画面で直せます)` : undefined,
       );
       void refreshWarlords();
-    });
+    })
+      // 立ち絵の見比べを速くするため、まだ指紋の無い登録画像の指紋を少しずつ作る
+      .then(() => backfillSignatures());
   }, [refreshWarlords, toast]);
 
   useEffect(() => {
@@ -206,6 +211,8 @@ export default function App() {
         </div>
       </header>
 
+      <ReceivingBanner />
+
       {!hasActiveKey(settings) && tab !== "settings" && (
         <div className="mx-auto mt-4 w-full max-w-7xl px-4">
           <button
@@ -276,6 +283,24 @@ export default function App() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** サーバーの解析結果を図鑑に反映している間の進み具合 (どのタブでも見えるように上に出す) */
+function ReceivingBanner() {
+  const [r, setR] = useState(() => getQueueState().receiving);
+  useEffect(() => {
+    const off = onQueueChange(() => setR(getQueueState().receiving));
+    return () => void off();
+  }, []);
+  if (!r) return null;
+  return (
+    <div className="mx-auto mt-3 flex w-full max-w-7xl items-center gap-2 px-4 text-xs text-sky-300">
+      <Loader2 className="size-3.5 shrink-0 animate-spin" />
+      <span>
+        サーバーの解析結果を図鑑に反映しています ({r.done} / {r.total} 枚)。終わるまでアプリを開いたままにしてください
+      </span>
     </div>
   );
 }

@@ -12,12 +12,14 @@ interface Schema extends DBSchema {
   warlords: { key: string; value: StoredWarlord; indexes: { by_name: string } };
   images: { key: string; value: { id: string; blob: Blob; created_at: string } };
   jobs: { key: string; value: OcrJob & { seq: number }; indexes: { by_seq: number } };
+  /** 画像ごとの立ち絵の「指紋」(画像を開かずに見比べるため。visual.ts) */
+  signatures: { key: string; value: { id: string; sig: Float32Array } };
 }
 
 let dbPromise: Promise<IDBPDatabase<Schema>> | null = null;
 
 function db() {
-  dbPromise ??= openDB<Schema>("sengoku-fubu", 2, {
+  dbPromise ??= openDB<Schema>("sengoku-fubu", 3, {
     // 別の画面 (古い版のアプリなど) が新しい版のデータベースを開こうとしたら、こちらは閉じて道を譲る
     blocking() {
       void dbPromise?.then((d) => d.close());
@@ -39,6 +41,7 @@ function db() {
         if ((store.indexNames as DOMStringList).contains("by_key")) (store as unknown as IDBObjectStore).deleteIndex("by_key");
         store.createIndex("by_name", "name");
       }
+      if (oldVersion < 3) d.createObjectStore("signatures", { keyPath: "id" });
     },
   });
   const p = dbPromise;
@@ -143,6 +146,7 @@ export const deleteEverything = retrying(async function deleteEverything() {
   await d.clear("warlords");
   await d.clear("images");
   await d.clear("jobs");
+  await d.clear("signatures");
 });
 
 export const repo: WarlordRepo = {
@@ -170,7 +174,11 @@ export const removeUnreferencedImages = retrying(async function removeUnreferenc
   const used = new Set<string>();
   for (const w of await d.getAll("warlords")) w.gallery_images.forEach((g) => used.add(g));
   for (const j of await d.getAll("jobs")) if (j.status !== "done") used.add(j.image_id);
-  for (const id of ids) if (!used.has(id)) await d.delete("images", id);
+  for (const id of ids) {
+    if (used.has(id)) continue;
+    await d.delete("images", id);
+    await d.delete("signatures", id);
+  }
 });
 
 // ---- 解析ジョブ ----
@@ -223,4 +231,25 @@ export const deleteFinishedJobs = retrying(async function deleteFinishedJobs(): 
 /** アプリを閉じて中断されたジョブをキューに戻す */
 export const requeueStaleJobs = retrying(async function requeueStaleJobs() {
   for (const j of await listJobs()) if (j.status === "processing") await saveJob({ ...j, status: "queued" });
+});
+
+// ---- 立ち絵の指紋 ----
+
+export const getSignature = retrying(async function getSignature(id: string): Promise<Float32Array | null> {
+  return (await (await db()).get("signatures", id))?.sig ?? null;
+});
+
+export const putSignature = retrying(async function putSignature(id: string, sig: Float32Array) {
+  await (await db()).put("signatures", { id, sig });
+});
+
+/** 保存済みの指紋をすべて (画像 ID → 指紋) */
+export const listSignatures = retrying(async function listSignatures(): Promise<Map<string, Float32Array>> {
+  const rows = await (await db()).getAll("signatures");
+  return new Map(rows.map((r) => [r.id, r.sig]));
+});
+
+/** 画像 ID の一覧 (中身は読まない) */
+export const listImageIds = retrying(async function listImageIds(): Promise<string[]> {
+  return (await (await db()).getAllKeys("images")) as string[];
 });
