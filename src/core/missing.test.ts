@@ -24,16 +24,24 @@ describe("未入力の項目", () => {
     expect(labels).toContain("成長値の合計");
     expect(labels).toContain("成長値の攻・防・計・兵");
     expect(labels).toContain("天賦");
-    expect(labels).toContain("覚醒スキルの効果 (SSR・鬼・限定・コラボ)");
+    expect(labels).toContain("覚醒スキルの効果 (SSR のみ)");
     // 武器覚醒が無い武将には、武器覚醒後の効果を求めない
     expect(labels).not.toContain("武器覚醒後の効果 (武器覚醒ありのみ)");
     expect(hasAnyMissing(w)).toBe(true);
   });
-  it("覚醒スキルは SSR・鬼憑武将・限定武将だけに求める", () => {
-    expect(missingLabels(warlord({ rarity: "SR", faction: "東海" }))).not.toContain("覚醒スキルの効果 (SSR・鬼・限定・コラボ)");
-    expect(missingLabels(warlord({ rarity: "SR", faction: "東海" }))).not.toContain("覚醒スキルの優先度");
-    expect(missingLabels(warlord({ rarity: "SR", faction: "鬼憑武将" }))).toContain("覚醒スキルの効果 (SSR・鬼・限定・コラボ)");
-    expect(missingLabels(warlord({ rarity: "R", faction: "限定武将" }))).toContain("覚醒スキルの優先度");
-    expect(missingLabels(warlord({ rarity: "SR", faction: "コラボ武将" }))).toContain("覚醒スキルの効果 (SSR・鬼・限定・コラボ)");
+  it("覚醒スキルは SR・R・N には求めない", () => {
+    const effect = "覚醒スキルの効果 (SSR のみ)";
+    expect(missingLabels(warlord({ rarity: "SSR", faction: "東海" }))).toContain(effect);
+    expect(missingLabels(warlord({ rarity: "SSR", faction: "東海" }))).toContain("覚醒スキルの優先度");
+    for (const rarity of ["SR", "R", "N"] as const) {
+      for (const faction of ["東海", "鬼憑武将", "限定武将", "コラボ武将"] as const) {
+        const labels = missingLabels(warlord({ rarity, faction, has_awakening: true }));
+        expect(labels).not.toContain(effect);
+        expect(labels).not.toContain("覚醒スキルの優先度");
+      }
+    }
+    // レア度が未入力なら、鬼憑武将・限定武将・コラボ武将は覚醒スキルを持つとみなす
+    expect(missingLabels(warlord({ faction: "鬼憑武将" }))).toContain(effect);
+    expect(missingLabels(warlord({ faction: "東海" }))).not.toContain(effect);
   });
 });
