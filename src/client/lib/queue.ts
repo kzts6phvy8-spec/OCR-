@@ -42,6 +42,8 @@ export interface QueueState {
   /** バックグラウンド解析サーバーの状況 (最後に確認した時点) */
   server: (ServerCounts & { checkedAt: number }) | null;
   serverError: string;
+  /** サーバーの解析結果を図鑑に反映している途中なら、その進み具合 */
+  receiving: { done: number; total: number } | null;
 }
 
 let serverCounts: QueueState["server"] = null;
@@ -70,7 +72,10 @@ export const getQueueState = (): QueueState => ({
   pauseReason,
   server: serverCounts,
   serverError,
+  receiving,
 });
+
+let receiving: QueueState["receiving"] = null;
 
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
@@ -385,6 +390,11 @@ export async function pollServer(): Promise<void> {
       if (res.results.length === 0) break;
       const received: string[] = [];
       let unacked: string[] = [];
+      // 進み具合の表示: 今回受け取った分と、サーバーにまだ残っている分
+      // (サーバーの「受け取り待ち」には、今回受け取った分も含まれる)
+      const done = receiving?.done ?? 0;
+      receiving = { done, total: done + Math.max(res.results.length, (res as Partial<ServerCounts>).ready ?? 0) };
+      notify();
       // 受け取り済みを少しずつサーバーに知らせる (途中でアプリを閉じても、やり直す分が少なくて済む)
       const flushAck = async () => {
         if (unacked.length === 0) return;
@@ -397,6 +407,8 @@ export async function pollServer(): Promise<void> {
         unacked.push(r.id);
         const job = await db.getJob(r.id);
         if (job && job.status === "remote") await applyServerResult(job, r, settings.geminiModel); // 取り消し済みなどは飛ばす
+        receiving = { done: (receiving?.done ?? 0) + 1, total: Math.max(receiving?.total ?? 0, (receiving?.done ?? 0) + 1) };
+        notify();
         if (unacked.length >= 10) await flushAck();
         if (typeof document !== "undefined" && document.hidden) break; // 裏に回ったら、残りは次に開いた時に
       }
@@ -416,6 +428,7 @@ export async function pollServer(): Promise<void> {
     serverError = err instanceof Error ? err.message : String(err);
   } finally {
     polling = false;
+    receiving = null;
     notify();
   }
   if (pollAgain) return pollServer();

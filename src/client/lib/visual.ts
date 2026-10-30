@@ -20,17 +20,98 @@ const DIFFERENT_CONFIDENCE = 80;
 /** AI に見せる画面の大きさ (立ち絵の見比べには十分) */
 const PREVIEW = { maxEdge: 1024, quality: 0.85 };
 
+// ---- 立ち絵の指紋 (端末内に保存し、画像を開かずに見比べる) ----
+
 const signatures = new Map<string, Promise<Float32Array | null>>();
 function signatureOf(imageId: string) {
   let p = signatures.get(imageId);
   if (!p) {
-    p = db
-      .getImage(imageId)
-      .then((blob) => (blob ? artSignature(blob) : null))
-      .catch(() => null);
+    p = (async () => {
+      const saved = await db.getSignature(imageId).catch(() => null);
+      if (saved) return saved;
+      const blob = await db.getImage(imageId);
+      if (!blob) return null;
+      const sig = await artSignature(blob);
+      await db.putSignature(imageId, sig).catch(() => {});
+      return sig;
+    })().catch(() => null);
     signatures.set(imageId, p);
   }
   return p;
+}
+
+/**
+ * 見比べの基準にする、図鑑に登録済みの画像の指紋 (画像 ID → 指紋・持ち主の武将)。
+ * 結果を続けて保存する間に何度も作り直さないよう、30 秒は使い回す。
+ */
+let references: Promise<{ sigs: Map<string, Float32Array>; owner: Map<string, string> }> | null = null;
+let referencesAt = 0;
+function loadReferences() {
+  if (!references || Date.now() - referencesAt > 30_000) {
+    referencesAt = Date.now();
+    references = (async () => {
+      const owner = new Map<string, string>();
+      for (const w of await db.listWarlords()) for (const id of w.gallery_images) owner.set(id, w.id);
+      const sigs = new Map<string, Float32Array>();
+      for (const [id, sig] of await db.listSignatures()) if (owner.has(id)) sigs.set(id, sig);
+      return { sigs, owner };
+    })();
+  }
+  return references;
+}
+
+/** 比べる相手として十分な数の指紋が無いうちは、端末だけの判断はしない */
+const MIN_REFERENCES = 20;
+/** 候補の武将の画像にこれ以上似ていて、 */
+const RELATIVE_SAME = 0.8;
+/** しかも他のどの武将の画像よりこれだけ多く似ていれば、同じ立ち絵とみなす */
+const RELATIVE_MARGIN = 0.05;
+
+/**
+ * 端末だけで「同じ立ち絵」と言えるか。候補の武将の画像が、他の武将 (同じ名前の別版も含む) の
+ * どの画像よりもはっきり似ている時だけ「同じ」とする。画面の作り (枠や背景) が似ていても、相対的に比べるので惑わされにくい。
+ */
+async function clearlySame(imageId: string, target: Float32Array, candidate: Warlord): Promise<boolean> {
+  const { sigs, owner } = await loadReferences();
+  if (sigs.size < MIN_REFERENCES) return false;
+  const mine = new Set(imagesOf(candidate));
+  let best = -1;
+  let other = -1;
+  for (const [id, sig] of sigs) {
+    if (id === imageId) continue;
+    const sim = signatureSimilarity(target, sig);
+    if (mine.has(id) || owner.get(id) === candidate.id) best = Math.max(best, sim);
+    else other = Math.max(other, sim);
+  }
+  // 候補の画像の指紋がまだ基準に入っていなければ (登録したばかり等)、その場で作る
+  for (const id of mine) {
+    if (id === imageId || sigs.has(id)) continue;
+    const sig = await signatureOf(id);
+    if (sig) best = Math.max(best, signatureSimilarity(target, sig));
+  }
+  return best >= RELATIVE_SAME && best - other >= RELATIVE_MARGIN;
+}
+
+/**
+ * まだ指紋の無い登録画像の指紋を、アプリを開いている間に少しずつ作る (次からの見比べを速くするため)。
+ * 1 枚ずつ間を空けて作り、アプリが裏に回ったらやめる。
+ */
+let backfilling = false;
+export async function backfillSignatures() {
+  if (backfilling) return;
+  backfilling = true;
+  try {
+    const have = await db.listSignatures();
+    for (const id of await db.listImageIds()) {
+      if (have.has(id)) continue;
+      if (typeof document !== "undefined" && document.hidden) return;
+      await signatureOf(id);
+      signatures.delete(id); // 保存したのでメモリには持たない
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  } finally {
+    backfilling = false;
+  }
 }
 
 const imagesOf = (w: Warlord) => [...new Set([w.image_url, ...w.gallery_images].filter(Boolean))];
@@ -130,6 +211,9 @@ export function artChecker(imageId: string): ArtCheck {
         if (sig) best = Math.max(best, signatureSimilarity(target, sig));
       }
       if (best >= SAME_THRESHOLD) return "same";
+      if (opts.localOnly) return "unknown";
+      // ほぼ同じとまでは言えなくても、他の武将よりはっきり似ていれば AI に尋ねない
+      if (await clearlySame(imageId, target, candidate)) return "same";
     }
     if (opts.localOnly) return "unknown";
 
