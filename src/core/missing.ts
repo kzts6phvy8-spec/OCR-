@@ -10,9 +10,18 @@ export interface MissingField {
 
 const blank = (v: string) => !v.trim();
 
-/** 覚醒スキルを持つ武将 (SSR・鬼憑武将・限定武将。コラボ武将は限定武将の仲間) */
-export const hasAwakeningSlot = (w: Warlord) =>
-  w.rarity === "SSR" || w.faction === "鬼憑武将" || w.faction === "限定武将" || w.faction === "コラボ武将";
+/** 覚醒スキルの無いレア度 */
+const NO_AWAKENING_RARITIES: readonly string[] = ["SR", "R", "N"];
+const AWAKENING_FACTIONS: readonly string[] = ["鬼憑武将", "限定武将", "コラボ武将"];
+
+/**
+ * 覚醒スキルを持つ武将。SR・R・N には覚醒スキルが無い (勢力に関係なく)。
+ * SSR は持つ。レア度が未入力などの時は、鬼憑武将・限定武将・コラボ武将 (限定武将の仲間) なら持つとみなす。
+ */
+export const hasAwakeningSlot = (w: Warlord) => {
+  if (NO_AWAKENING_RARITIES.includes(w.rarity)) return false;
+  return w.rarity === "SSR" || AWAKENING_FACTIONS.includes(w.faction);
+};
 
 export const MISSING_FIELDS: MissingField[] = [
   { id: "rarity", label: "レア度", missing: (w) => !w.rarity },
@@ -36,11 +45,11 @@ export const MISSING_FIELDS: MissingField[] = [
   {
     id: "awakening_priority",
     label: "覚醒スキルの優先度",
-    missing: (w) => (hasAwakeningSlot(w) || w.has_awakening) && !AWAKENING_PRIORITIES.includes(w.awakening_priority),
+    missing: (w) => hasAwakeningSlot(w) && !AWAKENING_PRIORITIES.includes(w.awakening_priority),
   },
   {
     id: "awakening_before_weapon",
-    label: "覚醒スキルの効果 (SSR・鬼・限定・コラボ)",
+    label: "覚醒スキルの効果 (SSR のみ)",
     missing: (w) => hasAwakeningSlot(w) && blank(w.awakening_before_weapon),
   },
   {
