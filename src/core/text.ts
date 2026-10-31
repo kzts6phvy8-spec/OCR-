@@ -52,5 +52,5 @@ export function warlordToText(w: Warlord): string {
 }
 
 export function warlordsToText(list: Warlord[]): string {
-  return `戦国布武 武将図鑑 (${list.length} 件)\n\n` + list.map(warlordToText).join("\n\n" + "─".repeat(24) + "\n\n") + "\n";
+  return `開発用データ (${list.length} 件)\n\n` + list.map(warlordToText).join("\n\n" + "─".repeat(24) + "\n\n") + "\n";
 }
