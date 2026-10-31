@@ -1,7 +1,7 @@
 {
   "name": "開発用データ",
   "short_name": "開発用",
-  "description": "スクショをOCR解析",
+  "description": "OCR解析",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",
