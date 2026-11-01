@@ -121,6 +121,19 @@ export const api = {
       // 1 時間以内に保存した画像は、解析待ちに入る前かもしれないので消さない
       new Set(meta.filter((m) => Date.parse(m.created_at) > recentLimit).map((m) => m.id)),
     );
+    // 「分かれていそう」でも、立ち絵がはっきり違う武将どうしは別の武将なので知らせない
+    const { clearlyDifferentArt } = await import("./visual.ts");
+    for (const issue of [...issues]) {
+      if (issue.kind !== "duplicate") continue;
+      const group = (await Promise.all(issue.warlordIds.map((id) => db.getWarlord(id)))).filter((w): w is Warlord => Boolean(w));
+      let allDifferent = group.length > 1;
+      for (let i = 0; i < group.length && allDifferent; i++) {
+        for (let j = i + 1; j < group.length && allDifferent; j++) {
+          if (!(await clearlyDifferentArt(group[i], group[j]))) allDifferent = false;
+        }
+      }
+      if (allDifferent) issues.splice(issues.indexOf(issue), 1);
+    }
     const fixed: Issue[] = [];
     for (const issue of issues.filter((i) => i.autoFix)) {
       try {

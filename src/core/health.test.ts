@@ -19,6 +19,9 @@ describe("自動点検", () => {
     expect(kinds([w({ faction: "東海" }), w({ faction: "東海" })])).toContain("duplicate");
     expect(kinds([w({}), w({ is_special: true })])).not.toContain("duplicate");
     expect(kinds([w({ faction: "東海" }), w({ faction: "姫武将" })])).not.toContain("duplicate");
+    // 通常・特異・限定武将に分かれているのは正しい
+    expect(kinds([w({ faction: "東海" }), w({ faction: "東海", is_special: true }), w({ faction: "限定武将" })])).not.toContain("duplicate");
+    expect(kinds([w({ faction: "東海" }), w({ faction: "畿内" })])).not.toContain("duplicate");
     expect(kinds([w({ faction: "物語武将", rarity: "SSR" }), w({ faction: "物語武将", rarity: "SR" })])).not.toContain("duplicate");
   });
 
