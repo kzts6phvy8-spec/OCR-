@@ -310,10 +310,23 @@ export function mergeTalents(base: Talent[], incoming: Talent[]): Talent[] {
   return result.sort((a, b) => a.star_level - b.star_level);
 }
 
+/** 連携相手の欄 (「A、B、C」など) を武将名の一覧にする */
+export function splitPartners(partner: string): string[] {
+  return partner
+    .normalize("NFKC")
+    .split(/[、,，/／\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** 連携相手の組み合わせが同じかを比べるための鍵 (並び順は問わない) */
+export const partnerKey = (partner: string) => splitPartners(partner).map(normText).sort().join("、");
+
 export function mergeSynergies(base: SynergySkill[], incoming: SynergySkill[]): SynergySkill[] {
   const result = base.map((s) => ({ ...s }));
   for (const s of incoming) {
-    const idx = result.findIndex((r) => normText(r.partner) === normText(s.partner));
+    // 連携相手は並び順が違っても同じ組とみなす (「A、B」と「B、A」)
+    const idx = result.findIndex((r) => partnerKey(r.partner) === partnerKey(s.partner));
     if (idx === -1) result.push({ ...s });
     else if (s.effect.length > result[idx].effect.length) result[idx] = { ...result[idx], effect: s.effect };
   }

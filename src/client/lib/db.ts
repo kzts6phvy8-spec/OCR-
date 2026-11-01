@@ -152,6 +152,7 @@ export const deleteEverything = retrying(async function deleteEverything() {
 export const repo: WarlordRepo = {
   get: getWarlord,
   findByName,
+  list: listWarlords,
   insert: (input) => insertWarlord(input),
   update: updateWarlord,
 };
