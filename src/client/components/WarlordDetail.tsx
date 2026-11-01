@@ -218,7 +218,16 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
     if (!draft.name.trim()) return toast("error", "武将名を入力してください");
     setSaving(true);
     try {
-      let saved = warlord ? await api.updateWarlord(warlord.id, changedFields(original ?? toInput(warlord), draft)) : await api.createWarlord(draft);
+      let saved: Warlord;
+      if (warlord) {
+        const before = original ?? toInput(warlord);
+        const { gallery_images: _g, ...changes } = changedFields(before, draft);
+        // 画像は「外した画像」だけを伝える (編集中に解析で加わった画像は残す)
+        const removeImages = before.gallery_images.filter((g) => !draft.gallery_images.includes(g));
+        saved = await api.updateWarlord(warlord.id, changes, { removeImages });
+      } else {
+        saved = await api.createWarlord(draft);
+      }
       if (!warlord && newFiles.length > 0) {
         if (analyzeNew) {
           await api.upload(newFiles, { mode: "auto", targetId: saved.id, faction: "" }, () => {});
