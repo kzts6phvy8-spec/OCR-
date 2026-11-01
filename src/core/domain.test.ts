@@ -156,3 +156,16 @@ describe("勢力", () => {
     expect(normalizeFaction("コラボ")).toBe("コラボ武将");
   });
 });
+
+describe("連携スキルの統合", () => {
+  it("同じ相手でも効果が違う段階は別々に残す", async () => {
+    const { mergeSynergies } = await import("./domain.ts");
+    const one = { partner: "鬼憑徳川四天王", effect: "鬼憑徳川四天王1体以上が場内にいる場合、物理防御+15%" };
+    const two = { partner: "鬼憑徳川四天王", effect: "鬼憑徳川四天王2体以上が場内にいる場合、通常攻撃ダメージ+30%" };
+    expect(mergeSynergies([one], [two])).toEqual([one, two]);
+    // 途切れて短く読めたものは同じとみなし、長い方を残す
+    expect(mergeSynergies([{ ...two, effect: "鬼憑徳川四天王2体以上が場内にいる場合、通常攻" }], [two])).toEqual([two]);
+    // 相手の並び順違いは同じ
+    expect(mergeSynergies([{ partner: "A、B", effect: "x" }], [{ partner: "B、A", effect: "x" }])).toHaveLength(1);
+  });
+});

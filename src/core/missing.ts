@@ -63,7 +63,12 @@ export const MISSING_FIELDS: MissingField[] = [
     missing: (w) => [1, 2, 3, 4, 5].some((star) => !w.talents.some((t) => t.star_level === star && (t.name || t.effect))),
   },
   { id: "troops_type", label: "兵種", missing: (w) => !w.troop_type && w.troop_variants.length === 0 },
-  { id: "synergy", label: "連携スキル", missing: (w) => w.synergy_skills.length === 0 },
+  {
+    id: "synergy",
+    label: "連携スキル",
+    // 鬼憑武将の連携スキル (〜鬼憑武将◯体が同時に場内にいる場合) は段階ごとに複数あるので、1 つだけなら読み残しがある
+    missing: (w) => w.synergy_skills.length === 0 || (w.faction === "鬼憑武将" && w.synergy_skills.length < 2),
+  },
 ];
 
 /** どれか 1 つでも未入力の項目があるか */
