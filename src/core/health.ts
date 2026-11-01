@@ -41,8 +41,15 @@ export function findIssues(warlords: Warlord[], imageIds: Set<string>, jobs: Ocr
   const seen = new Set<string>();
   for (const a of warlords) {
     if (seen.has(a.id)) continue;
+    // 勢力がどちらも入っていて違えば別の武将 (限定武将・鬼憑武将などの別版や、別の地方の同名の武将)
+    const sameFaction = (b: Warlord) => !a.faction || !b.faction || a.faction === b.faction;
     const group = warlords.filter(
-      (b) => b.name === a.name && b.is_special === a.is_special && compatible(b, a.faction, a.rarity) && compatible(a, b.faction, b.rarity),
+      (b) =>
+        b.name === a.name &&
+        b.is_special === a.is_special &&
+        sameFaction(b) &&
+        compatible(b, a.faction, a.rarity) &&
+        compatible(a, b.faction, b.rarity),
     );
     if (group.length < 2) continue;
     group.forEach((g) => seen.add(g.id));
