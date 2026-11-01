@@ -18,10 +18,20 @@ export const api = {
     return db.insertWarlord(record);
   },
 
-  async updateWarlord(id: string, input: Partial<WarlordInput>): Promise<Warlord> {
+  /**
+   * 武将を書き換える。removeImages を渡すと、その画像だけを外す
+   * (画像の一覧をまるごと渡すと、編集中に解析で加わった画像まで外してしまうため)。
+   */
+  async updateWarlord(id: string, input: Partial<WarlordInput>, opts: { removeImages?: string[] } = {}): Promise<Warlord> {
     const current = await db.getWarlord(id);
     if (!current) throw new Error("武将が見つかりません");
-    const record = normalizeInput({ ...toInput(current), ...input });
+    const merged = { ...toInput(current), ...input };
+    if (opts.removeImages?.length) {
+      const removed = new Set(opts.removeImages);
+      merged.gallery_images = current.gallery_images.filter((g) => !removed.has(g));
+      if (removed.has(merged.image_url)) merged.image_url = merged.gallery_images[0] ?? "";
+    }
+    const record = normalizeInput(merged);
     if (!record.name) throw new Error("武将名は必須です");
     const updated = await db.updateWarlord(id, record);
     await db.removeUnreferencedImages(current.gallery_images.filter((g) => !updated.gallery_images.includes(g)));
