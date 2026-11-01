@@ -129,6 +129,13 @@ export default function App() {
       );
       void refreshWarlords();
     })
+      // 鬼憑武将の連携スキルを、同じシーズンの組の鬼に広める
+      .then(() => api.shareAllOniSynergies())
+      .then((n) => {
+        if (n === 0) return;
+        toast("success", `鬼憑武将 ${n} 人に、同じ組の鬼の連携スキルを入れました`);
+        void refreshWarlords();
+      })
       // 立ち絵の見比べを速くするため、まだ指紋の無い登録画像の指紋を少しずつ作る
       .then(() => backfillSignatures());
   }, [refreshWarlords, toast]);

@@ -16,6 +16,9 @@ export function createMemoryRepo(): WarlordRepo & { all(): Warlord[] } {
     async get(id) {
       return rows.get(id) ?? null;
     },
+    async list() {
+      return [...rows.values()];
+    },
     async findByName(name) {
       return [...rows.values()].filter((w) => w.name === name);
     },

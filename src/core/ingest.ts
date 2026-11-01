@@ -10,6 +10,7 @@ import {
   normalizeRarity,
 } from "./domain.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
+import { ONI_FACTION, shareOniSynergies, splitPartners } from "./oni.ts";
 
 export class IngestError extends Error {}
 
@@ -18,6 +19,8 @@ export interface WarlordRepo {
   get(id: string): Promise<Warlord | null>;
   /** 同じ名前の武将すべて (通常・特異・姫武将などの別版) */
   findByName(name: string): Promise<Warlord[]>;
+  /** すべての武将 (鬼憑武将の連携スキルを広めるために使う。無ければその分は行わない) */
+  list?(): Promise<Warlord[]>;
   insert(input: WarlordInput): Promise<Warlord>;
   update(id: string, input: WarlordInput): Promise<Warlord>;
 }
@@ -241,6 +244,14 @@ export async function ingestExtraction(
 
   const record = normalizeInput(merged);
   const warlord = existing ? await repo.update(existing.id, record) : await repo.insert(record);
+  // 鬼憑武将: 同じシーズンの 4 人は連携スキルが共通なので、残りの鬼にも広める (逆に、他の鬼の連携スキルをこの武将にも)
+  if (warlord.faction === ONI_FACTION) {
+    const shared = await shareOniSynergies(repo, warlord);
+    if (shared.length) warnings.push(`連携スキルを同じ組の鬼憑武将 (${shared.map((w) => w.name).join("、")}) にも入れました`);
+    for (const w of await oniPartnersOf(repo, warlord)) await shareOniSynergies(repo, w);
+    const latest = await repo.get(warlord.id);
+    if (latest) return { warlord: latest, merged: Boolean(existing), warnings };
+  }
   return { warlord, merged: Boolean(existing), warnings };
 }
 
@@ -254,4 +265,21 @@ export function differsByOneChar(a: string, b: string): boolean {
   let j = 0;
   while (j < x.length - i && j < y.length - i && x[x.length - 1 - j] === y[y.length - 1 - j]) j++;
   return x.length - i - j <= 1 && y.length - i - j <= 1;
+}
+
+/** この鬼憑武将と同じ組の、登録済みの鬼憑武将 (その人の連携スキルをこの武将にも広めるため) */
+async function oniPartnersOf(repo: WarlordRepo, w: Warlord): Promise<Warlord[]> {
+  const out = new Map<string, Warlord>();
+  // この武将が連携相手に挙げている鬼
+  for (const name of new Set(w.synergy_skills.flatMap((s) => splitPartners(s.partner)))) {
+    for (const o of await repo.findByName(name)) if (o.faction === ONI_FACTION && o.id !== w.id) out.set(o.id, o);
+  }
+  // この武将を連携相手に挙げている鬼 (この武将の連携スキルがまだ読めていない時など)
+  if (repo.list) {
+    for (const o of await repo.list()) {
+      if (o.faction !== ONI_FACTION || o.id === w.id) continue;
+      if (o.synergy_skills.some((s) => splitPartners(s.partner).includes(w.name))) out.set(o.id, o);
+    }
+  }
+  return [...out.values()];
 }

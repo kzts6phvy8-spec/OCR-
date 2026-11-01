@@ -3,6 +3,7 @@ import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput 
 import { warlordsToText } from "../../core/text.ts";
 import { mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
+import { ONI_FACTION, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
 import { blobToDataUrl, compressImage, dataUrlToBlob, shrinkForGallery } from "./images.ts";
 import * as queue from "./queue.ts";
@@ -35,6 +36,8 @@ export const api = {
     if (!record.name) throw new Error("武将名は必須です");
     const updated = await db.updateWarlord(id, record);
     await db.removeUnreferencedImages(current.gallery_images.filter((g) => !updated.gallery_images.includes(g)));
+    // 鬼憑武将の連携スキルを手で入れた時も、同じ組の鬼に広める
+    await shareOniSynergies(db.repo, updated);
     return updated;
   },
 
@@ -65,6 +68,17 @@ export const api = {
       }
     }
     return fixed;
+  },
+
+  /** 登録済みの鬼憑武将の連携スキルを、同じ組の鬼に広める (起動時に呼ぶ)。書き換えた人数を返す */
+  async shareAllOniSynergies(): Promise<number> {
+    const changed = new Set<string>();
+    for (const w of await db.listWarlords()) {
+      if (w.faction !== ONI_FACTION || w.synergy_skills.length === 0) continue;
+      const latest = await db.getWarlord(w.id);
+      if (latest) for (const c of await shareOniSynergies(db.repo, latest)) changed.add(c.id);
+    }
+    return changed.size;
   },
 
   async deleteWarlord(id: string) {
@@ -244,7 +258,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["updateWarlord", "fillPriorities", "fixHimeSpecial", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }
