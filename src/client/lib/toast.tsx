@@ -1,3 +1,4 @@
+import { logError } from "./errorLog.ts";
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from "lucide-react";
 
@@ -26,6 +27,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const dismiss = (id: number) => setToasts((t) => t.filter((x) => x.id !== id));
   const push = useCallback((kind: ToastKind, title: string, detail?: string) => {
+    if (kind === "error") logError("お知らせ", detail ? `${title}: ${detail}` : title);
     const id = nextId++;
     setToasts((t) => [...t.slice(-4), { id, kind, title, detail }]);
     setTimeout(() => dismiss(id), kind === "error" ? 9000 : 5000);

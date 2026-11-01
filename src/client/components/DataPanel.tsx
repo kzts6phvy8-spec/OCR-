@@ -3,8 +3,20 @@ import { Download, FileJson, FileText, Trash2, Upload } from "lucide-react";
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
 import { saveFile, today } from "../lib/share.ts";
+import { HealthPanel } from "./HealthPanel.tsx";
+import type { Warlord } from "../../core/types.ts";
 
-export function DataPanel({ count, onImported }: { count: number; onImported: () => void }) {
+export function DataPanel({
+  count,
+  warlords,
+  onImported,
+  onOpenWarlord,
+}: {
+  count: number;
+  warlords: Warlord[];
+  onImported: () => void;
+  onOpenWarlord: (id: string) => void;
+}) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"merge" | "replace">("merge");
@@ -70,6 +82,7 @@ export function DataPanel({ count, onImported }: { count: number; onImported: ()
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
+      <HealthPanel warlords={warlords} onChanged={onImported} onOpenWarlord={onOpenWarlord} />
       <section className="panel p-5 md:col-span-2">
         <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
           <FileText className="size-5" /> 全武将をテキストで保存

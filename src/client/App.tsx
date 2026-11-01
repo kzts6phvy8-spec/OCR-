@@ -136,6 +136,16 @@ export default function App() {
         toast("success", `鬼憑武将の連携スキルを ${n} 人分整えました`, "混ざっていた通常・特異武将の連携を取り除き、同じ組の鬼の連携を入れました");
         void refreshWarlords();
       })
+      // 図鑑データを点検し、直せるものは直す (結果は「データ管理」に出る)
+      .then(() => api.runHealthCheck())
+      .then((r) => {
+        if (r.fixed.length) void refreshWarlords();
+        if (r.warnings.length) {
+          toast("warning", `自動点検: 確かめてほしいことが ${r.warnings.length} 件あります`, "「データ管理」タブの「自動点検」で見られます");
+        } else if (r.fixed.length) {
+          toast("success", `自動点検: ${r.fixed.length} 件を自動で直しました`, "「データ管理」タブの「自動点検」で見られます");
+        }
+      })
       // 立ち絵の見比べを速くするため、まだ指紋の無い登録画像の指紋を少しずつ作る
       .then(() => backfillSignatures());
   }, [refreshWarlords, toast]);
@@ -246,7 +256,7 @@ export default function App() {
         {tab === "upload" && (
           <UploadPanel jobs={jobs} warlords={warlords} model={activeModelLabel(settings)} hasApiKey={hasActiveKey(settings)} onOpenWarlord={setOpenId} />
         )}
-        {tab === "data" && <DataPanel count={warlords.length} onImported={refreshWarlords} />}
+        {tab === "data" && <DataPanel count={warlords.length} warlords={warlords} onImported={refreshWarlords} onOpenWarlord={setOpenId} />}
         {tab === "settings" && <SettingsPanel settings={settings} />}
       </main>
 

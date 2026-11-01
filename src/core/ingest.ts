@@ -60,7 +60,7 @@ const rarityCompatible = (w: Warlord, faction: string, rarity: string) =>
   w.rarity === rarity ||
   !(SPLIT_BY_RARITY_FACTIONS.includes(faction) || SPLIT_BY_RARITY_FACTIONS.includes(w.faction));
 /** 読み取った勢力・レア度と、登録済みの武将が両立するか */
-const compatible = (w: Warlord, faction: string, rarity: string) => factionCompatible(w, faction) && rarityCompatible(w, faction, rarity);
+export const compatible = (w: Warlord, faction: string, rarity: string) => factionCompatible(w, faction) && rarityCompatible(w, faction, rarity);
 
 interface Choice {
   existing: Warlord | null;
