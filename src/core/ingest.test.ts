@@ -138,6 +138,18 @@ describe("ingestExtraction", async () => {
       expect(z.warlord.id).toBe(n.id);
     });
 
+    it("鬼憑武将は、同じ名前の通常・特異武将と統合しない", async () => {
+      const normal = (await add("n1", { faction: "東海" })).warlord;
+      const special = (await add("s1", { faction: "東海", special_marker_visible: true })).warlord;
+      // 立ち絵の判定が「同じ」でも、勢力が鬼憑武将と読めたら別の武将
+      const oni = await ingestExtraction(makeExtraction({ name: "武将A", faction: "鬼憑武将" }), { ...opts("n2"), sameArt: async () => "same" });
+      expect(oni.merged).toBe(false);
+      expect([normal.id, special.id]).not.toContain(oni.warlord.id);
+      // 通常武将の画面は鬼憑武将に統合しない
+      const back = await ingestExtraction(makeExtraction({ name: "武将A", faction: "東海" }), { ...opts("n3"), sameArt: art("n3") });
+      expect(back.warlord.id).toBe(normal.id);
+    });
+
     it("通常・特異がいて、どちらとも違う立ち絵なら別の武将として登録する", async () => {
       await add("n1");
       await add("s1", { special_marker_visible: true });

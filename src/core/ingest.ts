@@ -41,10 +41,10 @@ export type ArtCheck = (
 ) => Promise<"same" | "different" | "unknown">;
 
 /**
- * 同じ名前でも別の武将として扱う勢力 (例: 姫武将の「お市」と通常の「お市」は別人)。
+ * 同じ名前でも別の武将として扱う勢力 (例: 姫武将の「お市」と通常の「お市」、鬼憑武将と同じ名前の通常・特異武将は別人)。
  * 勢力が読み取れた時は、この区分が違う武将には統合しない。
  */
-export const SEPARATE_FACTIONS: readonly string[] = ["姫武将"];
+export const SEPARATE_FACTIONS: readonly string[] = ["姫武将", "鬼憑武将"];
 const factionGroup = (f: string) => (SEPARATE_FACTIONS.includes(f) ? f : "");
 /** 読み取った勢力と、登録済みの武将の勢力が両立するか (どちらかが不明なら両立とみなす) */
 const factionCompatible = (w: Warlord, faction: string) => !faction || !w.faction || factionGroup(w.faction) === factionGroup(faction);
@@ -171,10 +171,10 @@ export async function ingestExtraction(
   },
 ): Promise<IngestResult> {
   const readFaction = opts.faction || normalizeFaction(ext.faction);
-  // 姫武将などの別区分は特異武将とは別物: AI が姫のマーク等を【特】と取り違えても特異にしない
+  // 姫武将は特異武将とは別物: AI が姫のマーク等を【特】と取り違えても特異にしない
   // (武将名そのものに【特】が付いている時だけは従う)
   const decision = decideSpecial(
-    SEPARATE_FACTIONS.includes(readFaction) ? { ...ext, special_marker_visible: false } : ext,
+    readFaction === "姫武将" ? { ...ext, special_marker_visible: false } : ext,
     opts.mode,
   );
   const warnings = [...decision.warnings];
