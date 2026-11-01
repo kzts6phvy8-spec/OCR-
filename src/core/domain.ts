@@ -322,11 +322,25 @@ export function splitPartners(partner: string): string[] {
 /** 連携相手の組み合わせが同じかを比べるための鍵 (並び順は問わない) */
 export const partnerKey = (partner: string) => splitPartners(partner).map(normText).sort().join("、");
 
+/** 効果の文章の「◯体」(鬼憑武将の連携スキルの段階) */
+const tierOf = (effect: string) => effect.normalize("NFKC").match(/(\d+)\s*体/)?.[1] ?? "";
+
+/**
+ * 2 つの連携スキルが同じものか。相手 (並び順は問わない) が同じなら同じ連携スキル
+ * (読み違い・途切れは長い方を残す)。ただし「◯体」の数が違えば別の段階
+ * (例: 鬼憑武将の「1体以上」「2体以上」が場内にいる場合)。
+ */
+export function sameSynergy(a: SynergySkill, b: SynergySkill): boolean {
+  if (partnerKey(a.partner) !== partnerKey(b.partner)) return false;
+  const ta = tierOf(a.effect);
+  const tb = tierOf(b.effect);
+  return !ta || !tb || ta === tb;
+}
+
 export function mergeSynergies(base: SynergySkill[], incoming: SynergySkill[]): SynergySkill[] {
   const result = base.map((s) => ({ ...s }));
   for (const s of incoming) {
-    // 連携相手は並び順が違っても同じ組とみなす (「A、B」と「B、A」)
-    const idx = result.findIndex((r) => partnerKey(r.partner) === partnerKey(s.partner));
+    const idx = result.findIndex((r) => sameSynergy(r, s));
     if (idx === -1) result.push({ ...s });
     else if (s.effect.length > result[idx].effect.length) result[idx] = { ...result[idx], effect: s.effect };
   }

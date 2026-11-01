@@ -4,7 +4,7 @@
 
 import type { SynergySkill, Warlord } from "./types.ts";
 import type { WarlordRepo } from "./ingest.ts";
-import { normalizeInput, partnerKey, splitPartners } from "./domain.ts";
+import { normalizeInput, partnerKey, sameSynergy, splitPartners } from "./domain.ts";
 
 export const ONI_FACTION = "鬼憑武将";
 
@@ -36,7 +36,7 @@ export async function cleanOniSynergies(
   const others = (await repo.findByName(w.name)).filter((o) => o.faction !== ONI_FACTION);
   if (others.length === 1) {
     const o = others[0];
-    const add = removed.filter((s) => !o.synergy_skills.some((x) => partnerKey(x.partner) === partnerKey(s.partner)));
+    const add = removed.filter((s) => !o.synergy_skills.some((x) => sameSynergy(x, s)));
     movedTo = add.length ? await repo.update(o.id, normalizeInput({ ...strip(o), synergy_skills: [...o.synergy_skills, ...add] })) : o;
   }
   return { warlord, removed, movedTo };
@@ -59,7 +59,7 @@ export async function shareOniSynergies(repo: WarlordRepo, w: Warlord): Promise<
       for (const other of await repo.findByName(name)) {
         if (other.faction !== ONI_FACTION || other.is_special !== w.is_special) continue;
         const partner = group.filter((n) => n !== other.name).join("、");
-        if (other.synergy_skills.some((x: SynergySkill) => partnerKey(x.partner) === partnerKey(partner))) continue;
+        if (other.synergy_skills.some((x: SynergySkill) => sameSynergy(x, { partner, effect: s.effect }))) continue;
         const { id: _i, created_at: _c, updated_at: _u, screenshot_count: _s, ...input } = other;
         const saved = await repo.update(
           other.id,
