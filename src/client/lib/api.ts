@@ -7,6 +7,26 @@ import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/on
 import * as db from "./db.ts";
 import { blobToDataUrl, compressImage, dataUrlToBlob, shrinkForGallery } from "./images.ts";
 import * as queue from "./queue.ts";
+import { findIssues, type Issue } from "../../core/health.ts";
+import { mergeSynergies } from "../../core/domain.ts";
+import { getErrorLog } from "./errorLog.ts";
+
+export interface HealthReport {
+  checkedAt: string;
+  /** 自動で直したもの */
+  fixed: Issue[];
+  /** 利用者に確かめてほしいもの */
+  warnings: Issue[];
+}
+
+const HEALTH_KEY = "sengoku-fubu-health";
+export function lastHealthReport(): HealthReport | null {
+  try {
+    return JSON.parse(localStorage.getItem(HEALTH_KEY) ?? "null") as HealthReport | null;
+  } catch {
+    return null;
+  }
+}
 
 // 画面から使う操作。サーバーは無く、すべて端末内で完結する。
 
@@ -86,6 +106,79 @@ export const api = {
       for (const c of await shareOniSynergies(db.repo, cleaned.warlord)) changed.add(c.id);
     }
     return changed.size;
+  },
+
+  /**
+   * 図鑑データを点検し、安全に直せるものは直す。直せないものは知らせるために返す。起動時と「今すぐ点検」で呼ぶ。
+   */
+  async runHealthCheck(): Promise<HealthReport> {
+    const recentLimit = Date.now() - 60 * 60_000;
+    const meta = await db.listImageMeta();
+    const issues = findIssues(
+      await db.listWarlords(),
+      new Set(meta.map((m) => m.id)),
+      await db.listJobs(),
+      // 1 時間以内に保存した画像は、解析待ちに入る前かもしれないので消さない
+      new Set(meta.filter((m) => Date.parse(m.created_at) > recentLimit).map((m) => m.id)),
+    );
+    const fixed: Issue[] = [];
+    for (const issue of issues.filter((i) => i.autoFix)) {
+      try {
+        for (const id of issue.warlordIds) {
+          const w = await db.getWarlord(id);
+          if (!w) continue;
+          const input = toInput(w);
+          if (issue.kind === "synergy_duplicate") input.synergy_skills = mergeSynergies([], w.synergy_skills);
+          if (issue.kind === "hime_special") input.is_special = false;
+          if (issue.kind === "missing_image") {
+            const missing = new Set(issue.imageIds);
+            input.gallery_images = w.gallery_images.filter((g) => !missing.has(g));
+            if (missing.has(input.image_url)) input.image_url = input.gallery_images[0] ?? "";
+          }
+          if (issue.kind === "oni_synergy") {
+            await cleanOniSynergies(db.repo, w);
+            continue;
+          }
+          await db.updateWarlord(id, normalizeInput(input));
+        }
+        if (issue.kind === "orphan_image" && issue.imageIds) await db.deleteImages(issue.imageIds);
+        fixed.push(issue);
+      } catch (e) {
+        issues.push({ ...issue, autoFix: false, message: `${issue.message} …のつもりでしたが、直せませんでした (${(e as Error).message})` });
+      }
+    }
+    const report: HealthReport = { checkedAt: new Date().toISOString(), fixed, warnings: issues.filter((i) => !i.autoFix) };
+    try {
+      localStorage.setItem(HEALTH_KEY, JSON.stringify(report));
+    } catch {
+      /* 保存できなくても結果は返す */
+    }
+    return report;
+  },
+
+  /** 点検結果とエラーの記録を、送れる文章にする */
+  async healthReportText(): Promise<string> {
+    const r = lastHealthReport();
+    const warlords = await db.listWarlords();
+    const jobs = await db.listJobs();
+    const lines = [
+      "【武将図鑑 点検結果】",
+      `点検: ${r ? new Date(r.checkedAt).toLocaleString("ja-JP") : "まだ"}`,
+      `武将 ${warlords.length} 人 / 解析履歴 ${jobs.length} 件 (失敗 ${jobs.filter((j) => j.status === "error").length} 件)`,
+      `端末: ${navigator.userAgent}`,
+      "",
+      "■ 確かめてほしいこと",
+      ...(r?.warnings.length ? r.warnings.map((i) => `- ${i.message}`) : ["- なし"]),
+      "",
+      "■ 自動で直したこと",
+      ...(r?.fixed.length ? r.fixed.map((i) => `- ${i.message}`) : ["- なし"]),
+      "",
+      "■ エラーの記録 (新しい順)",
+      ...(getErrorLog().length
+        ? [...getErrorLog()].reverse().map((e) => `- ${new Date(e.at).toLocaleString("ja-JP")} [${e.where}] ${e.message}`)
+        : ["- なし"]),
+    ];
+    return lines.join("\n");
   },
 
   async deleteWarlord(id: string) {
@@ -265,7 +358,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }

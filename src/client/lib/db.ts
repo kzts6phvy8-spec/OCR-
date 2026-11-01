@@ -250,7 +250,27 @@ export const listSignatures = retrying(async function listSignatures(): Promise<
   return new Map(rows.map((r) => [r.id, r.sig]));
 });
 
+/** 画像 ID と保存した時刻の一覧 (画像の中身は読み込まない) */
+export const listImageMeta = retrying(async function listImageMeta(): Promise<{ id: string; created_at: string }[]> {
+  const out: { id: string; created_at: string }[] = [];
+  let cursor = await (await db()).transaction("images").store.openCursor();
+  while (cursor) {
+    out.push({ id: cursor.value.id, created_at: cursor.value.created_at });
+    cursor = await cursor.continue();
+  }
+  return out;
+});
+
 /** 画像 ID の一覧 (中身は読まない) */
 export const listImageIds = retrying(async function listImageIds(): Promise<string[]> {
   return (await (await db()).getAllKeys("images")) as string[];
+});
+
+/** 画像を消す (指紋も一緒に) */
+export const deleteImages = retrying(async function deleteImages(ids: string[]) {
+  const d = await db();
+  for (const id of ids) {
+    await d.delete("images", id);
+    await d.delete("signatures", id);
+  }
 });

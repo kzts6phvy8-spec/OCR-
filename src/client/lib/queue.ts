@@ -12,6 +12,7 @@ import { shrinkForGallery } from "./images.ts";
 import { nextDailyReset } from "./quota.ts";
 import { isStalled, probeIfNeeded } from "./probe.ts";
 import { artChecker } from "./visual.ts";
+import { logError } from "./errorLog.ts";
 import type { OcrExtraction } from "../../core/ocrSchema.ts";
 
 // 画像を解析するキュー。AI への問い合わせは 2 枚同時に進め、保存 (同じ武将への統合) は 1 件ずつ順番に行う。
@@ -187,6 +188,7 @@ export function resumeNow() {
 
 async function update(job: OcrJob, patch: Partial<OcrJob>): Promise<OcrJob> {
   const next = { ...job, ...patch, updated_at: new Date().toISOString() };
+  if (patch.status === "error" && patch.error) logError("解析", `${job.file_name}: ${patch.error}`);
   await db.saveJob(next);
   notify();
   return next;
