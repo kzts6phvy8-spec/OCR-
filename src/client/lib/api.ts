@@ -3,7 +3,7 @@ import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput 
 import { warlordsToText } from "../../core/text.ts";
 import { mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
-import { ONI_FACTION, shareOniSynergies } from "../../core/oni.ts";
+import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
 import { blobToDataUrl, compressImage, dataUrlToBlob, shrinkForGallery } from "./images.ts";
 import * as queue from "./queue.ts";
@@ -70,13 +70,20 @@ export const api = {
     return fixed;
   },
 
-  /** 登録済みの鬼憑武将の連携スキルを、同じ組の鬼に広める (起動時に呼ぶ)。書き換えた人数を返す */
+  /** 登録済みの鬼憑武将の連携スキルを整える (混ざった他の武将の連携を取り除き、同じ組の鬼に広める)。起動時に呼ぶ。書き換えた人数を返す */
   async shareAllOniSynergies(): Promise<number> {
     const changed = new Set<string>();
     for (const w of await db.listWarlords()) {
       if (w.faction !== ONI_FACTION || w.synergy_skills.length === 0) continue;
       const latest = await db.getWarlord(w.id);
-      if (latest) for (const c of await shareOniSynergies(db.repo, latest)) changed.add(c.id);
+      if (!latest) continue;
+      // 同じ名前の通常・特異武将の連携スキルが混ざっていたら取り除く (その武将の方へ移す)
+      const cleaned = await cleanOniSynergies(db.repo, latest);
+      if (cleaned.removed.length) {
+        changed.add(cleaned.warlord.id);
+        if (cleaned.movedTo) changed.add(cleaned.movedTo.id);
+      }
+      for (const c of await shareOniSynergies(db.repo, cleaned.warlord)) changed.add(c.id);
     }
     return changed.size;
   },

@@ -133,7 +133,7 @@ export default function App() {
       .then(() => api.shareAllOniSynergies())
       .then((n) => {
         if (n === 0) return;
-        toast("success", `鬼憑武将 ${n} 人に、同じ組の鬼の連携スキルを入れました`);
+        toast("success", `鬼憑武将の連携スキルを ${n} 人分整えました`, "混ざっていた通常・特異武将の連携を取り除き、同じ組の鬼の連携を入れました");
         void refreshWarlords();
       })
       // 立ち絵の見比べを速くするため、まだ指紋の無い登録画像の指紋を少しずつ作る

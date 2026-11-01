@@ -10,7 +10,7 @@ import {
   normalizeRarity,
 } from "./domain.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
-import { ONI_FACTION, shareOniSynergies, splitPartners } from "./oni.ts";
+import { ONI_FACTION, cleanOniSynergies, shareOniSynergies, splitPartners } from "./oni.ts";
 
 export class IngestError extends Error {}
 
@@ -246,7 +246,15 @@ export async function ingestExtraction(
   const warlord = existing ? await repo.update(existing.id, record) : await repo.insert(record);
   // 鬼憑武将: 同じシーズンの 4 人は連携スキルが共通なので、残りの鬼にも広める (逆に、他の鬼の連携スキルをこの武将にも)
   if (warlord.faction === ONI_FACTION) {
-    const shared = await shareOniSynergies(repo, warlord);
+    // 鬼は同じ組の鬼としか連携しない: 同じ名前の通常・特異武将の連携スキルが混ざっていたら取り除く
+    const cleaned = await cleanOniSynergies(repo, warlord);
+    if (cleaned.removed.length) {
+      warnings.push(
+        `鬼憑武将の連携ではない連携スキル (${cleaned.removed.map((x) => x.partner).join("、")}) を取り除きました` +
+          (cleaned.movedTo ? `。同じ名前の${cleaned.movedTo.is_special ? "特異" : "通常"}武将の方に入れました` : ""),
+      );
+    }
+    const shared = await shareOniSynergies(repo, cleaned.warlord);
     if (shared.length) warnings.push(`連携スキルを同じ組の鬼憑武将 (${shared.map((w) => w.name).join("、")}) にも入れました`);
     for (const w of await oniPartnersOf(repo, warlord)) await shareOniSynergies(repo, w);
     const latest = await repo.get(warlord.id);
