@@ -110,25 +110,6 @@ export async function clearlyDifferentArt(a: Warlord, b: Warlord): Promise<boole
   return best < 0.8;
 }
 
-/** これ以上似ている画像どうしは同じ立ち絵の組にする */
-const CLUSTER_LINK = 0.8;
-
-/** 保存済みの指紋だけで組に分ける (画像は開かない。点検で多くの武将を調べる時用) */
-export function clusterSignatures(imageIds: string[], sigs: Map<string, Float32Array>): { groups: string[][]; unknown: string[] } {
-  const items = imageIds.filter((id) => sigs.has(id)).map((id) => ({ id, sig: sigs.get(id)! }));
-  const unknown = imageIds.filter((id) => !sigs.has(id));
-  const parent = items.map((_, i) => i);
-  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-  for (let i = 0; i < items.length; i++) {
-    for (let j = i + 1; j < items.length; j++) {
-      if (signatureSimilarity(items[i].sig, items[j].sig) >= CLUSTER_LINK) parent[find(i)] = find(j);
-    }
-  }
-  const byRoot = new Map<number, string[]>();
-  items.forEach((it, i) => byRoot.set(find(i), [...(byRoot.get(find(i)) ?? []), it.id]));
-  return { groups: [...byRoot.values()].sort((a, b) => b.length - a.length), unknown };
-}
-
 /**
  * まだ指紋の無い登録画像の指紋を、アプリを開いている間に少しずつ作る (次からの見比べを速くするため)。
  * 1 枚ずつ間を空けて作り、アプリが裏に回ったらやめる。
