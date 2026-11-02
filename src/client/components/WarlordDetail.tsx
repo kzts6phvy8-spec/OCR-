@@ -228,6 +228,19 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
     }
   };
 
+  /** 統合した画像を 1 枚だけ消す (武将の読み取った内容はそのまま) */
+  const removeImage = async (imageId: string) => {
+    if (!warlord) return;
+    if (!confirm("この画像を消去しますか？\n元に戻せません。この画像から読み取った内容は残ります (違う武将の内容が混ざっていた時は、編集で直すか「画像から作り直す」を使ってください)。")) return;
+    try {
+      const saved = await api.updateWarlord(warlord.id, {}, { removeImages: [imageId] });
+      toast("success", "画像を消去しました", `残り ${saved.gallery_images.length} 枚`);
+      onSaved(saved);
+    } catch (e) {
+      toast("error", "消去できませんでした", (e as Error).message);
+    }
+  };
+
   const counterpart = warlord
     ? allWarlords.find((w) => w.name === warlord.name && w.is_special !== warlord.is_special)
     : undefined;
@@ -512,6 +525,15 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                           <Trash2 className="size-3" />
                         </button>
                       </div>
+                    )}
+                    {view && (
+                      <button
+                        onClick={() => void removeImage(url)}
+                        className="absolute right-1 bottom-1 flex items-center gap-0.5 rounded bg-ebony-950/85 px-1.5 py-1 text-[10px] text-hi-400"
+                        aria-label="この画像を消去"
+                      >
+                        <Trash2 className="size-3" /> 消去
+                      </button>
                     )}
                   </div>
                 ))}
