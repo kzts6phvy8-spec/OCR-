@@ -159,9 +159,31 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
   };
   const reanalyze = async () => {
     if (!warlord) return;
-    if (!confirm(`登録済みの ${warlord.gallery_images.length} 枚を、もう一度解析して「${warlord.name}」に統合しますか？\n空欄の項目だけが埋まります。`)) return;
-    const jobs = await api.reanalyzeWarlord(warlord.id);
-    toast("info", `${jobs.length} 枚を再解析します`, "進み具合は「スクショ解析」タブでも見られます");
+    if (!confirm(`登録済みの ${warlord.gallery_images.length} 枚を、もう一度解析して「${warlord.name}」に統合しますか？\n空欄の項目だけが埋まります。立ち絵が違う画像が混ざっていたら、先に立ち絵ごとに分けます。`)) return;
+    try {
+      // 立ち絵が違う画像が混ざっていたら、再解析より先に分ける (この武将に統合し直すと混ざったままになるため)
+      const split = await api.splitWarlord(warlord.id);
+      if (split.groups > 0) {
+        toast("success", `立ち絵が違う画像が混ざっていたので、${split.groups} 組に分けます`, "残す立ち絵の画像から、この武将を作り直します。違う立ち絵の画像は別の武将に統合し直します");
+        return;
+      }
+      const jobs = await api.reanalyzeWarlord(warlord.id);
+      toast("info", `${jobs.length} 枚を再解析します`, "進み具合は「スクショ解析」タブでも見られます");
+    } catch (e) {
+      toast("error", "再解析できませんでした", (e as Error).message);
+    }
+  };
+
+  const splitByArt = async () => {
+    if (!warlord) return;
+    if (!confirm(`「${warlord.name}」の画像を立ち絵ごとに分けますか？\n画像がいちばん多い立ち絵をこの武将に残し、違う立ち絵の画像は別の武将に統合し直します。この武将の読み取った内容は、残す画像から作り直します (手で直した内容は消えます)。`)) return;
+    try {
+      const split = await api.splitWarlord(warlord.id);
+      if (split.groups === 0) toast("info", "立ち絵が違う画像は見つかりませんでした");
+      else toast("success", `${split.groups} 組に分けます (${split.jobs} 枚)`, "進み具合は「スクショ解析」タブで見られます");
+    } catch (e) {
+      toast("error", "分けられませんでした", (e as Error).message);
+    }
   };
 
   const rebuild = async () => {
@@ -361,6 +383,11 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                   {view.gallery_images.length > 0 && (
                     <button onClick={reanalyze} className="flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-ash hover:text-washi">
                       <RotateCcw className="size-4" /> 登録画像を再解析
+                    </button>
+                  )}
+                  {view.gallery_images.length > 1 && (
+                    <button onClick={splitByArt} className="flex items-center gap-1.5 rounded-lg border border-hi-600/60 px-3 py-1.5 text-hi-400">
+                      <Split className="size-4" /> 立ち絵が違う画像が混ざった時: 分ける
                     </button>
                   )}
                   {view.gallery_images.length > 0 && (

@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { OcrJob, Warlord, WarlordInput } from "../../core/types.ts";
+import type { OcrExtraction } from "../../core/ocrSchema.ts";
 import type { WarlordRepo } from "../../core/ingest.ts";
 
 // 端末内データベース (IndexedDB)。
@@ -14,12 +15,14 @@ interface Schema extends DBSchema {
   jobs: { key: string; value: OcrJob & { seq: number }; indexes: { by_seq: number } };
   /** 画像ごとの立ち絵の「指紋」(画像を開かずに見比べるため。visual.ts) */
   signatures: { key: string; value: { id: string; sig: Float32Array } };
+  /** 画像ごとの AI の読み取り結果 (作り直し・分ける時に、AI に読み直させずに使い回すため) */
+  extractions: { key: string; value: { id: string; ext: OcrExtraction } };
 }
 
 let dbPromise: Promise<IDBPDatabase<Schema>> | null = null;
 
 function db() {
-  dbPromise ??= openDB<Schema>("sengoku-fubu", 3, {
+  dbPromise ??= openDB<Schema>("sengoku-fubu", 4, {
     // 別の画面 (古い版のアプリなど) が新しい版のデータベースを開こうとしたら、こちらは閉じて道を譲る
     blocking() {
       void dbPromise?.then((d) => d.close());
@@ -42,6 +45,7 @@ function db() {
         store.createIndex("by_name", "name");
       }
       if (oldVersion < 3) d.createObjectStore("signatures", { keyPath: "id" });
+      if (oldVersion < 4) d.createObjectStore("extractions", { keyPath: "id" });
     },
   });
   const p = dbPromise;
@@ -147,6 +151,7 @@ export const deleteEverything = retrying(async function deleteEverything() {
   await d.clear("images");
   await d.clear("jobs");
   await d.clear("signatures");
+  await d.clear("extractions");
 });
 
 export const repo: WarlordRepo = {
@@ -179,6 +184,7 @@ export const removeUnreferencedImages = retrying(async function removeUnreferenc
     if (used.has(id)) continue;
     await d.delete("images", id);
     await d.delete("signatures", id);
+    await d.delete("extractions", id);
   }
 });
 
@@ -272,5 +278,16 @@ export const deleteImages = retrying(async function deleteImages(ids: string[]) 
   for (const id of ids) {
     await d.delete("images", id);
     await d.delete("signatures", id);
+    await d.delete("extractions", id);
   }
+});
+
+// ---- 読み取り結果 ----
+
+export const putExtraction = retrying(async function putExtraction(id: string, ext: OcrExtraction) {
+  await (await db()).put("extractions", { id, ext });
+});
+
+export const getExtraction = retrying(async function getExtraction(id: string): Promise<OcrExtraction | null> {
+  return (await (await db()).get("extractions", id))?.ext ?? null;
 });

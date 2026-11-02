@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { mergeWarlord, normalizeInput } from "../../core/domain.ts";
+import { emptyWarlordInput, mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
@@ -121,8 +121,21 @@ export const api = {
       // 1 時間以内に保存した画像は、解析待ちに入る前かもしれないので消さない
       new Set(meta.filter((m) => Date.parse(m.created_at) > recentLimit).map((m) => m.id)),
     );
+    // 立ち絵が違う画像が混ざっていそうな武将 (保存済みの指紋だけで調べる)
+    const { clearlyDifferentArt, clusterSignatures } = await import("./visual.ts");
+    const sigs = await db.listSignatures();
+    for (const w of await db.listWarlords()) {
+      if (w.gallery_images.length < 2) continue;
+      const { groups } = clusterSignatures(w.gallery_images, sigs);
+      if (groups.length < 2) continue;
+      issues.push({
+        kind: "mixed_art",
+        autoFix: false,
+        message: `「${w.is_special ? "【特】" : ""}${w.name}${w.faction ? ` (${w.faction})` : ""}」に、立ち絵が違う画像が混ざっているようです (${groups.map((g) => g.length).join(" 枚 / ")} 枚)。「立ち絵ごとに分ける」で分けられます`,
+        warlordIds: [w.id],
+      });
+    }
     // 「分かれていそう」でも、立ち絵がはっきり違う武将どうしは別の武将なので知らせない
-    const { clearlyDifferentArt } = await import("./visual.ts");
     for (const issue of [...issues]) {
       if (issue.kind !== "duplicate") continue;
       const group = (await Promise.all(issue.warlordIds.map((id) => db.getWarlord(id)))).filter((w): w is Warlord => Boolean(w));
@@ -314,6 +327,62 @@ export const api = {
     );
   },
 
+  /**
+   * 立ち絵が違う画像が混ざった武将を、立ち絵ごとに分ける。
+   * いちばん画像の多い立ち絵をこの武将に残し (読み取った内容は、その画像だけから作り直す)、
+   * 違う立ち絵の画像は、この武将以外に統合し直す (同じ立ち絵の武将がいなければ新しく登録)。
+   * 読み取り結果が残っている画像は AI に読み直させない。分けた組の数を返す (分けなければ 0)。
+   */
+  async splitWarlord(id: string): Promise<{ groups: number; jobs: number }> {
+    const w = await db.getWarlord(id);
+    if (!w) throw new Error("武将が見つかりません");
+    const { clusterByArt, confirmDifferentArt } = await import("./visual.ts");
+    const { groups, unknown } = await clusterByArt(w.gallery_images);
+    if (groups.length < 2) return { groups: 0, jobs: 0 };
+    // 代表画像を含む組が同じ大きさなら、そちらを残す
+    const keepIdx = groups.findIndex((g) => g.length === groups[0].length && g.includes(w.image_url));
+    const keep = groups[keepIdx >= 0 ? keepIdx : 0];
+    // 端末の見比べで分かれた組が、本当に違う立ち絵かを AI に確かめる (同じなら残す方に戻す)
+    const moved: string[][] = [];
+    for (const g of groups) {
+      if (g === keep) continue;
+      if (await confirmDifferentArt(w, keep, g)) moved.push(g);
+      else keep.push(...g);
+    }
+    if (moved.length === 0) return { groups: 0, jobs: 0 };
+    // この武将は、残す立ち絵の画像だけから作り直す (名前・通常/特異はそのまま)
+    const kept = [...keep, ...unknown];
+    await db.updateWarlord(
+      id,
+      normalizeInput({ ...emptyWarlordInput(), name: w.name, is_special: w.is_special, faction: w.faction, gallery_images: [], image_url: "" }),
+    );
+    const label = `${w.name} (立ち絵ごとに分ける)`;
+    let count = 0;
+    count += (
+      await queue.enqueue(
+        kept.map((imageId, i) => ({ fileName: `${label} 残す${i + 1}`, imageId })),
+        "auto",
+        id,
+        "",
+        true,
+        { reuse: true },
+      )
+    ).length;
+    for (const [k, g] of moved.entries()) {
+      count += (
+        await queue.enqueue(
+          g.map((imageId, i) => ({ fileName: `${label} 別の立ち絵${k + 1}-${i + 1}`, imageId })),
+          "auto",
+          null,
+          "",
+          true,
+          { reuse: true, excludeIds: [id] },
+        )
+      ).length;
+    }
+    return { groups: moved.length + 1, jobs: count };
+  },
+
   async exportText(): Promise<Blob> {
     const list = (await db.listWarlords()).sort((a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
     return new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" });
@@ -371,7 +440,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }
