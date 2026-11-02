@@ -18,6 +18,8 @@ import { LITE_GEMINI_MODEL, bgActive, loadSettings, setGeminiModel } from "../li
 import { useToast } from "../lib/toast.tsx";
 import { StoredImage } from "./StoredImage.tsx";
 import { WarlordPicker } from "./WarlordPicker.tsx";
+import { normalizeName } from "../../core/domain.ts";
+import { differsByOneChar } from "../../core/ingest.ts";
 
 function formatDuration(ms: number) {
   const min = Math.round(ms / 60_000);
@@ -387,6 +389,8 @@ function JobRow({
 }) {
   const toast = useToast();
   const [picking, setPicking] = useState(false);
+  const [zoom, setZoom] = useState(false);
+  const readName = job.extraction?.name ? normalizeName(job.extraction.name).name : "";
   const saveTo = async (targetId: string) => {
     if (!targetId) return;
     await api.retryJobWithTarget(job.id, targetId);
@@ -396,7 +400,7 @@ function JobRow({
   return (
     <li className="flex gap-3 rounded-lg border border-ebony-700 bg-ebony-900/70 p-2">
       <div className="relative h-16 w-10 shrink-0 overflow-hidden rounded border border-ebony-700 bg-ebony-800">
-        <StoredImage id={job.image_id} alt="" className="size-full object-cover" />
+        <StoredImage id={job.image_id} alt="" className="size-full object-cover object-left" />
         {job.status === "processing" && (
           <div className="absolute inset-0 overflow-hidden bg-gold-500/10">
             <div className="scan-line h-full w-full bg-gradient-to-b from-transparent via-gold-400/70 to-transparent" />
@@ -426,7 +430,32 @@ function JobRow({
         {job.status === "error" && (
           <div className="mt-1.5">
             {picking ? (
-              <WarlordPicker warlords={warlords} value="" onChange={(id) => void saveTo(id)} placeholder="統合先の武将を検索" />
+              <div className="space-y-2">
+                {/* 失敗した画像の立ち絵を大きく見て、候補の立ち絵と見比べられるようにする */}
+                <button onClick={() => setZoom(true)} className="flex items-center gap-2 text-left" aria-label="失敗した画像を大きく見る">
+                  <StoredImage id={job.image_id} alt="" className="h-28 w-24 shrink-0 rounded border border-hi-600/60 object-cover object-left" />
+                  <span className="text-[11px] text-ash">
+                    この画像の立ち絵と同じ武将を選んでください
+                    {readName && (
+                      <>
+                        <br />
+                        読み取った名前: <span className="text-washi">{readName}</span>
+                      </>
+                    )}
+                    <br />
+                    <span className="text-gold-300">タップで大きく表示</span>
+                  </span>
+                </button>
+                <WarlordPicker
+                  warlords={warlords}
+                  value=""
+                  onChange={(id) => void saveTo(id)}
+                  placeholder="統合先の武将を検索"
+                  // 読み取った名前と同じ・1 文字違いの武将は、検索しなくても候補に出す
+                  suggest={readName ? (w) => w.name === readName || differsByOneChar(w.name, readName) : undefined}
+                  priority={readName ? (w) => (w.name === readName ? 0 : 1) : undefined}
+                />
+              </div>
             ) : (
               <button onClick={() => setPicking(true)} className="rounded-md border border-ebony-600 px-2 py-1 text-[11px] text-gold-300">
                 統合先を選んで保存
@@ -457,6 +486,14 @@ function JobRow({
           </button>
         )}
       </div>
+      {zoom && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/90 p-3" onClick={() => setZoom(false)}>
+          <StoredImage id={job.image_id} alt="" className="max-h-full max-w-full object-contain" />
+          <button onClick={() => setZoom(false)} className="absolute top-[calc(1rem+env(safe-area-inset-top))] right-4 rounded-full bg-ebony-900/80 p-2" aria-label="閉じる">
+            <X className="size-5" />
+          </button>
+        </div>
+      )}
     </li>
   );
 }
