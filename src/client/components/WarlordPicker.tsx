@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { Warlord } from "../../core/types.ts";
+import { StoredImage } from "./StoredImage.tsx";
 
 // 武将を名前・二つ名・勢力で検索して 1 人選ぶ (統合先の指定・武将をまとめる時に使う)
 
@@ -44,7 +45,8 @@ export function WarlordPicker({
 
   if (selected) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-gold-600/60 bg-gold-500/10 px-3 py-2 text-sm">
+      <div className="flex items-center gap-2 rounded-lg border border-gold-600/60 bg-gold-500/10 p-2 text-sm">
+        <ArtThumb w={selected} large />
         <span className="min-w-0 flex-1 truncate font-bold text-gold-300">
           {label(selected)}
           {selected.title_alias && <span className="ml-1 font-normal text-ash">({selected.title_alias})</span>}
@@ -76,15 +78,18 @@ export function WarlordPicker({
                   onChange(w.id);
                   setQuery("");
                 }}
-                className="flex w-full items-center gap-2 border-b border-ebony-800 px-3 py-2 text-left text-sm last:border-0 hover:bg-ebony-800"
+                className="flex w-full items-center gap-2 border-b border-ebony-800 px-2 py-1.5 text-left text-sm last:border-0 hover:bg-ebony-800"
               >
+                <ArtThumb w={w} />
                 <span className="min-w-0 flex-1 truncate">
                   {label(w)}
                   {w.title_alias && <span className="ml-1 text-xs text-ash">({w.title_alias})</span>}
                 </span>
-                <span className="shrink-0 text-[11px] text-ash">
+                <span className="shrink-0 text-right text-[11px] leading-tight text-ash">
                   {w.rarity && `${w.rarity} ・`}
-                  {w.faction || "勢力未入力"} ・画像 {w.screenshot_count} 枚
+                  {w.faction || "勢力未入力"}
+                  <br />
+                  画像 {w.screenshot_count} 枚
                 </span>
               </button>
             </li>
@@ -96,4 +101,20 @@ export function WarlordPicker({
       )}
     </div>
   );
+}
+
+/**
+ * 武将の代表画像の小さな見本。立ち絵は画面の左側にあるので、左寄せで切り抜いて見せる
+ * (同じ名前の通常・特異・限定などを、立ち絵で見分けられるように)。
+ */
+function ArtThumb({ w, large = false }: { w: Warlord; large?: boolean }) {
+  const size = large ? "h-20 w-16" : "h-14 w-11";
+  if (!w.image_url) {
+    return (
+      <div className={`${size} grid shrink-0 place-items-center rounded border border-ebony-700 bg-ebony-800 font-serif text-lg text-ebony-500`}>
+        {w.name.slice(0, 1)}
+      </div>
+    );
+  }
+  return <StoredImage id={w.image_url} alt="" className={`${size} shrink-0 rounded border border-ebony-700 object-cover object-left`} />;
 }
