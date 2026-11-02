@@ -127,6 +127,8 @@ export interface OcrJob {
   keep_image?: boolean;
   /** この武将たちには統合しない (立ち絵ごとに分ける時、元の武将に戻らないように) */
   exclude_ids?: string[];
+  /** 統合先が新しく作ったばかりの武将: 通常/特異は画像の読み取り結果に合わせる */
+  adopt_special?: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -393,9 +393,13 @@ function JobRow({
   const readName = job.extraction?.name ? normalizeName(job.extraction.name).name : "";
   const saveTo = async (targetId: string) => {
     if (!targetId) return;
-    await api.retryJobWithTarget(job.id, targetId);
-    setPicking(false);
-    toast("info", "選んだ武将に統合します", job.extraction ? "読み取り済みの内容で保存します (AI の回数は使いません)" : "もう一度解析してから保存します");
+    try {
+      await api.retryJobWithTarget(job.id, targetId);
+      setPicking(false);
+      toast("info", "選んだ武将に統合します", job.extraction ? "読み取り済みの内容で保存します (AI の回数は使いません)" : "もう一度解析してから保存します");
+    } catch (e) {
+      toast("error", "保存できませんでした", (e as Error).message);
+    }
   };
   /** 合う武将がいない時: 新しい武将として保存する */
   const saveAsNew = async () => {

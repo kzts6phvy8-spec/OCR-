@@ -174,7 +174,7 @@ export async function enqueue(
 }
 
 /** 失敗したジョブをやり直す。targetId を渡すと、その武将に統合する (読み取り済みなら読み取りは繰り返さない) */
-export async function retryJobs(ids: string[], targetId?: string) {
+export async function retryJobs(ids: string[], targetId?: string, adoptSpecial = false) {
   for (const id of ids) {
     const job = await db.getJob(id);
     if (!job || job.status !== "error") continue;
@@ -185,6 +185,7 @@ export async function retryJobs(ids: string[], targetId?: string) {
       warnings: [],
       attempts: 0,
       ...(targetId ? { target_id: targetId } : {}),
+      ...(adoptSpecial ? { adopt_special: true } : {}),
       updated_at: new Date().toISOString(),
     });
   }
@@ -203,7 +204,11 @@ export function resumeNow() {
 }
 
 async function update(job: OcrJob, patch: Partial<OcrJob>): Promise<OcrJob> {
-  const next = { ...job, ...patch, updated_at: new Date().toISOString() };
+  // 手元の古い写しではなく、保存されている今のジョブに変更を重ねる
+  // (処理中に「まとめる」で統合先が付け替えられた等を、古い値で戻さないため)
+  const current = await db.getJob(job.id);
+  if (!current) return { ...job, ...patch }; // 取り除かれたジョブは保存し直さない
+  const next = { ...current, ...patch, updated_at: new Date().toISOString() };
   if (patch.status === "error" && patch.error) logError("解析", `${job.file_name}: ${patch.error}`);
   await db.saveJob(next);
   notify();
@@ -267,11 +272,15 @@ async function shrinkStoredImage(imageId: string) {
 }
 
 /** 読み取り結果を図鑑に保存する。同じ名前の武将がいれば立ち絵を見比べてから統合する */
-function ingestJob(job: OcrJob, extraction: OcrExtraction) {
-  return ingestLock(() =>
-    ingestExtraction(db.repo, extraction, {
+function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
+  return ingestLock(async () => {
+    // 順番を待つ間に取り除かれた・統合先が付け替えられたかもしれないので、今の状態で保存する
+    const job = await db.getJob(snapshot.id);
+    if (!job || (job.status !== "processing" && job.status !== "remote")) throw new JobCancelled();
+    return ingestExtraction(db.repo, extraction, {
       mode: job.mode,
       targetId: job.target_id,
+      adoptSpecial: job.adopt_special,
       imageId: job.image_id,
       faction: job.faction ?? "",
       sameArt: artChecker(job.image_id),
@@ -281,9 +290,12 @@ function ingestJob(job: OcrJob, extraction: OcrExtraction) {
         const names = (await db.listNames()).filter((n) => differsByOneChar(n, name));
         return (await Promise.all(names.map((n) => db.findByName(n)))).flat();
       },
-    }),
-  );
+    });
+  });
 }
+
+/** 保存を待つ間に、ジョブが取り除かれていた */
+class JobCancelled extends Error {}
 
 /** 無料枠などの上限: キュー全体を少し休ませる (30 秒 → 最大 10 分。1 日の上限なら戻る時刻まで) */
 function pauseForRateLimit(err: OcrError) {
@@ -320,15 +332,23 @@ async function processJob(job: OcrJob) {
       extraction: null,
     });
   } catch (err) {
+    if (err instanceof JobCancelled) return;
     if (err instanceof OcrError && err.rateLimited) {
       // 上限に達した: このジョブは (読み取り済みならその結果を残して) 待機に戻し、キュー全体を少し休ませる
       pauseForRateLimit(err);
       await update(job, { status: "queued", attempts: Math.max(0, job.attempts - 1), extraction });
       return;
     }
-    if (lastHiddenAt >= startedAt || (extraction && err instanceof OcrError && err.retryable && job.attempts < 3)) {
-      // アプリを離れたせいで止まった・立ち絵の確認が一時的に失敗した分は、失敗にせずやり直す
+    if (lastHiddenAt >= startedAt) {
+      // アプリを離れたせいで止まった分は、失敗にせず (回数にも数えず) やり直す
       await update(job, { status: "queued", attempts: Math.max(0, job.attempts - 1), extraction });
+      return;
+    }
+    if (extraction && err instanceof OcrError && err.retryable && job.attempts < 3) {
+      // 立ち絵の確認が一時的に失敗した: 少し待ってからやり直す (3 回まで。回数は戻さない)
+      pausedUntil = Math.max(pausedUntil, Date.now() + Math.max(5_000, err.retryAfterMs));
+      pauseReason = err.message;
+      await update(job, { status: "queued", extraction });
       return;
     }
     console.error(`[ocr] ${job.file_name}:`, err);
@@ -479,6 +499,7 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
       warnings: result.warnings,
     });
   } catch (err) {
+    if (err instanceof JobCancelled) return;
     if (extraction && err instanceof OcrError && (err.rateLimited || err.retryable)) {
       // 読み取りは済んで、立ち絵の確認だけが失敗した: 読み取り結果を残し、この端末で保存だけやり直す
       if (err.rateLimited) pauseForRateLimit(err);

@@ -230,7 +230,8 @@ export const api = {
     if (!job) throw new Error("解析の記録が見つかりません");
     const isSpecial = job.extraction ? decideSpecial(job.extraction, job.mode).is_special : job.mode === "force_special";
     const created = await db.insertWarlord(normalizeInput({ ...emptyWarlordInput(), name, is_special: isSpecial }));
-    await queue.retryJobs([id], created.id);
+    // 読み取りがまだの (送信や解析で失敗した) 画像は、読み取った【特】表記で通常/特異を決め直す
+    await queue.retryJobs([id], created.id, true);
     return created;
   },
   removeJobs: (ids: string[]) => queue.removeJobs(ids),
@@ -405,6 +406,7 @@ export const api = {
     if (images) for (const [id, url] of Object.entries(images)) await db.putImage(await dataUrlToBlob(url), id);
     if (mode === "replace") await db.deleteAllWarlords();
 
+    const imageIds = new Set(await db.listImageIds());
     let created = 0;
     let updated = 0;
     const errors: string[] = [];
@@ -421,7 +423,10 @@ export const api = {
         (await db.findByName(input.name)).find((w) => w.is_special === input.is_special && w.faction === input.faction) ??
         null;
       if (existing) {
-        await db.updateWarlord(existing.id, input);
+        // 画像は、この端末にある分を残したまま足す (バックアップより後に加えた画像を外さないため)
+        const kept = existing.gallery_images;
+        const added = input.gallery_images.filter((g) => !kept.includes(g) && (images?.[g] || imageIds.has(g)));
+        await db.updateWarlord(existing.id, normalizeInput({ ...input, gallery_images: [...kept, ...added], image_url: existing.image_url || input.image_url }));
         updated++;
       } else {
         const id = typeof raw?.id === "string" && !(await db.getWarlord(raw.id)) ? raw.id : undefined;

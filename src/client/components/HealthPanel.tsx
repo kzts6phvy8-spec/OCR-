@@ -50,8 +50,12 @@ export function HealthPanel({
     const [keep, ...rest] = ids.map((id) => byId.get(id)).filter((w): w is Warlord => Boolean(w));
     if (!keep || rest.length === 0) return;
     if (!confirm(`「${keep.name}」の ${ids.length} 人を 1 人にまとめますか？\n立ち絵が違う別の武将 (通常と特異など) の時は、まとめないでください。`)) return;
-    for (const w of rest) await api.mergeWarlords(keep.id, w.id);
-    toast("success", `「${keep.name}」をまとめました`);
+    try {
+      for (const w of rest) await api.mergeWarlords(keep.id, w.id);
+      toast("success", `「${keep.name}」をまとめました`);
+    } catch (e) {
+      toast("error", "まとめられませんでした", (e as Error).message);
+    }
     await run();
   };
 
