@@ -121,22 +121,9 @@ export const api = {
       // 1 時間以内に保存した画像は、解析待ちに入る前かもしれないので消さない
       new Set(meta.filter((m) => Date.parse(m.created_at) > recentLimit).map((m) => m.id)),
     );
-    // 立ち絵が違う画像が混ざっていそうな武将 (保存済みの指紋だけで調べる)
-    const { clearlyDifferentArt, clusterSignatures } = await import("./visual.ts");
-    const sigs = await db.listSignatures();
-    for (const w of await db.listWarlords()) {
-      if (w.gallery_images.length < 2) continue;
-      // 画像が多すぎる武将は、すでに「混ざっている」と知らせている
-      if (issues.some((i) => i.kind === "too_many_images" && i.warlordIds.includes(w.id))) continue;
-      const { groups } = clusterSignatures(w.gallery_images, sigs);
-      if (groups.length < 2) continue;
-      issues.push({
-        kind: "mixed_art",
-        autoFix: false,
-        message: `「${w.is_special ? "【特】" : ""}${w.name}${w.faction ? ` (${w.faction})` : ""}」に、立ち絵が違う画像が混ざっているようです (${groups.map((g) => g.length).join(" 枚 / ")} 枚)。「立ち絵ごとに分ける」で分けられます`,
-        warlordIds: [w.id],
-      });
-    }
+    // ※ 立ち絵が混ざっていそうかを端末の指紋だけで調べるのはやめた (同じ立ち絵でも、画面の種類が違うと指紋が離れて
+    //    「混ざっている」と誤って知らせていたため)。混ざりは「画像が 7 枚以上」と、武将の画面の「分ける」(AI で確かめる) で見つける
+    const { clearlyDifferentArt } = await import("./visual.ts");
     // 「分かれていそう」でも、立ち絵がはっきり違う武将どうしは別の武将なので知らせない
     for (const issue of [...issues]) {
       if (issue.kind !== "duplicate") continue;
