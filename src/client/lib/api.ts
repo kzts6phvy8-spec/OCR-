@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { emptyWarlordInput, mergeWarlord, normalizeInput } from "../../core/domain.ts";
+import { decideSpecial, emptyWarlordInput, mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
@@ -221,6 +221,18 @@ export const api = {
   retryJob: (id: string) => queue.retryJob(id),
   /** 失敗したジョブを、選んだ武将に統合してやり直す */
   retryJobWithTarget: (id: string, targetId: string) => queue.retryJobs([id], targetId),
+  /**
+   * 失敗したジョブを、新しい武将として保存し直す (統合先に合う武将がいない時)。
+   * 名前と通常/特異だけの武将を作り、そこへ統合する形で保存する (読み取り済みなら AI は使わない)。
+   */
+  async retryJobAsNewWarlord(id: string, name: string): Promise<Warlord> {
+    const job = await db.getJob(id);
+    if (!job) throw new Error("解析の記録が見つかりません");
+    const isSpecial = job.extraction ? decideSpecial(job.extraction, job.mode).is_special : job.mode === "force_special";
+    const created = await db.insertWarlord(normalizeInput({ ...emptyWarlordInput(), name, is_special: isSpecial }));
+    await queue.retryJobs([id], created.id);
+    return created;
+  },
   removeJobs: (ids: string[]) => queue.removeJobs(ids),
   takeOverRemoteJobs: () => queue.takeOverRemoteJobs(),
   resendRemoteJobs: () => queue.resendRemoteJobs(),
