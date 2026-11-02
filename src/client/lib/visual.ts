@@ -10,7 +10,8 @@ import { loadSettings, type Settings } from "./settings.ts";
 // まず端末だけで見比べ、ほぼ同じ絵なら AI には尋ねない。迷う時だけ AI に 1 回尋ねる (無料枠の回数を 1 回使う)。
 
 /** これ以上似ていれば、同じ立ち絵とみなして AI に尋ねない */
-const SAME_THRESHOLD = 0.95;
+// 画面の枠や背景が大きく写る画面では、違う立ち絵でも指紋がかなり似ることがあるので、ほぼ同じ画像の時だけにする
+const SAME_THRESHOLD = 0.985;
 /** 見比べに使う登録画像の枚数 */
 const LOCAL_SAMPLES = 6;
 const AI_SAMPLES = 3;
@@ -66,8 +67,8 @@ const MIN_REFERENCES = 20;
  * 候補の武将の画像にこれ以上似ていて、しかも他のどの武将の画像よりこれだけ多く似ていれば、同じ立ち絵とみなす。
  * 同じ人物の通常と特異は色合いが近いこともあるので、甘くしすぎない (取り違えると情報が混ざる)
  */
-const RELATIVE_SAME = 0.9;
-const RELATIVE_MARGIN = 0.1;
+const RELATIVE_SAME = 0.95;
+const RELATIVE_MARGIN = 0.15;
 
 /**
  * 端末だけで「同じ立ち絵」と言えるか。候補の武将の画像が、他の武将 (同じ名前の別版も含む) の
@@ -112,19 +113,6 @@ export async function clearlyDifferentArt(a: Warlord, b: Warlord): Promise<boole
 /** これ以上似ている画像どうしは同じ立ち絵の組にする */
 const CLUSTER_LINK = 0.8;
 
-/**
- * 画像を立ち絵ごとの組に分ける (端末の指紋だけで。似ている画像どうしをつないでいく)。
- * 指紋を作れない画像は、どの組にも入れずに返す。大きい組から順に並べる。
- */
-export async function clusterByArt(imageIds: string[]): Promise<{ groups: string[][]; unknown: string[] }> {
-  const sigs = new Map<string, Float32Array>();
-  for (const id of imageIds) {
-    const sig = await signatureOf(id);
-    if (sig) sigs.set(id, sig);
-  }
-  return clusterSignatures(imageIds, sigs);
-}
-
 /** 保存済みの指紋だけで組に分ける (画像は開かない。点検で多くの武将を調べる時用) */
 export function clusterSignatures(imageIds: string[], sigs: Map<string, Float32Array>): { groups: string[][]; unknown: string[] } {
   const items = imageIds.filter((id) => sigs.has(id)).map((id) => ({ id, sig: sigs.get(id)! }));
@@ -139,17 +127,6 @@ export function clusterSignatures(imageIds: string[], sigs: Map<string, Float32A
   const byRoot = new Map<number, string[]>();
   items.forEach((it, i) => byRoot.set(find(i), [...(byRoot.get(find(i)) ?? []), it.id]));
   return { groups: [...byRoot.values()].sort((a, b) => b.length - a.length), unknown };
-}
-
-/**
- * 組 other の立ち絵が、組 keep の立ち絵と違うことを AI に確かめる (端末の見比べだけで分けて、同じ武将を割らないように)。
- * 違うと言えた時だけ true。
- */
-export async function confirmDifferentArt(base: Warlord, keep: string[], other: string[]): Promise<boolean> {
-  // 元の武将の画像を「他の武将」として扱わないよう、仮の武将として見比べる
-  const fake: Warlord = { ...base, id: `split:${base.id}`, gallery_images: keep, image_url: keep[0] ?? "" };
-  const r = await artChecker(other[0])(fake, { strict: true });
-  return r === "different";
 }
 
 /**
@@ -198,14 +175,14 @@ const RESPONSE_SCHEMA = {
 
 type Part = { text: string } | { image: string };
 
-async function ask(parts: Part[], settings: Settings): Promise<string> {
+async function ask(parts: Part[], settings: Settings, schema: object = RESPONSE_SCHEMA, maxTokens = 100): Promise<string> {
   if (settings.provider === "claude") {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true, timeout: 45_000, maxRetries: 1 });
     try {
       const res = await client.messages.create({
         model: settings.model,
-        max_tokens: 100,
+        max_tokens: maxTokens,
         messages: [
           {
             role: "user",
@@ -229,7 +206,7 @@ async function ask(parts: Part[], settings: Settings): Promise<string> {
     const res = await client.models.generateContent({
       model: settings.geminiModel,
       contents: [{ role: "user", parts: parts.map((p) => ("text" in p ? { text: p.text } : { inlineData: { mimeType: "image/jpeg", data: p.image } })) }],
-      config: { temperature: 0, responseMimeType: "application/json", responseJsonSchema: RESPONSE_SCHEMA },
+      config: { temperature: 0, responseMimeType: "application/json", responseJsonSchema: schema },
     });
     return res.text ?? "";
   } catch (err) {
@@ -288,4 +265,80 @@ export function artChecker(imageId: string): ArtCheck {
     parts.push({ text: "判定する画像:" }, { image: await blobToBase64(await compressImage(targetBlob, PREVIEW)) });
     return interpretAnswer(await ask(parts, loadSettings()), opts.strict);
   };
+}
+
+// ---- 立ち絵ごとの組分け (AI) ----
+
+const GROUP_PROMPT = (n: number) =>
+  [
+    `スマホゲーム『戦国布武』の、同じ名前の武将のスクリーンショットが ${n} 枚あります (画像 1 〜 ${n})。`,
+    "画面に写っている武将の立ち絵 (人物のイラスト) を比べ、同じイラストの画像どうしを同じ組にしてください。",
+    "同じ名前でも、通常武将・特異武将・限定武将・鬼憑武将などは立ち絵が別のイラスト (衣装・髪型・色・持ち物・ポーズが違う) です。",
+    "ステータス・天賦・連携など画面の種類の違いや、文字・枠・数値の違いは無視し、人物のイラストだけで判断してください。",
+    `JSON で答えてください: {"groups": [画像 1 の組番号, 画像 2 の組番号, …]} (組番号は 1 から。立ち絵が写っていない画像は 0)`,
+  ].join("\n");
+
+const GROUP_SCHEMA = {
+  type: "object",
+  properties: { groups: { type: "array", items: { type: "integer" } } },
+  required: ["groups"],
+};
+
+/** 1 回に AI に見せる画像の枚数 */
+const MAX_GROUP_IMAGES = 12;
+
+/**
+ * 画像を立ち絵ごとの組に分ける (AI に全部を一度に見せて組分けさせる。端末の指紋は当てにしない)。
+ * 枚数が多い時は、残りの画像を指紋がいちばん近い組に入れる。大きい組から順に返す。
+ */
+export async function groupByArtWithAi(imageIds: string[]): Promise<{ groups: string[][]; unknown: string[] }> {
+  const shown = imageIds.slice(0, MAX_GROUP_IMAGES);
+  const parts: Part[] = [{ text: GROUP_PROMPT(shown.length) }];
+  const usable: string[] = [];
+  for (const id of shown) {
+    const blob = await db.getImage(id);
+    if (!blob) continue;
+    usable.push(id);
+    parts.push({ text: `画像 ${usable.length}:` }, { image: await blobToBase64(await compressImage(blob, PREVIEW)) });
+  }
+  parts[0] = { text: GROUP_PROMPT(usable.length) };
+  if (usable.length < 2) return { groups: usable.length ? [usable] : [], unknown: imageIds.filter((id) => !usable.includes(id)) };
+
+  const text = await ask(parts, loadSettings(), GROUP_SCHEMA, 300);
+  let labels: number[] = [];
+  try {
+    labels = (JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as { groups?: number[] }).groups ?? [];
+  } catch {
+    labels = [];
+  }
+  if (labels.length !== usable.length) throw new OcrError("AI の組分けの答えを読み取れませんでした。もう一度お試しください", true, 3_000);
+
+  const byLabel = new Map<number, string[]>();
+  const unknown: string[] = [];
+  usable.forEach((id, i) => {
+    if (!labels[i]) unknown.push(id);
+    else byLabel.set(labels[i], [...(byLabel.get(labels[i]) ?? []), id]);
+  });
+  const groups = [...byLabel.values()];
+  // AI に見せきれなかった画像は、指紋がいちばん近い組へ
+  for (const id of imageIds.filter((x) => !usable.includes(x) && !unknown.includes(x))) {
+    const sig = await signatureOf(id);
+    if (!sig || groups.length === 0) {
+      unknown.push(id);
+      continue;
+    }
+    let best = 0;
+    let bestSim = -2;
+    for (const [gi, g] of groups.entries()) {
+      for (const gid of g) {
+        const gs = await signatureOf(gid);
+        if (gs && signatureSimilarity(sig, gs) > bestSim) {
+          bestSim = signatureSimilarity(sig, gs);
+          best = gi;
+        }
+      }
+    }
+    groups[best].push(id);
+  }
+  return { groups: groups.sort((a, b) => b.length - a.length), unknown };
 }

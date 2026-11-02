@@ -336,20 +336,14 @@ export const api = {
   async splitWarlord(id: string): Promise<{ groups: number; jobs: number }> {
     const w = await db.getWarlord(id);
     if (!w) throw new Error("武将が見つかりません");
-    const { clusterByArt, confirmDifferentArt } = await import("./visual.ts");
-    const { groups, unknown } = await clusterByArt(w.gallery_images);
+    // 端末の指紋は画面の枠や背景に引っ張られて当てにならないことがあるので、AI に全部の画像を見せて組分けさせる
+    const { groupByArtWithAi } = await import("./visual.ts");
+    const { groups, unknown } = await groupByArtWithAi(w.gallery_images);
     if (groups.length < 2) return { groups: 0, jobs: 0 };
     // 代表画像を含む組が同じ大きさなら、そちらを残す
     const keepIdx = groups.findIndex((g) => g.length === groups[0].length && g.includes(w.image_url));
     const keep = groups[keepIdx >= 0 ? keepIdx : 0];
-    // 端末の見比べで分かれた組が、本当に違う立ち絵かを AI に確かめる (同じなら残す方に戻す)
-    const moved: string[][] = [];
-    for (const g of groups) {
-      if (g === keep) continue;
-      if (await confirmDifferentArt(w, keep, g)) moved.push(g);
-      else keep.push(...g);
-    }
-    if (moved.length === 0) return { groups: 0, jobs: 0 };
+    const moved = groups.filter((g) => g !== keep);
     // この武将は、残す立ち絵の画像だけから作り直す (名前・通常/特異はそのまま)
     const kept = [...keep, ...unknown];
     await db.updateWarlord(
