@@ -81,15 +81,15 @@ export function WarlordPicker({
                 className="flex w-full items-center gap-2 border-b border-ebony-800 px-2 py-1.5 text-left text-sm last:border-0 hover:bg-ebony-800"
               >
                 <ArtThumb w={w} />
-                <span className="min-w-0 flex-1 truncate">
-                  {label(w)}
-                  {w.title_alias && <span className="ml-1 text-xs text-ash">({w.title_alias})</span>}
-                </span>
-                <span className="shrink-0 text-right text-[11px] leading-tight text-ash">
-                  {w.rarity && `${w.rarity} ・`}
-                  {w.faction || "勢力未入力"}
-                  <br />
-                  画像 {w.screenshot_count} 枚
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">
+                    {label(w)}
+                    {w.title_alias && <span className="ml-1 text-xs text-ash">({w.title_alias})</span>}
+                  </span>
+                  <span className="block truncate text-[11px] text-ash">
+                    {w.rarity && `${w.rarity} ・`}
+                    {w.faction || "勢力未入力"} ・画像 {w.screenshot_count} 枚
+                  </span>
                 </span>
               </button>
             </li>
