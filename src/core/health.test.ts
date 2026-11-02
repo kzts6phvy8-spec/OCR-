@@ -39,6 +39,12 @@ describe("自動点検", () => {
     expect(issues.filter((i) => i.autoFix).map((i) => i.kind).sort()).toEqual(["hime_special", "oni_synergy", "synergy_duplicate"]);
   });
 
+  it("画像が 7 枚以上の武将は、混ざっているとして知らせる", () => {
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => `i${i}`);
+    expect(kinds([w({ gallery_images: ids(6) })], ids(6))).not.toContain("too_many_images");
+    expect(kinds([w({ gallery_images: ids(7) })], ids(7))).toContain("too_many_images");
+  });
+
   it("読み違いの疑いは知らせるだけ", () => {
     expect(kinds([w({ rarity: "SR", awakening_skill_name: "覚醒" })])).toContain("awakening_rarity");
     expect(kinds([w({ attack_growth: "+23" })])).toContain("odd_stat");

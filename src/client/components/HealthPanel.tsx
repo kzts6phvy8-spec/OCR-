@@ -126,7 +126,7 @@ export function HealthPanel({
                           </button>
                         );
                       })}
-                    {issue.kind === "mixed_art" && (
+                    {(issue.kind === "mixed_art" || issue.kind === "too_many_images") && (
                       <button onClick={() => void split(issue.warlordIds[0])} className="flex items-center gap-1 rounded border border-gold-600/60 px-2 py-0.5 text-xs text-gold-400">
                         <Split className="size-3" /> 立ち絵ごとに分ける
                       </button>
