@@ -168,6 +168,20 @@ describe("ingestExtraction", async () => {
     });
   });
 
+  it("新しく作ったばかりの統合先は、通常/特異を読み取り結果に合わせる", async () => {
+    const w = await repo.insert({ ...(await import("./domain.ts")).emptyWarlordInput(), name: "武将N", is_special: false });
+    const res = await ingestExtraction(makeExtraction({ name: "武将N", special_marker_visible: true }), {
+      mode: "auto",
+      targetId: w.id,
+      imageId: "n1",
+      adoptSpecial: true,
+    });
+    expect(res.warlord.is_special).toBe(true);
+    // 画像がある武将には合わせない
+    const res2 = await ingestExtraction(makeExtraction({ name: "武将N" }), { mode: "auto", targetId: w.id, imageId: "n2", adoptSpecial: true });
+    expect(res2.warlord.is_special).toBe(true);
+  });
+
   it("通常と特異は別レコードで、互いに混ざらない", async () => {
     await ingestExtraction(makeExtraction({ name: "武将A", skill: { name: "スキルA" } }), opts("img-n.png"));
     const special = await ingestExtraction(

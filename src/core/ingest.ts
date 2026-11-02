@@ -169,6 +169,8 @@ export async function ingestExtraction(
     sameArt?: ArtCheck;
     /** この武将たちには統合しない (立ち絵ごとに分ける時、元の武将に戻らないように) */
     excludeIds?: string[];
+    /** 統合先が新しく作ったばかりの (画像の無い) 武将なら、通常/特異を読み取り結果に合わせる */
+    adoptSpecial?: boolean;
     /** 1 文字だけ違う名前の武将 (名前の読み違いの救済用) */
     similarNames?: (name: string) => Promise<Warlord[]>;
   },
@@ -194,6 +196,11 @@ export async function ingestExtraction(
     if (!existing) throw new IngestError("統合先に指定された武将が見つかりません");
     name = existing.name;
     isSpecial = existing.is_special;
+    if (opts.adoptSpecial && existing.gallery_images.length === 0 && decision.is_special !== isSpecial) {
+      isSpecial = decision.is_special;
+      becomesSpecial = decision.is_special;
+      if (!decision.is_special) existing = { ...existing, is_special: false };
+    }
     if (readName && readName !== name) warnings.push(`画像の武将名「${readName}」が統合先「${name}」と異なります`);
     if (opts.mode === "auto" && decision.is_special !== isSpecial && decision.reasons.length > 0) {
       warnings.push(`画像は${decision.is_special ? "特異" : "通常"}武将と判定されましたが、指定された統合先に保存しました`);

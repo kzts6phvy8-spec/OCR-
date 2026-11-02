@@ -226,7 +226,10 @@ export const deleteJobs = retrying(async function deleteJobs(ids: string[]) {
 export const deleteFinishedJobs = retrying(async function deleteFinishedJobs(): Promise<string[]> {
   const d = await db();
   const failedImages: string[] = [];
+  const inGallery = new Set((await d.getAll("warlords")).flatMap((w) => w.gallery_images));
   for (const j of await d.getAll("jobs")) {
+    // 作り直し・分ける時に失敗した画像は、どの武将にも入っていなければ消さずに残す (消すと画像が無くなるため)
+    if (j.status === "error" && j.keep_image && !inGallery.has(j.image_id)) continue;
     if (j.status === "done" || j.status === "error") {
       if (j.status === "error" && !j.keep_image) failedImages.push(j.image_id);
       await d.delete("jobs", j.id);

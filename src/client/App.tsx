@@ -4,6 +4,7 @@ import { isPending, type OcrJob, type Warlord } from "../core/types.ts";
 import { api } from "./lib/api.ts";
 import { getQueueState, onQueueChange, resumeQueue } from "./lib/queue.ts";
 import { backfillSignatures } from "./lib/visual.ts";
+import { logError } from "./lib/errorLog.ts";
 import { activeModelLabel, bgActive, hasActiveKey, loadSettings, onSettingsChange, type Settings } from "./lib/settings.ts";
 import { useToast } from "./lib/toast.tsx";
 import { saveFile, today } from "./lib/share.ts";
@@ -147,7 +148,9 @@ export default function App() {
         }
       })
       // 立ち絵の見比べを速くするため、まだ指紋の無い登録画像の指紋を少しずつ作る
-      .then(() => backfillSignatures());
+      .then(() => backfillSignatures())
+      // 途中で失敗しても、エラーの記録に残す (点検画面からコピーして送れるように)
+      .catch((e) => logError("起動時の手直し", e instanceof Error ? e.message : String(e)));
   }, [refreshWarlords, toast]);
 
   useEffect(() => {

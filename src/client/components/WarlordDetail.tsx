@@ -198,9 +198,13 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
       )
     )
       return;
-    const { jobs } = await api.rebuildWarlords(warlord.name);
-    toast("info", `「${warlord.name}」を ${jobs.length} 枚の画像から作り直します`, "進み具合は「スクショ解析」タブで見られます");
-    onDeleted();
+    try {
+      const { jobs } = await api.rebuildWarlords(warlord.name);
+      toast("info", `「${warlord.name}」を ${jobs.length} 枚の画像から作り直します`, "進み具合は「スクショ解析」タブで見られます");
+      onDeleted();
+    } catch (e) {
+      toast("error", "作り直せませんでした", (e as Error).message);
+    }
   };
 
   const [mergeOpen, setMergeOpen] = useState(false);
