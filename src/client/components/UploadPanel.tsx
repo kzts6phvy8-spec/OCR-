@@ -397,6 +397,18 @@ function JobRow({
     setPicking(false);
     toast("info", "選んだ武将に統合します", job.extraction ? "読み取り済みの内容で保存します (AI の回数は使いません)" : "もう一度解析してから保存します");
   };
+  /** 合う武将がいない時: 新しい武将として保存する */
+  const saveAsNew = async () => {
+    const name = (prompt("新しい武将として保存します。武将名を確かめてください", readName) ?? "").trim();
+    if (!name) return;
+    try {
+      const w = await api.retryJobAsNewWarlord(job.id, name);
+      setPicking(false);
+      toast("info", `「${w.is_special ? "【特】" : ""}${w.name}」を新しい武将として保存します`, job.extraction ? "読み取り済みの内容で保存します (AI の回数は使いません)" : "もう一度解析してから保存します");
+    } catch (e) {
+      toast("error", "保存できませんでした", (e as Error).message);
+    }
+  };
   return (
     <li className="flex gap-3 rounded-lg border border-ebony-700 bg-ebony-900/70 p-2">
       <div className="relative h-16 w-10 shrink-0 overflow-hidden rounded border border-ebony-700 bg-ebony-800">
@@ -455,6 +467,9 @@ function JobRow({
                   suggest={readName ? (w) => w.name === readName || differsByOneChar(w.name, readName) : undefined}
                   priority={readName ? (w) => (w.name === readName ? 0 : 1) : undefined}
                 />
+                <button onClick={() => void saveAsNew()} className="w-full rounded-md border border-dashed border-gold-600/60 px-2 py-1.5 text-[11px] text-gold-300">
+                  どれにも当てはまらない: 新しい武将として保存
+                </button>
               </div>
             ) : (
               <button onClick={() => setPicking(true)} className="rounded-md border border-ebony-600 px-2 py-1 text-[11px] text-gold-300">
