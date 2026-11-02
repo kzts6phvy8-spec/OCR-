@@ -130,10 +130,26 @@ export async function enqueue(
   faction: Faction | "",
   /** 登録済みの画像をもう一度解析する時 (失敗しても画像は消さない) */
   keepImage = false,
+  opts: {
+    /** 前の読み取り結果があれば使い回す (AI に読み直させない) */
+    reuse?: boolean;
+    /** この武将たちには統合しない */
+    excludeIds?: string[];
+  } = {},
 ) {
   const now = new Date().toISOString();
+  const saved = new Map<string, OcrExtraction>();
+  if (opts.reuse) {
+    for (const f of imageIds) {
+      const ext = await db.getExtraction(f.imageId).catch(() => null);
+      if (ext) saved.set(f.imageId, ext);
+    }
+  }
   const jobs: OcrJob[] = imageIds.map((f) => ({
     ...(keepImage ? { keep_image: true } : {}),
+    ...(opts.excludeIds?.length ? { exclude_ids: opts.excludeIds } : {}),
+    // 読み取り結果があれば、この端末で保存だけ行う
+    ...(saved.has(f.imageId) ? { extraction: saved.get(f.imageId), local: true } : {}),
     id: crypto.randomUUID(),
     file_name: f.fileName,
     image_id: f.imageId,
@@ -259,6 +275,7 @@ function ingestJob(job: OcrJob, extraction: OcrExtraction) {
       imageId: job.image_id,
       faction: job.faction ?? "",
       sameArt: artChecker(job.image_id),
+      excludeIds: job.exclude_ids,
       similarNames: async (name) => {
         // 名前だけを索引から読む (全武将の中身を毎回読むと遅い)
         const names = (await db.listNames()).filter((n) => differsByOneChar(n, name));
@@ -286,6 +303,7 @@ async function processJob(job: OcrJob) {
       extraction = await analyzeWithRetry(image, job.mode, loadSettings());
     }
     const result = await ingestJob(job, extraction);
+    await db.putExtraction(job.image_id, extraction).catch(() => {});
     // 解析が終わった画像は保存用の大きさに縮めて容量を節約する
     try {
       await db.putImage(await shrinkForGallery(image), job.image_id);
@@ -450,6 +468,7 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
     }
     extraction = parseGeminiRestBody(r.body ?? "");
     const result = await ingestJob(job, extraction);
+    await db.putExtraction(job.image_id, extraction).catch(() => {});
     // 縮小は待たずに次の結果へ (ただし iPhone のメモリを食わないよう、縮小どうしは 1 枚ずつ)
     shrinkChain = shrinkChain.then(() => shrinkStoredImage(job.image_id));
     await update(job, {

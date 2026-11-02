@@ -166,6 +166,8 @@ export async function ingestExtraction(
     faction?: Faction | "";
     /** 同じ名前の武将が登録済みの時、立ち絵が同じかを調べる (無ければ名前と【特】表記だけで決める) */
     sameArt?: ArtCheck;
+    /** この武将たちには統合しない (立ち絵ごとに分ける時、元の武将に戻らないように) */
+    excludeIds?: string[];
     /** 1 文字だけ違う名前の武将 (名前の読み違いの救済用) */
     similarNames?: (name: string) => Promise<Warlord[]>;
   },
@@ -203,7 +205,8 @@ export async function ingestExtraction(
     isSpecial = decision.is_special;
     const faction = readFaction;
     const rarity = normalizeRarity(ext.rarity);
-    const all = await repo.findByName(name);
+    const excluded = new Set(opts.excludeIds ?? []);
+    const all = (await repo.findByName(name)).filter((w) => !excluded.has(w.id));
     // 立ち絵で確かめない時 (手動で通常/特異を指定した時など) は、名前・通常/特異・勢力の区分が合う武将へ
     existing =
       all.find((w) => w.is_special === isSpecial && compatible(w, faction, rarity) && (!faction || w.faction === faction)) ??
@@ -219,6 +222,7 @@ export async function ingestExtraction(
     // 新しく登録しようとしている時、1 文字だけ違う名前の武将がいて立ち絵もほぼ同じなら、名前の読み違いとみなして統合する
     if (!existing && opts.sameArt && opts.similarNames) {
       for (const c of await opts.similarNames(name)) {
+        if (excluded.has(c.id)) continue;
         if (c.is_special !== isSpecial && opts.mode !== "auto") continue;
         if (!compatible(c, faction, rarity)) continue;
         // 別の武将の可能性もあるので、AI には尋ねず、端末での見比べでほぼ同じ絵の時だけ

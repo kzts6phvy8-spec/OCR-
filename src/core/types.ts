@@ -125,6 +125,8 @@ export interface OcrJob {
   extraction?: OcrExtraction | null;
   /** 登録済みの画像の再解析・作り直し (失敗したジョブを消しても画像は残す) */
   keep_image?: boolean;
+  /** この武将たちには統合しない (立ち絵ごとに分ける時、元の武将に戻らないように) */
+  exclude_ids?: string[];
   created_at: string;
   updated_at: string;
 }

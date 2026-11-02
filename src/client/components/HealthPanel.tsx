@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, ClipboardCopy, Loader2, Merge, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, Loader2, Merge, ShieldCheck, Split, Trash2, TriangleAlert } from "lucide-react";
 import { api, lastHealthReport, type HealthReport } from "../lib/api.ts";
 import { clearErrorLog, getErrorLog } from "../lib/errorLog.ts";
 import { useToast } from "../lib/toast.tsx";
@@ -53,6 +53,18 @@ export function HealthPanel({
     for (const w of rest) await api.mergeWarlords(keep.id, w.id);
     toast("success", `「${keep.name}」をまとめました`);
     await run();
+  };
+
+  const split = async (id: string) => {
+    const w = byId.get(id);
+    if (!w || !confirm(`「${w.name}」の画像を立ち絵ごとに分けますか？\n画像がいちばん多い立ち絵をこの武将に残し、違う立ち絵の画像は別の武将に統合し直します。`)) return;
+    try {
+      const r = await api.splitWarlord(id);
+      toast(r.groups ? "success" : "info", r.groups ? `${r.groups} 組に分けます (${r.jobs} 枚)` : "確かめたところ、同じ立ち絵でした (分けませんでした)");
+      await run();
+    } catch (e) {
+      toast("error", "分けられませんでした", (e as Error).message);
+    }
   };
 
   return (
@@ -114,6 +126,11 @@ export function HealthPanel({
                           </button>
                         );
                       })}
+                    {issue.kind === "mixed_art" && (
+                      <button onClick={() => void split(issue.warlordIds[0])} className="flex items-center gap-1 rounded border border-gold-600/60 px-2 py-0.5 text-xs text-gold-400">
+                        <Split className="size-3" /> 立ち絵ごとに分ける
+                      </button>
+                    )}
                     {issue.kind === "duplicate" && (
                       <button onClick={() => void mergeGroup(issue.warlordIds)} className="flex items-center gap-1 rounded border border-gold-600/60 px-2 py-0.5 text-xs text-gold-400">
                         <Merge className="size-3" /> 1 人にまとめる

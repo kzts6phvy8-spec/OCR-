@@ -8,6 +8,7 @@ import { ONI_FACTION, isOniSynergy } from "./oni.ts";
 
 export type IssueKind =
   | "duplicate"
+  | "mixed_art"
   | "synergy_duplicate"
   | "oni_synergy"
   | "hime_special"
