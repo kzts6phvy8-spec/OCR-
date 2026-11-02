@@ -9,6 +9,7 @@ import { ONI_FACTION, isOniSynergy } from "./oni.ts";
 export type IssueKind =
   | "duplicate"
   | "mixed_art"
+  | "too_many_images"
   | "synergy_duplicate"
   | "oni_synergy"
   | "hime_special"
@@ -28,6 +29,9 @@ export interface Issue {
   /** 自動で直す時の中身 (画像の掃除など) */
   imageIds?: string[];
 }
+
+/** 1 人の武将に統合される画像は多くても 6 枚 (それより多ければ、別の武将の画像が混ざっている) */
+export const MAX_IMAGES_PER_WARLORD = 6;
 
 const label = (w: Warlord) => `${w.is_special ? "【特】" : ""}${w.name}${w.faction ? ` (${w.faction})` : ""}`;
 const growthNumber = (g: string) => Math.abs(parseFloat(g.replace(/[^\d.+-]/g, "")) || 0);
@@ -63,6 +67,15 @@ export function findIssues(warlords: Warlord[], imageIds: Set<string>, jobs: Ocr
   }
 
   for (const w of warlords) {
+    // 画像が多すぎる = 別の武将の画像が混ざっている
+    if (w.gallery_images.length > MAX_IMAGES_PER_WARLORD) {
+      issues.push({
+        kind: "too_many_images",
+        autoFix: false,
+        message: `「${label(w)}」に画像が ${w.gallery_images.length} 枚あります (1 人の武将は多くても ${MAX_IMAGES_PER_WARLORD} 枚)。別の武将の画像が混ざっています。「立ち絵ごとに分ける」で分けてください`,
+        warlordIds: [w.id],
+      });
+    }
     // 同じ連携スキルが重なっている
     if (mergeSynergies([], w.synergy_skills).length < w.synergy_skills.length) {
       issues.push({ kind: "synergy_duplicate", autoFix: true, message: `「${label(w)}」の連携スキルの重なりをまとめました`, warlordIds: [w.id] });

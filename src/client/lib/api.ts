@@ -126,6 +126,8 @@ export const api = {
     const sigs = await db.listSignatures();
     for (const w of await db.listWarlords()) {
       if (w.gallery_images.length < 2) continue;
+      // 画像が多すぎる武将は、すでに「混ざっている」と知らせている
+      if (issues.some((i) => i.kind === "too_many_images" && i.warlordIds.includes(w.id))) continue;
       const { groups } = clusterSignatures(w.gallery_images, sigs);
       if (groups.length < 2) continue;
       issues.push({

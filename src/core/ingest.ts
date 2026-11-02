@@ -10,6 +10,7 @@ import {
   normalizeRarity,
 } from "./domain.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
+import { MAX_IMAGES_PER_WARLORD } from "./health.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies, splitPartners } from "./oni.ts";
 
 export class IngestError extends Error {}
@@ -247,6 +248,11 @@ export async function ingestExtraction(
   if (opts.faction) merged.faction = opts.faction;
 
   const record = normalizeInput(merged);
+  if (record.gallery_images.length > MAX_IMAGES_PER_WARLORD) {
+    warnings.push(
+      `「${record.name}」の画像が ${record.gallery_images.length} 枚になりました (1 人の武将は多くても ${MAX_IMAGES_PER_WARLORD} 枚)。別の武将の画像が混ざっているかもしれません`,
+    );
+  }
   const warlord = existing ? await repo.update(existing.id, record) : await repo.insert(record);
   // 鬼憑武将: 同じシーズンの 4 人は連携スキルが共通なので、残りの鬼にも広める (逆に、他の鬼の連携スキルをこの武将にも)
   if (warlord.faction === ONI_FACTION) {
