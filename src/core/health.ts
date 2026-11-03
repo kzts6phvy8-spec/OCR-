@@ -2,7 +2,7 @@
 // 直せないもの (読み違いの疑いなど) は、利用者が確かめられるよう知らせるだけにする。
 
 import type { OcrJob, Warlord } from "./types.ts";
-import { mergeSynergies } from "./domain.ts";
+import { mergeSynergies, sameSynergy } from "./domain.ts";
 import { compatible } from "./ingest.ts";
 import { ONI_FACTION, isOniSynergy } from "./oni.ts";
 
@@ -81,9 +81,22 @@ export function findIssues(warlords: Warlord[], imageIds: Set<string>, jobs: Ocr
     if (mergeSynergies([], w.synergy_skills).length < w.synergy_skills.length) {
       issues.push({ kind: "synergy_duplicate", autoFix: true, message: `「${label(w)}」の連携スキルの重なりをまとめました`, warlordIds: [w.id] });
     }
-    // 鬼に、鬼の連携ではない連携スキルが混ざっている
-    if (w.faction === ONI_FACTION && w.synergy_skills.some((s) => !isOniSynergy(s))) {
-      issues.push({ kind: "oni_synergy", autoFix: true, message: `「${label(w)}」に混ざっていた、鬼の連携ではない連携スキルを取り除きました`, warlordIds: [w.id] });
+    // 鬼に、鬼の連携らしくない連携スキルがある
+    if (w.faction === ONI_FACTION) {
+      const odd = w.synergy_skills.filter((s) => !isOniSynergy(s));
+      const others = warlords.filter((o) => o.name === w.name && o.faction !== ONI_FACTION);
+      // 同じ名前の鬼ではない武将にも同じ連携スキルがある = 混ざった → 取り除く
+      const copied = odd.filter((s) => others.some((o) => o.synergy_skills.some((x) => sameSynergy(x, s))));
+      if (copied.length) {
+        issues.push({ kind: "oni_synergy", autoFix: true, message: `「${label(w)}」に混ざっていた、同じ名前の武将の連携スキルを取り除きました`, warlordIds: [w.id] });
+      } else if (odd.length) {
+        issues.push({
+          kind: "oni_synergy",
+          autoFix: false,
+          message: `「${label(w)}」に、鬼の連携らしくない連携スキル (${odd.map((s) => s.partner).join("、")}) があります。同じ名前の別の武将のものが混ざっていないか確かめてください`,
+          warlordIds: [w.id],
+        });
+      }
     }
     // 姫武将が特異武将になっている
     if (w.faction === "姫武将" && w.is_special) {

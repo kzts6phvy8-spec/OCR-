@@ -17,29 +17,25 @@ export { partnerKey, splitPartners };
 export const isOniSynergy = (s: SynergySkill) => /鬼/.test(`${s.partner}${s.effect}`);
 
 /**
- * 鬼憑武将 w から、鬼の連携ではない連携スキルを取り除く。取り除いた連携スキルは、
- * 同じ名前の (鬼ではない) 武将が 1 人だけ登録されていれば、その武将のものなのでそちらへ移す (まだ無ければ)。
+ * 鬼憑武将 w から、同じ名前の (鬼ではない) 武将の連携スキルが混ざったものを取り除く。
+ * 取り除くのは、「鬼」が出てこない連携スキルのうち、同じ名前の鬼ではない武将にも同じ連携スキルがあるものだけ
+ * (確かに混ざったと言えるものだけ。薄い文字の読み残しなどで鬼の連携スキルを消してしまわないように)。
+ * 確かめられないもの (鬼ではない武将の方に無いもの) は suspicious として返し、点検で知らせる。
  */
 export async function cleanOniSynergies(
   repo: WarlordRepo,
   w: Warlord,
-): Promise<{ warlord: Warlord; removed: SynergySkill[]; movedTo: Warlord | null }> {
-  if (w.faction !== ONI_FACTION) return { warlord: w, removed: [], movedTo: null };
-  const removed = w.synergy_skills.filter((s) => !isOniSynergy(s));
-  if (removed.length === 0) return { warlord: w, removed, movedTo: null };
-  const strip = (x: Warlord) => {
-    const { id: _i, created_at: _c, updated_at: _u, screenshot_count: _s, ...input } = x;
-    return input;
-  };
-  const warlord = await repo.update(w.id, normalizeInput({ ...strip(w), synergy_skills: w.synergy_skills.filter(isOniSynergy) }));
-  let movedTo: Warlord | null = null;
+): Promise<{ warlord: Warlord; removed: SynergySkill[]; suspicious: SynergySkill[] }> {
+  if (w.faction !== ONI_FACTION) return { warlord: w, removed: [], suspicious: [] };
+  const odd = w.synergy_skills.filter((s) => !isOniSynergy(s));
+  if (odd.length === 0) return { warlord: w, removed: [], suspicious: [] };
   const others = (await repo.findByName(w.name)).filter((o) => o.faction !== ONI_FACTION);
-  if (others.length === 1) {
-    const o = others[0];
-    const add = removed.filter((s) => !o.synergy_skills.some((x) => sameSynergy(x, s)));
-    movedTo = add.length ? await repo.update(o.id, normalizeInput({ ...strip(o), synergy_skills: [...o.synergy_skills, ...add] })) : o;
-  }
-  return { warlord, removed, movedTo };
+  const removed = odd.filter((s) => others.some((o) => o.synergy_skills.some((x) => sameSynergy(x, s))));
+  const suspicious = odd.filter((s) => !removed.includes(s));
+  if (removed.length === 0) return { warlord: w, removed, suspicious };
+  const { id: _i, created_at: _c, updated_at: _u, screenshot_count: _s, ...input } = w;
+  const warlord = await repo.update(w.id, normalizeInput({ ...input, synergy_skills: w.synergy_skills.filter((s) => !removed.includes(s)) }));
+  return { warlord, removed, suspicious };
 }
 
 /**

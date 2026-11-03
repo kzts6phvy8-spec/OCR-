@@ -31,6 +31,7 @@ describe("自動点検", () => {
       [
         w({ synergy_skills: [syn, { partner: "武将B", effect: "xx" }] }),
         w({ name: "鬼1", faction: "鬼憑武将", synergy_skills: [syn] }),
+        w({ name: "鬼1", faction: "東海", synergy_skills: [syn] }),
         w({ name: "姫1", faction: "姫武将", is_special: true }),
       ],
       new Set(),

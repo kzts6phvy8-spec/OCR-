@@ -270,10 +270,7 @@ export async function ingestExtraction(
     // 鬼は同じ組の鬼としか連携しない: 同じ名前の通常・特異武将の連携スキルが混ざっていたら取り除く
     const cleaned = await cleanOniSynergies(repo, warlord);
     if (cleaned.removed.length) {
-      warnings.push(
-        `鬼憑武将の連携ではない連携スキル (${cleaned.removed.map((x) => x.partner).join("、")}) を取り除きました` +
-          (cleaned.movedTo ? `。同じ名前の${cleaned.movedTo.is_special ? "特異" : "通常"}武将の方に入れました` : ""),
-      );
+      warnings.push(`同じ名前の鬼ではない武将の連携スキル (${cleaned.removed.map((x) => x.partner).join("、")}) が混ざっていたので取り除きました`);
     }
     const shared = await shareOniSynergies(repo, cleaned.warlord);
     if (shared.length) warnings.push(`連携スキルを同じ組の鬼憑武将 (${shared.map((w) => w.name).join("、")}) にも入れました`);
