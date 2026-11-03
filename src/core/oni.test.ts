@@ -46,20 +46,31 @@ describe("鬼憑武将の連携スキル", () => {
     expect(await synergyOf("武将X")).toEqual([]);
   });
 
-  it("鬼憑武将に混ざった、同じ名前の通常武将の連携スキルは取り除いて通常武将へ移す", async () => {
+  it("鬼憑武将に混ざった、同じ名前の通常武将の連携スキルだけを取り除く (確かめられないものは残す)", async () => {
+    const sakai = { partner: "酒井忠次", effect: "酒井忠次、井伊直政が同時に場内にいる場合、物理攻撃+10%" };
     const normal = (
-      await ingestExtraction(repo, makeExtraction({ name: "井伊直政", faction: "東海" }), { mode: "auto", targetId: null, imageId: "n" })
+      await ingestExtraction(repo, makeExtraction({ name: "井伊直政", faction: "東海", synergy_skills: [sakai] }), {
+        mode: "auto",
+        targetId: null,
+        imageId: "n",
+      })
     ).warlord;
     const oni = await add("井伊直政", "o", { partner: "鬼憑徳川四天王", effect: "鬼憑徳川四天王2体以上が場内にいる場合、通常攻撃ダメージ+30%" });
     expect(oni.warlord.id).not.toBe(normal.id);
-    // 何かの拍子に通常武将の連携スキルが鬼の方に入った
-    const res = await ingestExtraction(
-      repo,
-      makeExtraction({ name: "井伊直政", faction: "鬼憑武将", synergy_skills: [{ partner: "酒井忠次", effect: "酒井忠次、井伊直政が同時に場内にいる場合、物理攻撃+10%" }] }),
-      { mode: "auto", targetId: oni.warlord.id, imageId: "o2" },
-    );
+    // 通常武将の連携スキルが鬼の方に混ざった → 取り除く
+    const res = await ingestExtraction(repo, makeExtraction({ name: "井伊直政", faction: "鬼憑武将", synergy_skills: [sakai] }), {
+      mode: "auto",
+      targetId: oni.warlord.id,
+      imageId: "o2",
+    });
     expect(res.warlord.synergy_skills.map((x) => x.partner)).toEqual(["鬼憑徳川四天王"]);
     expect(res.warnings.join()).toMatch(/取り除きました/);
-    expect((await repo.get(normal.id))!.synergy_skills.map((x) => x.partner)).toEqual(["酒井忠次"]);
+    // 「鬼」の文字が無くても、通常武将の方に無い連携スキルは消さない (薄い文字の読み取りなど)
+    const kept = await ingestExtraction(
+      repo,
+      makeExtraction({ name: "井伊直政", faction: "鬼憑武将", synergy_skills: [{ partner: "本多忠勝", effect: "本多忠勝と同時に場内にいる場合、防御+10%" }] }),
+      { mode: "auto", targetId: oni.warlord.id, imageId: "o3" },
+    );
+    expect(kept.warlord.synergy_skills.map((x) => x.partner)).toContain("本多忠勝");
   });
 });

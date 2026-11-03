@@ -99,10 +99,7 @@ export const api = {
       if (!latest) continue;
       // 同じ名前の通常・特異武将の連携スキルが混ざっていたら取り除く (その武将の方へ移す)
       const cleaned = await cleanOniSynergies(db.repo, latest);
-      if (cleaned.removed.length) {
-        changed.add(cleaned.warlord.id);
-        if (cleaned.movedTo) changed.add(cleaned.movedTo.id);
-      }
+      if (cleaned.removed.length) changed.add(cleaned.warlord.id);
       for (const c of await shareOniSynergies(db.repo, cleaned.warlord)) changed.add(c.id);
     }
     return changed.size;

@@ -73,7 +73,7 @@ export const OcrExtractionSchema = z.object({
       partner: z.string().describe("この武将以外の連携相手の武将名 (複数なら「、」区切り)"),
       effect: z.string().describe("条件を含む文章の全文 (例: 〇〇、△△が同時に場内にいる場合、計略防御+20%)"),
     }),
-  ),
+  ).describe("連携スキルの一覧。文字が薄い・灰色の (まだ発動していない) 行も含めて、見えている行をすべて"),
 });
 
 export type OcrExtraction = z.infer<typeof OcrExtractionSchema>;
