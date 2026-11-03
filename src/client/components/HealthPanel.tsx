@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { CheckCircle2, ClipboardCopy, Loader2, Merge, ShieldCheck, Split, Trash2, TriangleAlert } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, Loader2, ShieldCheck, Split, Trash2, TriangleAlert } from "lucide-react";
 import { api, lastHealthReport, type HealthReport } from "../lib/api.ts";
 import { clearErrorLog, getErrorLog } from "../lib/errorLog.ts";
 import { useToast } from "../lib/toast.tsx";
 import type { Warlord } from "../../core/types.ts";
 
-// 「データ管理」の自動点検: 起動のたびに図鑑データを点検し、直せるものは直す。
-// 直せないものはここに並べ、点検結果とエラーの記録をコピーして送れるようにする。
+// 「データ管理」の自動点検: 起動のたびに、画像が 7 枚以上・1 枚だけの武将を知らせる。
+// 点検結果とエラーの記録をコピーして送れるようにする。
 
 export function HealthPanel({
   warlords,
@@ -46,19 +46,6 @@ export function HealthPanel({
     }
   };
 
-  const mergeGroup = async (ids: string[]) => {
-    const [keep, ...rest] = ids.map((id) => byId.get(id)).filter((w): w is Warlord => Boolean(w));
-    if (!keep || rest.length === 0) return;
-    if (!confirm(`「${keep.name}」の ${ids.length} 人を 1 人にまとめますか？\n立ち絵が違う別の武将 (通常と特異など) の時は、まとめないでください。`)) return;
-    try {
-      for (const w of rest) await api.mergeWarlords(keep.id, w.id);
-      toast("success", `「${keep.name}」をまとめました`);
-    } catch (e) {
-      toast("error", "まとめられませんでした", (e as Error).message);
-    }
-    await run();
-  };
-
   const split = async (id: string) => {
     const w = byId.get(id);
     if (!w || !confirm(`「${w.name}」の画像を立ち絵ごとに分けますか？\n画像がいちばん多い立ち絵をこの武将に残し、違う立ち絵の画像は別の武将に統合し直します。`)) return;
@@ -77,8 +64,7 @@ export function HealthPanel({
         <ShieldCheck className="size-5" /> 自動点検
       </h2>
       <p className="mb-3 text-sm text-ash">
-        アプリを開くたびに図鑑データを点検し、安全に直せるもの (連携スキルの重なり・使われていない画像など) は自動で直します。
-        読み違いの疑いなど、自動では直せないものはここに並びます。
+        アプリを開くたびに、統合した画像が 7 枚以上の武将 (別の武将の画像が混ざっている) と、画像が 1 枚だけの武将を知らせます。
       </p>
       <div className="mb-3 flex flex-wrap gap-2">
         <button onClick={run} disabled={busy} className="flex items-center gap-1.5 rounded-lg border border-gold-600/60 px-3 py-1.5 text-sm font-bold text-gold-400 disabled:opacity-40">
@@ -130,16 +116,12 @@ export function HealthPanel({
                           </button>
                         );
                       })}
-                    {(issue.kind === "mixed_art" || issue.kind === "too_many_images") && (
+                    {issue.kind === "too_many_images" && (
                       <button onClick={() => void split(issue.warlordIds[0])} className="flex items-center gap-1 rounded border border-gold-600/60 px-2 py-0.5 text-xs text-gold-400">
                         <Split className="size-3" /> 立ち絵ごとに分ける
                       </button>
                     )}
-                    {issue.kind === "duplicate" && (
-                      <button onClick={() => void mergeGroup(issue.warlordIds)} className="flex items-center gap-1 rounded border border-gold-600/60 px-2 py-0.5 text-xs text-gold-400">
-                        <Merge className="size-3" /> 1 人にまとめる
-                      </button>
-                    )}
+
                   </div>
                 </li>
               ))}

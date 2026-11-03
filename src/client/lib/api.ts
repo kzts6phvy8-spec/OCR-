@@ -8,7 +8,6 @@ import * as db from "./db.ts";
 import { blobToDataUrl, compressImage, dataUrlToBlob, shrinkForGallery } from "./images.ts";
 import * as queue from "./queue.ts";
 import { findIssues, type Issue } from "../../core/health.ts";
-import { mergeSynergies } from "../../core/domain.ts";
 import { getErrorLog } from "./errorLog.ts";
 
 export interface HealthReport {
@@ -115,57 +114,7 @@ export const api = {
    * 図鑑データを点検し、安全に直せるものは直す。直せないものは知らせるために返す。起動時と「今すぐ点検」で呼ぶ。
    */
   async runHealthCheck(): Promise<HealthReport> {
-    const recentLimit = Date.now() - 60 * 60_000;
-    const meta = await db.listImageMeta();
-    const issues = findIssues(
-      await db.listWarlords(),
-      new Set(meta.map((m) => m.id)),
-      await db.listJobs(),
-      // 1 時間以内に保存した画像は、解析待ちに入る前かもしれないので消さない
-      new Set(meta.filter((m) => Date.parse(m.created_at) > recentLimit).map((m) => m.id)),
-    );
-    // ※ 立ち絵が混ざっていそうかを端末の指紋だけで調べるのはやめた (同じ立ち絵でも、画面の種類が違うと指紋が離れて
-    //    「混ざっている」と誤って知らせていたため)。混ざりは「画像が 7 枚以上」と、武将の画面の「分ける」(AI で確かめる) で見つける
-    const { clearlyDifferentArt } = await import("./visual.ts");
-    // 「分かれていそう」でも、立ち絵がはっきり違う武将どうしは別の武将なので知らせない
-    for (const issue of [...issues]) {
-      if (issue.kind !== "duplicate") continue;
-      const group = (await Promise.all(issue.warlordIds.map((id) => db.getWarlord(id)))).filter((w): w is Warlord => Boolean(w));
-      let allDifferent = group.length > 1;
-      for (let i = 0; i < group.length && allDifferent; i++) {
-        for (let j = i + 1; j < group.length && allDifferent; j++) {
-          if (!(await clearlyDifferentArt(group[i], group[j]))) allDifferent = false;
-        }
-      }
-      if (allDifferent) issues.splice(issues.indexOf(issue), 1);
-    }
-    const fixed: Issue[] = [];
-    for (const issue of issues.filter((i) => i.autoFix)) {
-      try {
-        for (const id of issue.warlordIds) {
-          const w = await db.getWarlord(id);
-          if (!w) continue;
-          const input = toInput(w);
-          if (issue.kind === "synergy_duplicate") input.synergy_skills = mergeSynergies([], w.synergy_skills);
-          if (issue.kind === "hime_special") input.is_special = false;
-          if (issue.kind === "missing_image") {
-            const missing = new Set(issue.imageIds);
-            input.gallery_images = w.gallery_images.filter((g) => !missing.has(g));
-            if (missing.has(input.image_url)) input.image_url = input.gallery_images[0] ?? "";
-          }
-          if (issue.kind === "oni_synergy") {
-            await cleanOniSynergies(db.repo, w);
-            continue;
-          }
-          await db.updateWarlord(id, normalizeInput(input));
-        }
-        if (issue.kind === "orphan_image" && issue.imageIds) await db.deleteImages(issue.imageIds);
-        fixed.push(issue);
-      } catch (e) {
-        issues.push({ ...issue, autoFix: false, message: `${issue.message} …のつもりでしたが、直せませんでした (${(e as Error).message})` });
-      }
-    }
-    const report: HealthReport = { checkedAt: new Date().toISOString(), fixed, warnings: issues.filter((i) => !i.autoFix) };
+    const report: HealthReport = { checkedAt: new Date().toISOString(), fixed: [], warnings: findIssues(await db.listWarlords()) };
     try {
       localStorage.setItem(HEALTH_KEY, JSON.stringify(report));
     } catch {

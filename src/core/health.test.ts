@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyWarlordInput, normalizeInput } from "./domain.ts";
 import { findIssues } from "./health.ts";
-import type { OcrJob, Warlord, WarlordInput } from "./types.ts";
+import type { Warlord, WarlordInput } from "./types.ts";
 
 let n = 0;
 const w = (input: Partial<WarlordInput>): Warlord => ({
@@ -11,49 +11,15 @@ const w = (input: Partial<WarlordInput>): Warlord => ({
   created_at: "",
   updated_at: "",
 });
-const kinds = (ws: Warlord[], images: string[] = [], jobs: OcrJob[] = [], recent: string[] = []) =>
-  findIssues(ws, new Set(images), jobs, new Set(recent)).map((i) => i.kind);
+const ids = (k: number) => Array.from({ length: k }, (_, i) => `i${i}`);
+const kinds = (ws: Warlord[]) => findIssues(ws).map((i) => i.kind);
 
 describe("自動点検", () => {
-  it("同じ武将が分かれていそうなら知らせる (通常と特異・姫武将は別)", () => {
-    expect(kinds([w({ faction: "東海" }), w({ faction: "東海" })])).toContain("duplicate");
-    expect(kinds([w({}), w({ is_special: true })])).not.toContain("duplicate");
-    expect(kinds([w({ faction: "東海" }), w({ faction: "姫武将" })])).not.toContain("duplicate");
-    // 通常・特異・限定武将に分かれているのは正しい
-    expect(kinds([w({ faction: "東海" }), w({ faction: "東海", is_special: true }), w({ faction: "限定武将" })])).not.toContain("duplicate");
-    expect(kinds([w({ faction: "東海" }), w({ faction: "畿内" })])).not.toContain("duplicate");
-    expect(kinds([w({ faction: "物語武将", rarity: "SSR" }), w({ faction: "物語武将", rarity: "SR" })])).not.toContain("duplicate");
-  });
-
-  it("連携スキルの重なり・鬼に混ざった連携・特異の姫武将は自動で直す", () => {
-    const syn = { partner: "武将B", effect: "x" };
-    const issues = findIssues(
-      [
-        w({ synergy_skills: [syn, { partner: "武将B", effect: "xx" }] }),
-        w({ name: "鬼1", faction: "鬼憑武将", synergy_skills: [syn] }),
-        w({ name: "鬼1", faction: "東海", synergy_skills: [syn] }),
-        w({ name: "姫1", faction: "姫武将", is_special: true }),
-      ],
-      new Set(),
-      [],
-    );
-    expect(issues.filter((i) => i.autoFix).map((i) => i.kind).sort()).toEqual(["hime_special", "oni_synergy", "synergy_duplicate"]);
-  });
-
-  it("画像が 7 枚以上の武将は、混ざっているとして知らせる", () => {
-    const ids = (n: number) => Array.from({ length: n }, (_, i) => `i${i}`);
-    expect(kinds([w({ gallery_images: ids(6) })], ids(6))).not.toContain("too_many_images");
-    expect(kinds([w({ gallery_images: ids(7) })], ids(7))).toContain("too_many_images");
-  });
-
-  it("読み違いの疑いは知らせるだけ", () => {
-    expect(kinds([w({ rarity: "SR", awakening_skill_name: "覚醒" })])).toContain("awakening_rarity");
-    expect(kinds([w({ attack_growth: "+23" })])).toContain("odd_stat");
-  });
-
-  it("見つからない画像の記録・使われていない画像を見つける (保存したばかりの画像は消さない)", () => {
-    const issues = findIssues([w({ gallery_images: ["a", "gone"], image_url: "a" })], new Set(["a", "orphan", "new"]), [], new Set(["new"]));
-    expect(issues.find((i) => i.kind === "missing_image")?.imageIds).toEqual(["gone"]);
-    expect(issues.find((i) => i.kind === "orphan_image")?.imageIds).toEqual(["orphan"]);
+  it("画像が 7 枚以上と、1 枚だけの武将だけを知らせる", () => {
+    expect(kinds([w({ gallery_images: ids(7) })])).toEqual(["too_many_images"]);
+    expect(kinds([w({ gallery_images: ids(1) })])).toEqual(["single_image"]);
+    for (const k of [0, 2, 6]) expect(kinds([w({ gallery_images: ids(k) })])).toEqual([]);
+    // ほかのことは知らせない (同じ名前の武将・読み違いの疑いなど)
+    expect(kinds([w({ gallery_images: ids(3), rarity: "SR", awakening_skill_name: "x" }), w({ gallery_images: ids(3) })])).toEqual([]);
   });
 });
