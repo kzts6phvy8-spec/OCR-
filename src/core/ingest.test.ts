@@ -150,6 +150,18 @@ describe("ingestExtraction", async () => {
       expect(back.warlord.id).toBe(normal.id);
     });
 
+    it("同じ名前の特異武将が何人もいても、立ち絵で分ける", async () => {
+      const s1 = (await add("s1", { special_marker_visible: true })).warlord;
+      const t1 = await add("t1", { special_marker_visible: true }); // 違う立ち絵の特異武将
+      expect(t1.merged).toBe(false);
+      expect(t1.warlord.is_special).toBe(true);
+      expect(t1.warlord.id).not.toBe(s1.id);
+      // それぞれの立ち絵の画面は、それぞれの特異武将へ
+      expect((await add("s2", { special_marker_visible: true })).warlord.id).toBe(s1.id);
+      expect((await add("t2", { special_marker_visible: true })).warlord.id).toBe(t1.warlord.id);
+      expect(repo.all().filter((w) => w.is_special)).toHaveLength(2);
+    });
+
     it("通常・特異がいて、どちらとも違う立ち絵なら別の武将として登録する", async () => {
       await add("n1");
       await add("s1", { special_marker_visible: true });

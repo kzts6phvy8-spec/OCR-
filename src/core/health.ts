@@ -45,7 +45,8 @@ export function findIssues(warlords: Warlord[], imageIds: Set<string>, jobs: Ocr
   // 同じ武将が 2 人に分かれていそう (名前・通常/特異・勢力の区分・物語武将のレア度が同じ)
   const seen = new Set<string>();
   for (const a of warlords) {
-    if (seen.has(a.id)) continue;
+    // 同じ名前の特異武将は何人もいることがある (織田信長・塚原卜伝など) ので、特異武将どうしは知らせない
+    if (seen.has(a.id) || a.is_special) continue;
     // 勢力がどちらも入っていて違えば別の武将 (限定武将・鬼憑武将などの別版や、別の地方の同名の武将)
     const sameFaction = (b: Warlord) => !a.faction || !b.faction || a.faction === b.faction;
     const group = warlords.filter(
