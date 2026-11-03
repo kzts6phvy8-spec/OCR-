@@ -64,11 +64,36 @@ function findOniGroupIssues(warlords: Warlord[]): Issue[] {
   const oniNames = new Set(onis.map((w) => w.name));
   const issues: Issue[] = [];
 
+  const groupsOf = (w: Warlord) => new Set(w.synergy_skills.map((s) => oniGroupName(s.partner, s.effect)).filter(Boolean));
+
+  // 鬼の組の連携スキルがあるのに、勢力が「鬼憑武将」になっていない武将 (組の人数には数える)
+  const notOni = warlords.filter((w) => w.faction !== ONI && groupsOf(w).size > 0);
+  for (const w of notOni) {
+    issues.push({
+      kind: "oni_group_incomplete",
+      autoFix: false,
+      message: `「${w.is_special ? "【特】" : ""}${w.name}」は鬼の組「${[...groupsOf(w)].join("・")}」の連携スキルがあるのに、勢力が「鬼憑武将」になっていません (今: ${w.faction || "未入力"})`,
+      warlordIds: [w.id],
+    });
+  }
+
+  // 鬼憑武将なのに、組が分かる連携スキルがまだ読み取れていない鬼 (組の人数に数えられない)
+  for (const w of onis) {
+    if (w.no_synergy || groupsOf(w).size > 0) continue;
+    if (w.synergy_skills.some((s) => splitPartners(s.partner).length > 0 && !/鬼/.test(s.partner + s.effect))) continue;
+    if (w.synergy_skills.some((s) => splitPartners(s.partner).some((n) => oniNames.has(n)))) continue; // 相手の名前で組が分かる
+    issues.push({
+      kind: "oni_group_incomplete",
+      autoFix: false,
+      message: `鬼「${w.is_special ? "【特】" : ""}${w.name}」の連携スキルがまだ読み取れていないので、どの組か分かりません (組の人数に数えていません)。連携スキルの画面を「スクショを追加して統合」で足してください`,
+      warlordIds: [w.id],
+    });
+  }
+
   // 組の名前 (鬼憑徳川四天王 など) で書かれた連携スキル: 同じ組の名前を持つ鬼を数える
   const byGroup = new Map<string, Warlord[]>();
-  for (const w of onis) {
-    const names = new Set(w.synergy_skills.map((s) => oniGroupName(s.partner, s.effect)).filter(Boolean));
-    for (const g of names) byGroup.set(g, [...(byGroup.get(g) ?? []), w]);
+  for (const w of [...onis, ...notOni]) {
+    for (const g of groupsOf(w)) byGroup.set(g, [...(byGroup.get(g) ?? []), w]);
   }
   for (const [group, members] of byGroup) {
     const unique = [...new Map(members.map((m) => [m.name, m])).values()];

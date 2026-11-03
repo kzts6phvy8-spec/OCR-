@@ -39,4 +39,17 @@ describe("自動点検", () => {
     const msgs = findIssues([named, b]).map((i) => i.message).join();
     expect(msgs).toMatch(/鬼C・鬼D/);
   });
+
+  it("組が分からない鬼・勢力が鬼憑武将になっていない武将も知らせる", () => {
+    const syn = { partner: "鬼憑徳川四天王", effect: "鬼憑徳川四天王2体以上が場内にいる場合、攻+10%" };
+    const msgs = findIssues([
+      w({ name: "井伊直政", faction: "鬼憑武将", gallery_images: ids(3), synergy_skills: [syn] }),
+      w({ name: "酒井忠次", faction: "東海", gallery_images: ids(3), synergy_skills: [syn] }), // 勢力の読み違い
+      w({ name: "本多忠勝", faction: "鬼憑武将", gallery_images: ids(3) }), // 連携スキルがまだ
+    ]).map((i) => i.message);
+    expect(msgs.join()).toMatch(/酒井忠次」は鬼の組「鬼憑徳川四天王」の連携スキルがあるのに、勢力が「鬼憑武将」になっていません/);
+    expect(msgs.join()).toMatch(/鬼「本多忠勝」の連携スキルがまだ読み取れていない/);
+    // 勢力の違う武将も組の人数には数える (井伊直政・酒井忠次の 2 人)
+    expect(msgs.join()).toMatch(/あと 2 人/);
+  });
 });
