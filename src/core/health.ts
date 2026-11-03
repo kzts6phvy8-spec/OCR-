@@ -1,74 +1,27 @@
-// 図鑑データの自動点検。おかしな所を探し、安全に直せるものは直し方 (fix) を付けて返す。
-// 直せないもの (読み違いの疑いなど) は、利用者が確かめられるよう知らせるだけにする。
+// 図鑑データの自動点検。知らせるのは次の 2 つだけ (利用者の指定):
+// - 画像が 7 枚以上: 1 人の武将に統合される画像は多くても 6 枚なので、別の武将の画像が混ざっている
+// - 画像が 1 枚だけ: ほかの画面 (天賦・連携など) のスクショがまだ足りない
 
-import type { OcrJob, Warlord } from "./types.ts";
-import { mergeSynergies, sameSynergy } from "./domain.ts";
-import { compatible } from "./ingest.ts";
-import { ONI_FACTION, isOniSynergy } from "./oni.ts";
+import type { Warlord } from "./types.ts";
 
-export type IssueKind =
-  | "duplicate"
-  | "mixed_art"
-  | "too_many_images"
-  | "synergy_duplicate"
-  | "oni_synergy"
-  | "hime_special"
-  | "awakening_rarity"
-  | "talent_duplicate"
-  | "odd_stat"
-  | "missing_image"
-  | "orphan_image"
-  | "failed_jobs";
+export type IssueKind = "too_many_images" | "single_image";
 
 export interface Issue {
   kind: IssueKind;
-  /** 自動で直せるか (直せるものは点検のたびに直す) */
+  /** 自動で直せるか (今の点検では、どれも知らせるだけ) */
   autoFix: boolean;
   message: string;
   warlordIds: string[];
-  /** 自動で直す時の中身 (画像の掃除など) */
-  imageIds?: string[];
 }
 
 /** 1 人の武将に統合される画像は多くても 6 枚 (それより多ければ、別の武将の画像が混ざっている) */
 export const MAX_IMAGES_PER_WARLORD = 6;
 
 const label = (w: Warlord) => `${w.is_special ? "【特】" : ""}${w.name}${w.faction ? ` (${w.faction})` : ""}`;
-const growthNumber = (g: string) => Math.abs(parseFloat(g.replace(/[^\d.+-]/g, "")) || 0);
 
-/**
- * imageIds: 端末に保存されている画像。recentImageIds: 保存したばかりの画像 (解析待ちに入る前かもしれないので、使われていなくても消さない)
- */
-export function findIssues(warlords: Warlord[], imageIds: Set<string>, jobs: OcrJob[], recentImageIds: Set<string> = new Set()): Issue[] {
+export function findIssues(warlords: Warlord[]): Issue[] {
   const issues: Issue[] = [];
-
-  // 同じ武将が 2 人に分かれていそう (名前・通常/特異・勢力の区分・物語武将のレア度が同じ)
-  const seen = new Set<string>();
-  for (const a of warlords) {
-    // 同じ名前の特異武将は何人もいることがある (織田信長・塚原卜伝など) ので、特異武将どうしは知らせない
-    if (seen.has(a.id) || a.is_special) continue;
-    // 勢力がどちらも入っていて違えば別の武将 (限定武将・鬼憑武将などの別版や、別の地方の同名の武将)
-    const sameFaction = (b: Warlord) => !a.faction || !b.faction || a.faction === b.faction;
-    const group = warlords.filter(
-      (b) =>
-        b.name === a.name &&
-        b.is_special === a.is_special &&
-        sameFaction(b) &&
-        compatible(b, a.faction, a.rarity) &&
-        compatible(a, b.faction, b.rarity),
-    );
-    if (group.length < 2) continue;
-    group.forEach((g) => seen.add(g.id));
-    issues.push({
-      kind: "duplicate",
-      autoFix: false,
-      message: `「${label(a)}」が ${group.length} 人に分かれています。同じ武将なら、武将の画面の「まとめる」でまとめてください (立ち絵が違う別の武将なら、そのままで大丈夫です)`,
-      warlordIds: group.map((g) => g.id),
-    });
-  }
-
   for (const w of warlords) {
-    // 画像が多すぎる = 別の武将の画像が混ざっている
     if (w.gallery_images.length > MAX_IMAGES_PER_WARLORD) {
       issues.push({
         kind: "too_many_images",
@@ -76,82 +29,14 @@ export function findIssues(warlords: Warlord[], imageIds: Set<string>, jobs: Ocr
         message: `「${label(w)}」に画像が ${w.gallery_images.length} 枚あります (1 人の武将は多くても ${MAX_IMAGES_PER_WARLORD} 枚)。別の武将の画像が混ざっています。「立ち絵ごとに分ける」で分けてください`,
         warlordIds: [w.id],
       });
-    }
-    // 同じ連携スキルが重なっている
-    if (mergeSynergies([], w.synergy_skills).length < w.synergy_skills.length) {
-      issues.push({ kind: "synergy_duplicate", autoFix: true, message: `「${label(w)}」の連携スキルの重なりをまとめました`, warlordIds: [w.id] });
-    }
-    // 鬼に、鬼の連携らしくない連携スキルがある
-    if (w.faction === ONI_FACTION) {
-      const odd = w.synergy_skills.filter((s) => !isOniSynergy(s));
-      const others = warlords.filter((o) => o.name === w.name && o.faction !== ONI_FACTION);
-      // 同じ名前の鬼ではない武将にも同じ連携スキルがある = 混ざった → 取り除く
-      const copied = odd.filter((s) => others.some((o) => o.synergy_skills.some((x) => sameSynergy(x, s))));
-      if (copied.length) {
-        issues.push({ kind: "oni_synergy", autoFix: true, message: `「${label(w)}」に混ざっていた、同じ名前の武将の連携スキルを取り除きました`, warlordIds: [w.id] });
-      } else if (odd.length) {
-        issues.push({
-          kind: "oni_synergy",
-          autoFix: false,
-          message: `「${label(w)}」に、鬼の連携らしくない連携スキル (${odd.map((s) => s.partner).join("、")}) があります。同じ名前の別の武将のものが混ざっていないか確かめてください`,
-          warlordIds: [w.id],
-        });
-      }
-    }
-    // 姫武将が特異武将になっている
-    if (w.faction === "姫武将" && w.is_special) {
-      issues.push({ kind: "hime_special", autoFix: true, message: `「${label(w)}」を特異武将から姫武将に戻しました`, warlordIds: [w.id] });
-    }
-    // SR・R・N には覚醒スキルが無いのに入っている (読み違いか、別の武将の情報が混ざった)
-    if (["SR", "R", "N"].includes(w.rarity) && (w.awakening_skill_name || w.awakening_before_weapon)) {
+    } else if (w.gallery_images.length === 1) {
       issues.push({
-        kind: "awakening_rarity",
+        kind: "single_image",
         autoFix: false,
-        message: `「${label(w)}」は ${w.rarity} なのに覚醒スキルが入っています。レア度の読み違いか、別の武将の情報が混ざっていないか確かめてください`,
+        message: `「${label(w)}」の画像が 1 枚だけです。ほかの画面のスクショを「スクショを追加して統合」で足してください`,
         warlordIds: [w.id],
       });
     }
-    // 同じ星の天賦が 2 つ以上
-    const stars = w.talents.map((t) => t.star_level);
-    if (new Set(stars).size < stars.length) {
-      issues.push({ kind: "talent_duplicate", autoFix: false, message: `「${label(w)}」に同じ星の天賦が 2 つ以上あります。読み違いがないか確かめてください`, warlordIds: [w.id] });
-    }
-    // ありえない数値 (読み違いの疑い)
-    const growths = [w.attack_growth, w.defense_growth, w.stratagem_growth, w.troops_growth].map(growthNumber);
-    const bases = [w.attack_base, w.defense_base, w.stratagem_base, w.troops_base];
-    if (growths.some((g) => g > 10) || bases.some((b) => b > 5000)) {
-      issues.push({ kind: "odd_stat", autoFix: false, message: `「${label(w)}」の成長値に、ありえない数値があります。読み違いがないか確かめてください`, warlordIds: [w.id] });
-    }
-    // 画像の記録はあるのに、画像そのものが無い
-    const missing = w.gallery_images.filter((id) => !imageIds.has(id));
-    if (missing.length) {
-      issues.push({
-        kind: "missing_image",
-        autoFix: true,
-        message: `「${label(w)}」の見つからない画像 ${missing.length} 枚の記録を外しました`,
-        warlordIds: [w.id],
-        imageIds: missing,
-      });
-    }
-  }
-
-  // どの武将にも解析待ちにも使われていない画像 (容量だけを使っている)
-  const used = new Set<string>();
-  for (const w of warlords) [w.image_url, ...w.gallery_images].forEach((id) => used.add(id));
-  for (const j of jobs) if (j.status !== "done" || j.keep_image) used.add(j.image_id);
-  const orphans = [...imageIds].filter((id) => !used.has(id) && !recentImageIds.has(id));
-  if (orphans.length) {
-    issues.push({ kind: "orphan_image", autoFix: true, message: `どこにも使われていない画像 ${orphans.length} 枚を消して、容量を空けました`, warlordIds: [], imageIds: orphans });
-  }
-
-  const failed = jobs.filter((j) => j.status === "error");
-  if (failed.length) {
-    issues.push({
-      kind: "failed_jobs",
-      autoFix: false,
-      message: `解析に失敗したスクショが ${failed.length} 枚あります。「スクショ解析」タブで再試行するか、「統合先を選んで保存」で武将を選んでください`,
-      warlordIds: [],
-    });
   }
   return issues;
 }

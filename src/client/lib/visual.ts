@@ -96,21 +96,6 @@ async function clearlySame(imageId: string, target: Float32Array, candidate: War
 }
 
 /**
- * 2 人の武将の立ち絵がはっきり違うか (点検で「分かれていそう」と知らせる前に、別の武将を除くため)。
- * どちらかの画像が無ければ判断できないので false。
- */
-export async function clearlyDifferentArt(a: Warlord, b: Warlord): Promise<boolean> {
-  const sigsOf = async (w: Warlord) =>
-    (await Promise.all(imagesOf(w).slice(0, LOCAL_SAMPLES).map((id) => signatureOf(id)))).filter((x): x is Float32Array => Boolean(x));
-  const sa = await sigsOf(a);
-  const sb = await sigsOf(b);
-  if (sa.length === 0 || sb.length === 0) return false;
-  let best = -1;
-  for (const x of sa) for (const y of sb) best = Math.max(best, signatureSimilarity(x, y));
-  return best < 0.8;
-}
-
-/**
  * まだ指紋の無い登録画像の指紋を、アプリを開いている間に少しずつ作る (次からの見比べを速くするため)。
  * 1 枚ずつ間を空けて作り、アプリが裏に回ったらやめる。
  */

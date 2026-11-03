@@ -141,10 +141,14 @@ export default function App() {
       .then(() => api.runHealthCheck())
       .then((r) => {
         if (r.fixed.length) void refreshWarlords();
-        if (r.warnings.length) {
-          toast("warning", `自動点検: 確かめてほしいことが ${r.warnings.length} 件あります`, "「データ管理」タブの「自動点検」で見られます");
-        } else if (r.fixed.length) {
-          toast("success", `自動点検: ${r.fixed.length} 件を自動で直しました`, "「データ管理」タブの「自動点検」で見られます");
+        const many = r.warnings.filter((i) => i.kind === "too_many_images").length;
+        const single = r.warnings.filter((i) => i.kind === "single_image").length;
+        if (many || single) {
+          toast(
+            "warning",
+            `自動点検: ${[many && `画像が 7 枚以上 ${many} 人`, single && `画像が 1 枚だけ ${single} 人`].filter(Boolean).join(" / ")}`,
+            "「データ管理」タブの「自動点検」で見られます",
+          );
         }
       })
       // 立ち絵の見比べを速くするため、まだ指紋の無い登録画像の指紋を少しずつ作る
