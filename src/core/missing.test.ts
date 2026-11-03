@@ -44,4 +44,8 @@ describe("未入力の項目", () => {
     expect(missingLabels(warlord({ faction: "鬼憑武将" }))).toContain(effect);
     expect(missingLabels(warlord({ faction: "東海" }))).not.toContain(effect);
   });
+  it("連携スキルが無い印を付けた武将は、未入力に出さない", () => {
+    expect(missingLabels(warlord({}))).toContain("連携スキル");
+    expect(missingLabels(warlord({ no_synergy: true }))).not.toContain("連携スキル");
+  });
 });

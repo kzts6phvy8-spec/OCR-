@@ -823,6 +823,8 @@ function DetailView({
               );
             })}
           </div>
+        ) : w.no_synergy ? (
+          <p className="text-sm text-ash">この武将には連携スキルがありません</p>
         ) : (
           <Empty />
         )}
@@ -1024,6 +1026,15 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
       </Section>
 
       <Section title="連携スキル">
+        <label className="mb-2 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={Boolean(draft.no_synergy)}
+            onChange={(e) => setDraft((d) => ({ ...d, no_synergy: e.target.checked }))}
+            className="accent-gold-500"
+          />
+          この武将には連携スキルがない (「未入力: 連携スキル」に出さない)
+        </label>
         <div className="space-y-2">
           {draft.synergy_skills.map((s, i) => (
             <div key={i} className="grid items-end gap-2 rounded-lg border border-ebony-700 p-2 sm:grid-cols-[12rem_1fr_auto]">

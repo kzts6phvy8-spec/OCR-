@@ -466,6 +466,7 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     synergy_skills: synergies
       .map((s) => ({ partner: String(s?.partner ?? "").trim(), effect: String(s?.effect ?? "").trim() }))
       .filter((s) => s.partner),
+    no_synergy: Boolean(v.no_synergy),
     image_url: String(v.image_url ?? "").trim() || gallery[0] || "",
     gallery_images: gallery,
   };

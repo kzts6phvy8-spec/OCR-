@@ -77,6 +77,8 @@ export interface Warlord {
   troop_variants: string[];
 
   synergy_skills: SynergySkill[];
+  /** この武将には連携スキルが無い (手で付ける印。「未入力: 連携スキル」に出さない) */
+  no_synergy?: boolean;
 
   /** 代表画像の ID (端末内の画像ストア) */
   image_url: string;
