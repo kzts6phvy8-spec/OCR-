@@ -28,7 +28,6 @@ function searchText(w: Warlord): string {
     w.awakening_skill_name,
     w.awakening_before_weapon,
     w.awakening_after_weapon,
-    w.troop_type,
     ...w.troop_variants,
     ...w.talents.flatMap((t) => [t.name, t.effect]),
     ...w.synergy_skills.flatMap((s) => [s.partner, s.effect]),

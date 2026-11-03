@@ -32,7 +32,7 @@ import {
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
-import { warlordToText } from "../../core/text.ts";
+import { talentText, warlordToText } from "../../core/text.ts";
 import { StoredImage } from "./StoredImage.tsx";
 import { WarlordPicker } from "./WarlordPicker.tsx";
 import { onQueueChange } from "../lib/queue.ts";
@@ -706,14 +706,11 @@ function DetailView({
             </div>
           ))}
         </div>
-        {(w.troop_type || w.troop_variants.length > 0) && (
+        {w.troop_variants.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-ash">兵種</span>
-            {(w.troop_variants.length ? w.troop_variants : [w.troop_type]).map((t) => (
-              <span
-                key={t}
-                className={`rounded border px-2 py-0.5 ${t === w.troop_type ? "border-shu-400 text-shu-300" : "border-ebony-600 text-ash"}`}
-              >
+            {w.troop_variants.map((t) => (
+              <span key={t} className="rounded border border-ebony-600 px-2 py-0.5 text-ash">
                 {t}
               </span>
             ))}
@@ -781,15 +778,13 @@ function DetailView({
                 />
                 <div className={`rounded-lg border p-3 ${t.unlocked ? "border-gold-700/60 bg-ebony-900" : "border-ebony-800 bg-ebony-900/50 opacity-70"}`}>
                   <div className="mb-0.5 flex flex-wrap items-center gap-2">
-                    <Stars count={t.star_level} className="text-xs" />
-                    <span className="font-bold">{t.name || t.effect || "未解析"}</span>
-                    {t.position && <span className="text-[11px] text-ash">{t.position}</span>}
+                    <span className="font-bold text-gold-300">星{t.star_level}</span>
+                    <span className="font-bold">{talentText(t) || "未解析"}</span>
                     <span className={`ml-auto flex items-center gap-0.5 text-[11px] ${t.unlocked ? "text-gold-400" : "text-ebony-500"}`}>
                       {t.unlocked ? <Unlock className="size-3" /> : <Lock className="size-3" />}
                       {t.unlocked ? "解放済" : "未解放"}
                     </span>
                   </div>
-                  {t.name && t.effect && <p className="text-sm text-ash">{t.effect}</p>}
                 </div>
               </li>
             ))}
@@ -908,10 +903,7 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
             </div>
           ))}
         </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Field label="現在の兵種">
-            <input className="field" value={draft.troop_type} onChange={(e) => set("troop_type", e.target.value)} />
-          </Field>
+        <div className="mt-3">
           <Field label="選択可能な兵種 (読点・カンマ区切り)">
             <ListInput value={draft.troop_variants} onChange={(v) => set("troop_variants", v)} />
           </Field>
@@ -980,7 +972,7 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
       <Section title="天賦">
         <div className="space-y-2">
           {draft.talents.map((t, i) => (
-            <div key={i} className="grid items-end gap-2 rounded-lg border border-ebony-700 p-2 sm:grid-cols-[5rem_6rem_1fr_2fr_auto_auto]">
+            <div key={i} className="grid items-end gap-2 rounded-lg border border-ebony-700 p-2 sm:grid-cols-[5rem_1fr_auto_auto]">
               <Field label="星">
                 <select className="field" value={t.star_level} onChange={(e) => updateTalent(i, { star_level: Number(e.target.value) })}>
                   {[1, 2, 3, 4, 5].map((n) => (
@@ -990,13 +982,7 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
                   ))}
                 </select>
               </Field>
-              <Field label="位置">
-                <input className="field" value={t.position} onChange={(e) => updateTalent(i, { position: e.target.value })} />
-              </Field>
-              <Field label="名称">
-                <input className="field" value={t.name} onChange={(e) => updateTalent(i, { name: e.target.value })} />
-              </Field>
-              <Field label="効果">
+              <Field label="効果と数値 (例: 物理防御+30%)">
                 <input className="field" value={t.effect} onChange={(e) => updateTalent(i, { effect: e.target.value })} />
               </Field>
               <label className="flex items-center gap-1 pb-2 text-xs">
