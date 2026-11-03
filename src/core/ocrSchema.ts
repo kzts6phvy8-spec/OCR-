@@ -57,15 +57,15 @@ export const OcrExtractionSchema = z.object({
 
   talents: z.array(
     z.object({
-      star_level: z.number().describe("星1〜星5"),
-      position: z.string().describe("天賦の位置・枠 (不明なら空文字)"),
-      name: z.string().describe("天賦の名前。名前が無く効果だけの場合は空文字"),
-      effect: z.string().describe("効果 (例: 物理防御+50%)"),
+      star_level: z.number().describe("星1〜星5 (1 段目の右が星1・左が星2、2 段目の右が星3・左が星4、3 段目が星5)"),
+      position: z.string().describe("常に空文字"),
+      name: z.string().describe("常に空文字 (「固守」「気勢」などの天賦の名前は書かない)"),
+      effect: z.string().describe("効果と数値だけ (例: 物理防御+30%、奥義ゲージ+1)"),
       unlocked: z.boolean().describe("解放済み (グレーアウトしていない) なら true"),
     }),
   ),
 
-  troop_type: nullableString("現在選択中の兵種"),
+  troop_type: nullableString("使わない。常に null"),
   troop_variants: z.array(z.string()).describe("選択可能な兵種一覧"),
 
   synergy_skills: z.array(

@@ -24,10 +24,11 @@ export function warlordToText(w: Warlord): string {
     if (w.has_weapon_awakening && w.awakening_after_weapon) lines.push(`武器覚醒後: ${w.awakening_after_weapon}`);
   }
   if (w.talents.length) {
-    w.talents.forEach((t, i) => lines.push(`${i === 0 ? "天賦:" : ""}星${t.star_level}${talentText(t)}${t.unlocked ? "" : " (未解放)"}`));
+    // 「星1:物理防御+30%」の形で、効果と数値だけを並べる
+    lines.push("天賦");
+    for (const t of [...w.talents].sort((a, b) => a.star_level - b.star_level)) lines.push(`星${t.star_level}:${talentText(t)}`);
   }
-  const troops = w.troop_variants.length ? w.troop_variants : w.troop_type ? [w.troop_type] : [];
-  if (troops.length) lines.push(`兵種:${troops.join("、")}`);
+  if (w.troop_variants.length) lines.push(`兵種:${w.troop_variants.join("、")}`);
   if (w.rarity) lines.push(`レア度:${w.rarity}`);
   if (w.faction) lines.push(`勢力:${w.faction}`);
   if (w.level > 0 || w.stars > 0) lines.push([w.level > 0 && `Lv.${w.level}`, w.stars > 0 && `★${w.stars}`].filter(Boolean).join(" "));

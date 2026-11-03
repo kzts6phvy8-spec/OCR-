@@ -224,15 +224,16 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
     .filter((t) => str(t.name) || str(t.effect))
     .map((t) => ({
       star_level: int(t.star_level, 1, 5),
-      position: str(t.position),
-      name: str(t.name),
-      effect: str(t.effect),
+      position: "",
+      name: "",
+      effect: talentEffect(str(t.effect) || str(t.name)),
       unlocked: Boolean(t.unlocked),
-    }));
+    }))
+    .filter((t) => t.effect);
   set("talents", talents);
 
-  set("troop_type", str(ext.troop_type));
-  set("troop_variants", uniqueStrings(ext.troop_variants));
+  // 兵種は選べる兵種の一覧だけを持つ (「現在の兵種」は持たない)
+  set("troop_variants", uniqueStrings([...ext.troop_variants, ...(ext.troop_type ? [str(ext.troop_type)] : [])]));
   set(
     "synergy_skills",
     ext.synergy_skills
@@ -404,10 +405,6 @@ export function mergeWarlord(
   if (patch.talents) merged.talents = mergeTalents(merged.talents, patch.talents);
   if (patch.synergy_skills) merged.synergy_skills = mergeSynergies(merged.synergy_skills, patch.synergy_skills);
   if (patch.troop_variants) merged.troop_variants = uniqueStrings([...merged.troop_variants, ...patch.troop_variants]);
-  if (patch.troop_type) {
-    merged.troop_type = patch.troop_type;
-    merged.troop_variants = uniqueStrings([...merged.troop_variants, patch.troop_type]);
-  }
 
   for (const url of patch.gallery_images ?? []) {
     if (!merged.gallery_images.includes(url)) merged.gallery_images.push(url);
@@ -418,6 +415,19 @@ export function mergeWarlord(
 }
 
 /** DB に保存する前の最終正規化 (手動編集・インポートにも適用) */
+/**
+ * 天賦の効果を「効果と数値」だけにする。「固守:物理防御+30%」「気勢 奥義ゲージ+1」のような名前は取り除く。
+ * 名前らしいのは、先頭の短い語 (数字・記号を含まない 1〜6 文字) の後に「:」か空白が続く時だけ。
+ */
+export function talentEffect(text: string): string {
+  const t = text.normalize("NFKC").trim();
+  const m =
+    t.match(/^([^\s:+\-%0-9.]{1,6})\s*[:：]\s*(.+)$/) ??
+    // 「気勢 奥義ゲージ+1」: 名前の後の空白に続くのが、文字で始まる効果の時だけ (「物理防御 +30%」は名前ではない)
+    t.match(/^([^\s:+\-%0-9.]{1,6})\s+([^\s+\-%0-9.][^+\-]*[+\-]\s*\d.*)$/);
+  return (m ? m[2] : t).trim();
+}
+
 export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
   const base = emptyWarlordInput();
   const v = { ...base, ...raw };
@@ -454,15 +464,20 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     talents: talents
       .map((t) => ({
         star_level: int(Number(t?.star_level), 1, 5),
-        position: String(t?.position ?? "").trim(),
-        name: String(t?.name ?? "").trim(),
-        effect: String(t?.effect ?? "").trim(),
+        // 天賦は効果と数値だけを持つ (「固守」「気勢」などの名前は持たない)
+        position: "",
+        name: "",
+        effect: talentEffect(String(t?.effect ?? "").trim() || String(t?.name ?? "").trim()),
         unlocked: Boolean(t?.unlocked),
       }))
-      .filter((t) => t.name || t.effect)
+      .filter((t) => t.effect)
       .sort((a, b) => a.star_level - b.star_level),
-    troop_type: String(v.troop_type ?? "").trim(),
-    troop_variants: uniqueStrings(Array.isArray(v.troop_variants) ? v.troop_variants.map(String) : []),
+    // 「現在の兵種」は持たない (前の版で入っていた値は、選べる兵種の一覧に移す)
+    troop_type: "",
+    troop_variants: uniqueStrings([
+      ...(Array.isArray(v.troop_variants) ? v.troop_variants.map(String) : []),
+      ...(String(v.troop_type ?? "").trim() ? [String(v.troop_type).trim()] : []),
+    ]),
     synergy_skills: synergies
       .map((s) => ({ partner: String(s?.partner ?? "").trim(), effect: String(s?.effect ?? "").trim() }))
       .filter((s) => s.partner),

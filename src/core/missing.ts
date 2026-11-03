@@ -60,9 +60,10 @@ export const MISSING_FIELDS: MissingField[] = [
   {
     id: "talents",
     label: "天賦",
-    missing: (w) => [1, 2, 3, 4, 5].some((star) => !w.talents.some((t) => t.star_level === star && (t.name || t.effect))),
+    // 効果と数値 (「物理防御+30%」など) が入っていない星があれば未入力 (名前だけの古いデータも含む)
+    missing: (w) => [1, 2, 3, 4, 5].some((star) => !w.talents.some((t) => t.star_level === star && /\d/.test(t.effect))),
   },
-  { id: "troops_type", label: "兵種", missing: (w) => !w.troop_type && w.troop_variants.length === 0 },
+  { id: "troops_type", label: "兵種", missing: (w) => w.troop_variants.length === 0 },
   {
     id: "synergy",
     label: "連携スキル",

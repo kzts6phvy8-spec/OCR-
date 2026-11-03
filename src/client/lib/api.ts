@@ -73,7 +73,13 @@ export const api = {
       if (record.awakening_priority !== w.awakening_priority) {
         await db.updateWarlord(w.id, record);
         updated++;
-      } else if (record.has_awakening && !AWAKENING_PRIORITIES.includes(record.awakening_priority)) unmatched++;
+      } else {
+        // 書き方を新しい決まりにそろえる (天賦は効果と数値だけ・「現在の兵種」は兵種の一覧へ)
+        const talentsChanged = JSON.stringify(record.talents) !== JSON.stringify(w.talents);
+        const troopsChanged = Boolean(w.troop_type) || JSON.stringify(record.troop_variants) !== JSON.stringify(w.troop_variants);
+        if (talentsChanged || troopsChanged) await db.updateWarlord(w.id, record);
+        if (record.has_awakening && !AWAKENING_PRIORITIES.includes(record.awakening_priority)) unmatched++;
+      }
     }
     return { updated, unmatched };
   },

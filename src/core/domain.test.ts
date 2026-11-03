@@ -169,3 +169,15 @@ describe("連携スキルの統合", () => {
     expect(mergeSynergies([{ partner: "A、B", effect: "x" }], [{ partner: "B、A", effect: "x" }])).toHaveLength(1);
   });
 });
+
+describe("天賦の効果", () => {
+  it("名前を取り除いて効果と数値だけにする", async () => {
+    const { talentEffect } = await import("./domain.ts");
+    expect(talentEffect("固守:物理防御+30%")).toBe("物理防御+30%");
+    expect(talentEffect("力戦：物理攻撃+18%")).toBe("物理攻撃+18%");
+    expect(talentEffect("気勢 奥義ゲージ+1")).toBe("奥義ゲージ+1");
+    expect(talentEffect("物理防御+30%")).toBe("物理防御+30%");
+    expect(talentEffect("物理防御 +30%")).toBe("物理防御 +30%");
+    expect(talentEffect("計略ダメージ軽減+30%")).toBe("計略ダメージ軽減+30%");
+  });
+});
