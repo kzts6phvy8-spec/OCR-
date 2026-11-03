@@ -94,16 +94,20 @@ async function chooseByArt(all: Warlord[], marked: boolean, faction: string, rar
 
   if (marked) {
     // 【特】表記あり: 特異武将の中から選ぶ
+    // 同じ名前の特異武将は何人もいることがある (織田信長・塚原卜伝など) ので、1 人だけでも立ち絵を確かめる
     const specials = candidates.filter((c) => c.is_special);
-    if (specials.length === 1) return use(specials[0]);
-    if (specials.length > 1) {
-      const { same } = await compareAll(specials, sameArt, true);
+    let newSpecialWarning = "";
+    if (specials.length > 0) {
+      const { same, unknown } = await compareAll(specials, sameArt, true);
       if (same.length === 1) return use(same[0]);
-      if (same.length === 0) return create(true, ["立ち絵が登録済みの特異武将と違うため、別の武将として登録しました"]);
-      throw new IngestError(`立ち絵で「${name}」のどの特異武将か判断できませんでした。下の「統合先を選んで保存」で武将を選んでください`);
+      if (same.length > 1 || unknown) {
+        if (specials.length === 1 && same.length === 0) return use(specials[0], ["立ち絵が見えず確かめられなかったため、同じ名前の特異武将に統合しました"]);
+        throw new IngestError(`立ち絵で「${name}」のどの特異武将か判断できませんでした。下の「統合先を選んで保存」で武将を選んでください`);
+      }
+      newSpecialWarning = "立ち絵が登録済みの特異武将と違うため、別の特異武将として登録しました";
     }
-    // 特異武将が未登録: 先に【特】表記の無い画面から「通常」として登録されていた同じ立ち絵の武将なら、特異武将に直す
-    const { same } = await compareAll(candidates, sameArt, true);
+    // 先に【特】表記の無い画面から「通常」として登録されていた同じ立ち絵の武将なら、特異武将に直す
+    const { same } = await compareAll(candidates.filter((c) => !c.is_special), sameArt, true);
     if (same.length === 1) {
       return {
         existing: same[0],
@@ -112,7 +116,7 @@ async function chooseByArt(all: Warlord[], marked: boolean, faction: string, rar
         warnings: ["通常武将として登録されていた武将が、立ち絵が同じ【特】表記の画面だったため、特異武将に直しました"],
       };
     }
-    return create(true);
+    return create(true, newSpecialWarning ? [newSpecialWarning] : []);
   }
 
   if (candidates.length === 0) return create(false);
