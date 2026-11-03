@@ -22,4 +22,21 @@ describe("自動点検", () => {
     // ほかのことは知らせない (同じ名前の武将・読み違いの疑いなど)
     expect(kinds([w({ gallery_images: ids(3), rarity: "SR", awakening_skill_name: "x" }), w({ gallery_images: ids(3) })])).toEqual([]);
   });
+
+  it("鬼の組で、図鑑に登録されていない鬼がいれば知らせる", async () => {
+    const { oniGroupName } = await import("./health.ts");
+    expect(oniGroupName("鬼憑徳川四天王", "鬼憑徳川四天王2体以上が場内にいる場合、通常攻撃ダメージ+30%")).toBe("鬼憑徳川四天王");
+    expect(oniGroupName("", "鬼憑徳川四天王1体以上が場内にいる場合、物理防御+15%")).toBe("鬼憑徳川四天王");
+    const syn = (n: number) => ({ partner: "鬼憑徳川四天王", effect: `鬼憑徳川四天王${n}体以上が場内にいる場合、攻+10%` });
+    const oni = (name: string) => w({ name, faction: "鬼憑武将", gallery_images: ids(3), synergy_skills: [syn(1), syn(2)] });
+    const two = findIssues([oni("井伊直政"), oni("酒井忠次")]).filter((i) => i.kind === "oni_group_incomplete");
+    expect(two).toHaveLength(1);
+    expect(two[0].message).toMatch(/あと 2 人/);
+    expect(kinds([oni("井伊直政"), oni("酒井忠次"), oni("本多忠勝"), oni("榊原康政")])).toEqual([]);
+    // 連携相手に名前が並んでいる時は、登録されていない名前を知らせる
+    const named = w({ name: "鬼A", faction: "鬼憑武将", gallery_images: ids(3), synergy_skills: [{ partner: "鬼B、鬼C、鬼D", effect: "同時に場内にいる場合、攻+10%" }] });
+    const b = w({ name: "鬼B", faction: "鬼憑武将", gallery_images: ids(3) });
+    const msgs = findIssues([named, b]).map((i) => i.message).join();
+    expect(msgs).toMatch(/鬼C・鬼D/);
+  });
 });

@@ -64,7 +64,8 @@ export function HealthPanel({
         <ShieldCheck className="size-5" /> 自動点検
       </h2>
       <p className="mb-3 text-sm text-ash">
-        アプリを開くたびに、統合した画像が 7 枚以上の武将 (別の武将の画像が混ざっている) と、画像が 1 枚だけの武将を知らせます。
+        アプリを開くたびに、統合した画像が 7 枚以上の武将 (別の武将の画像が混ざっている)、画像が 1 枚だけの武将、
+        鬼の組 (同じシーズンの 4 人) でまだ図鑑に登録されていない鬼がいる時に知らせます。
       </p>
       <div className="mb-3 flex flex-wrap gap-2">
         <button onClick={run} disabled={busy} className="flex items-center gap-1.5 rounded-lg border border-gold-600/60 px-3 py-1.5 text-sm font-bold text-gold-400 disabled:opacity-40">
