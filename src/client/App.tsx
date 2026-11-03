@@ -143,10 +143,11 @@ export default function App() {
         if (r.fixed.length) void refreshWarlords();
         const many = r.warnings.filter((i) => i.kind === "too_many_images").length;
         const single = r.warnings.filter((i) => i.kind === "single_image").length;
-        if (many || single) {
+        const oni = r.warnings.filter((i) => i.kind === "oni_group_incomplete").length;
+        if (many || single || oni) {
           toast(
             "warning",
-            `自動点検: ${[many && `画像が 7 枚以上 ${many} 人`, single && `画像が 1 枚だけ ${single} 人`].filter(Boolean).join(" / ")}`,
+            `自動点検: ${[many && `画像が 7 枚以上 ${many} 人`, single && `画像が 1 枚だけ ${single} 人`, oni && `鬼の組の未登録 ${oni} 件`].filter(Boolean).join(" / ")}`,
             "「データ管理」タブの「自動点検」で見られます",
           );
         }
