@@ -349,9 +349,12 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
           {layout === "grid" ? (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {visible.slice(0, limit).map((w) => (
-                <Selectable key={w.id} active={selecting} checked={selected.has(w.id)}>
-                  <WarlordCard w={w} showMissing={Boolean(missing)} onClick={() => (selecting ? toggle(w.id) : onOpen(w.id))} />
-                </Selectable>
+                <div key={w.id}>
+                  <Selectable active={selecting} checked={selected.has(w.id)}>
+                    <WarlordCard w={w} showMissing={Boolean(missing)} onClick={() => (selecting ? toggle(w.id) : onOpen(w.id))} />
+                  </Selectable>
+                  {missing === "synergy" && !selecting && <NoSynergyButton w={w} onChanged={onChanged} />}
+                </div>
               ))}
             </div>
           ) : (
@@ -361,6 +364,7 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
                   <Selectable active={selecting} checked={selected.has(w.id)}>
                     <WarlordRow w={w} showMissing={Boolean(missing)} onClick={() => (selecting ? toggle(w.id) : onOpen(w.id))} />
                   </Selectable>
+                  {missing === "synergy" && !selecting && <NoSynergyButton w={w} onChanged={onChanged} />}
                 </li>
               ))}
             </ul>
@@ -376,6 +380,27 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
         </>
       )}
     </div>
+  );
+}
+
+/** 「未入力: 連携スキル」で絞り込んでいる時に、その場で「連携スキルなし」の印を付けるボタン */
+function NoSynergyButton({ w, onChanged }: { w: Warlord; onChanged: () => void }) {
+  const toast = useToast();
+  return (
+    <button
+      onClick={async () => {
+        try {
+          await api.updateWarlord(w.id, { no_synergy: true });
+          toast("success", `「${w.name}」を連携スキルなしにしました`, "編集画面のチェックで戻せます");
+          onChanged();
+        } catch (e) {
+          toast("error", "変更できませんでした", (e as Error).message);
+        }
+      }}
+      className="mt-1 w-full rounded-md border border-ebony-600 px-2 py-1 text-[11px] text-ash hover:text-washi"
+    >
+      この武将は連携スキルなし
+    </button>
   );
 }
 

@@ -67,7 +67,8 @@ export const MISSING_FIELDS: MissingField[] = [
     id: "synergy",
     label: "連携スキル",
     // 鬼憑武将の連携スキル (〜鬼憑武将◯体が同時に場内にいる場合) は段階ごとに複数あるので、1 つだけなら読み残しがある
-    missing: (w) => w.synergy_skills.length === 0 || (w.faction === "鬼憑武将" && w.synergy_skills.length < 2),
+    missing: (w) =>
+      !w.no_synergy && (w.synergy_skills.length === 0 || (w.faction === "鬼憑武将" && w.synergy_skills.length < 2)),
   },
 ];
 
