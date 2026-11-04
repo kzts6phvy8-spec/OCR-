@@ -73,4 +73,15 @@ describe("鬼憑武将の連携スキル", () => {
     );
     expect(kept.warlord.synergy_skills.map((x) => x.partner)).toContain("本多忠勝");
   });
+
+  it("鬼の組の連携スキルが 1 つも無い武将からは、何も取り除かない (勢力の読み違いかもしれないため)", async () => {
+    const shared = { partner: "出浦盛清", effect: "出浦盛清と同時に場内にいる場合、回避+10%" };
+    await ingestExtraction(repo, makeExtraction({ name: "猿飛佐助", faction: "東海", synergy_skills: [shared] }), { mode: "auto", targetId: null, imageId: "n" });
+    const sp = await ingestExtraction(
+      repo,
+      makeExtraction({ name: "猿飛佐助", special_marker_visible: true, faction: "鬼憑武将", synergy_skills: [shared] }),
+      { mode: "auto", targetId: null, imageId: "s" },
+    );
+    expect(sp.warlord.synergy_skills.map((x) => x.partner)).toEqual(["出浦盛清"]);
+  });
 });

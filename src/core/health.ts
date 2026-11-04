@@ -77,15 +77,28 @@ function findOniGroupIssues(warlords: Warlord[]): Issue[] {
     });
   }
 
-  // 鬼憑武将なのに、組が分かる連携スキルがまだ読み取れていない鬼 (組の人数に数えられない)
+  // 鬼憑武将なのに、組が分かる連携スキルが無い鬼 (組の人数に数えられない)
   for (const w of onis) {
     if (w.no_synergy || groupsOf(w).size > 0) continue;
-    if (w.synergy_skills.some((s) => splitPartners(s.partner).length > 0 && !/鬼/.test(s.partner + s.effect))) continue;
-    if (w.synergy_skills.some((s) => splitPartners(s.partner).some((n) => oniNames.has(n)))) continue; // 相手の名前で組が分かる
+    if (w.synergy_skills.some((s) => splitPartners(s.partner).some((n) => oniNames.has(n) && n !== w.name))) continue; // 相手の名前で組が分かる
+    const label = `${w.is_special ? "【特】" : ""}${w.name}`;
+    const nonOni = w.synergy_skills.filter((s) => !/鬼/.test(s.partner + s.effect));
+    if (nonOni.length > 0) {
+      // 鬼の組ではない連携スキル (例: 特異の猿飛佐助と出浦) がある = この武将は鬼ではなく、勢力の読み違いのはず
+      issues.push({
+        kind: "oni_group_incomplete",
+        autoFix: false,
+        message: `「${label}」は勢力が「鬼憑武将」ですが、連携スキル (${nonOni.map((s) => s.partner).join("、")}) が鬼の組ではありません。同じ名前の鬼とは別の武将なら、勢力を直してください`,
+        warlordIds: [w.id],
+      });
+      continue;
+    }
     issues.push({
       kind: "oni_group_incomplete",
       autoFix: false,
-      message: `鬼「${w.is_special ? "【特】" : ""}${w.name}」の連携スキルがまだ読み取れていないので、どの組か分かりません (組の人数に数えていません)。連携スキルの画面を「スクショを追加して統合」で足してください`,
+      message: w.is_special
+        ? `「${label}」は特異武将なのに勢力が「鬼憑武将」で、連携スキルもありません。同じ名前の鬼とは別の武将なら、勢力を直してください。鬼なら連携スキルの画面を足してください`
+        : `鬼「${label}」の連携スキルがまだ読み取れていないので、どの組か分かりません (組の人数に数えていません)。連携スキルの画面を「スクショを追加して統合」で足してください`,
       warlordIds: [w.id],
     });
   }
