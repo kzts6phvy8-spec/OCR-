@@ -1,14 +1,18 @@
 import { Flame } from "lucide-react";
 import type { Warlord } from "../../core/types.ts";
-import { ONI_SEASONS } from "../../core/seasons.ts";
-import { ONI_GROUP_SIZE } from "../../core/health.ts";
+import { ONI_SEASONS, detectSeason } from "../../core/seasons.ts";
+import { ONI_GROUP_SIZE, resolveOniSeasons } from "../../core/health.ts";
 
 // 「データ管理」の鬼のシーズン一覧: シーズン (4 人の組) ごとに、図鑑に登録されている鬼を並べる
 
 export function OniSeasonPanel({ warlords, onOpenWarlord }: { warlords: Warlord[]; onOpenWarlord: (id: string) => void }) {
   const onis = warlords.filter((w) => w.faction === "鬼憑武将");
-  if (onis.length === 0) return null;
-  const unknown = onis.filter((w) => !w.oni_season);
+  // シーズンの名前が書かれた連携スキルがあるのに、勢力が鬼憑武将になっていない武将 (勢力の読み違い)
+  const wrongFaction = warlords.filter((w) => w.faction !== "鬼憑武将" && detectSeason(w.synergy_skills));
+  if (onis.length === 0 && wrongFaction.length === 0) return null;
+  // 点検と同じ決め方 (選んだシーズン・連携スキルの文章・連携スキルで指し合う鬼から)
+  const seasonOf = resolveOniSeasons(onis);
+  const unknown = onis.filter((w) => !seasonOf.has(w.id));
   return (
     <section className="panel p-5 md:col-span-2">
       <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
@@ -16,10 +20,12 @@ export function OniSeasonPanel({ warlords, onOpenWarlord }: { warlords: Warlord[
       </h2>
       <p className="mb-3 text-sm text-ash">
         シーズン (4 人の組) ごとに、図鑑に登録されている鬼憑武将です。シーズンは連携スキルの文章から自動で入り、武将の編集でも選べます。
+        「(推定)」は、連携スキルで指し合っている鬼のシーズンから決めたものです。
       </p>
       <ul className="grid gap-2 sm:grid-cols-2">
         {ONI_SEASONS.map((season) => {
-          const members = [...new Map(onis.filter((w) => w.oni_season === season).map((w) => [w.name, w])).values()];
+          const members = [...new Map(onis.filter((w) => seasonOf.get(w.id) === season).map((w) => [w.name, w])).values()];
+          const misfiled = wrongFaction.filter((w) => detectSeason(w.synergy_skills) === season);
           const done = members.length === ONI_GROUP_SIZE;
           return (
             <li key={season} className={`rounded-lg border p-2.5 text-sm ${done ? "border-emerald-700/60" : "border-ebony-700"}`}>
@@ -35,6 +41,18 @@ export function OniSeasonPanel({ warlords, onOpenWarlord }: { warlords: Warlord[
                     <button key={w.id} onClick={() => onOpenWarlord(w.id)} className="rounded border border-ebony-600 px-1.5 py-0.5 text-xs text-gold-300">
                       {w.is_special ? "【特】" : ""}
                       {w.name}
+                      {!w.oni_season && <span className="ml-0.5 text-[10px] text-ash">(推定)</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {misfiled.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-amber-200">
+                  勢力が鬼憑武将になっていない:
+                  {misfiled.map((w) => (
+                    <button key={w.id} onClick={() => onOpenWarlord(w.id)} className="rounded border border-amber-500/50 px-1.5 py-0.5 text-xs">
+                      {w.is_special ? "【特】" : ""}
+                      {w.name} ({w.faction || "勢力未入力"})
                     </button>
                   ))}
                 </div>
