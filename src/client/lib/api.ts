@@ -227,6 +227,20 @@ export const api = {
   async reanalyzeWarlord(id: string): Promise<OcrJob[]> {
     const w = await db.getWarlord(id);
     if (!w || w.gallery_images.length === 0) return [];
+    // 読み取った内容は、この武将の画像だけから作り直す (今の内容に重ねると、前に混ざった別の武将の情報が残り続けるため)。
+    // 名前・通常/特異・勢力・「連携スキルなし」の印と画像はそのまま
+    await db.updateWarlord(
+      id,
+      normalizeInput({
+        ...emptyWarlordInput(),
+        name: w.name,
+        is_special: w.is_special,
+        faction: w.faction,
+        no_synergy: w.no_synergy,
+        gallery_images: w.gallery_images,
+        image_url: w.image_url,
+      }),
+    );
     const images = w.gallery_images.map((imageId, i) => ({ fileName: `${w.name} の画像${i + 1} (再解析)`, imageId }));
     return queue.enqueue(images, "auto", id, "", true);
   },
