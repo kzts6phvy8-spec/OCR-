@@ -138,7 +138,8 @@ export default function App() {
       });
       // 古い表記の優先度を新しい表記 (甲・1 など) に直し、天賦・兵種の書き方をそろえる
       await step("優先度・書き方", async () => {
-        const { updated, unmatched } = await api.fillPriorities();
+        const { updated, unmatched, rewritten } = await api.fillPriorities();
+        if (rewritten > 0) void refreshWarlords();
         if (updated === 0) return;
         toast(
           "success",

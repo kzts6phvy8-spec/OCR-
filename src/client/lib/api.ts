@@ -64,9 +64,10 @@ export const api = {
    * 優先度が無い・古い表記 (極高 など) の武将に、覚醒スキルの発動条件から新しい表記の優先度を入れる。
    * 起動時に呼ぶ。直した件数と、条件が一覧に無くて直せなかった件数を返す。
    */
-  async fillPriorities(): Promise<{ updated: number; unmatched: number }> {
+  async fillPriorities(): Promise<{ updated: number; unmatched: number; rewritten: number }> {
     let updated = 0;
     let unmatched = 0;
+    let rewritten = 0;
     for (const w of await db.listWarlords()) {
       const record = normalizeInput(toInput(w));
       if (record.awakening_priority !== w.awakening_priority) {
@@ -76,11 +77,15 @@ export const api = {
         // 書き方を新しい決まりにそろえる (天賦は効果と数値だけ・「現在の兵種」は兵種の一覧へ)
         const talentsChanged = JSON.stringify(record.talents) !== JSON.stringify(w.talents);
         const troopsChanged = Boolean(w.troop_type) || JSON.stringify(record.troop_variants) !== JSON.stringify(w.troop_variants);
-        if (talentsChanged || troopsChanged) await db.updateWarlord(w.id, record);
+        const seasonChanged = (record.oni_season ?? "") !== (w.oni_season ?? "");
+        if (talentsChanged || troopsChanged || seasonChanged) {
+          await db.updateWarlord(w.id, record);
+          rewritten++;
+        }
         if (record.has_awakening && !AWAKENING_PRIORITIES.includes(record.awakening_priority)) unmatched++;
       }
     }
-    return { updated, unmatched };
+    return { updated, unmatched, rewritten };
   },
 
   /** 中身がまったく同じ画像が 2 重に登録された武将を、1 枚にまとめる (起動時に呼ぶ) */
