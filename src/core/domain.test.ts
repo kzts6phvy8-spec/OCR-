@@ -171,13 +171,17 @@ describe("連携スキルの統合", () => {
 });
 
 describe("天賦の効果", () => {
-  it("名前を取り除いて効果と数値だけにする", async () => {
-    const { talentEffect } = await import("./domain.ts");
+  it("名前を取り除いて効果と数値だけにする (効果の一部は削らない)", async () => {
+    const { talentEffect, normalizeInput, emptyWarlordInput } = await import("./domain.ts");
     expect(talentEffect("固守:物理防御+30%")).toBe("物理防御+30%");
     expect(talentEffect("力戦：物理攻撃+18%")).toBe("物理攻撃+18%");
-    expect(talentEffect("気勢 奥義ゲージ+1")).toBe("奥義ゲージ+1");
+    expect(talentEffect("気勢 奥義ゲージ+1", "気勢")).toBe("奥義ゲージ+1");
     expect(talentEffect("物理防御+30%")).toBe("物理防御+30%");
-    expect(talentEffect("物理防御 +30%")).toBe("物理防御 +30%");
-    expect(talentEffect("計略ダメージ軽減+30%")).toBe("計略ダメージ軽減+30%");
+    expect(talentEffect("物理攻撃:+18%")).toBe("物理攻撃:+18%");
+    expect(talentEffect("計略ダメージ:10%軽減")).toBe("計略ダメージ:10%軽減");
+    expect(talentEffect("騎兵 攻撃+10%")).toBe("騎兵 攻撃+10%");
+    // 保存し直しても効果は変わらない
+    const once = normalizeInput({ ...emptyWarlordInput(), name: "A", talents: [{ star_level: 1, position: "", name: "", effect: "開戦時 物理防御+30%", unlocked: true }] });
+    expect(normalizeInput(normalizeInput(once)).talents[0].effect).toBe("開戦時 物理防御+30%");
   });
 });

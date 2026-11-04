@@ -186,6 +186,7 @@ export const api = {
   async retryJobAsNewWarlord(id: string, name: string): Promise<Warlord> {
     const job = await db.getJob(id);
     if (!job) throw new Error("解析の記録が見つかりません");
+    if (job.status !== "error") throw new Error("この解析は、すでにやり直し中か完了しています");
     const isSpecial = job.extraction ? decideSpecial(job.extraction, job.mode).is_special : job.mode === "force_special";
     const created = await db.insertWarlord(normalizeInput({ ...emptyWarlordInput(), name, is_special: isSpecial }));
     // 読み取りがまだの (送信や解析で失敗した) 画像は、読み取った【特】表記で通常/特異を決め直す
@@ -265,10 +266,13 @@ export const api = {
     });
     await db.deleteWarlord(other.id);
     const saved = await db.updateWarlord(keep.id, normalizeInput(merged));
-    // まとめた側を指していた解析結果の表示も付け替える
+    // まとめた側を指していた解析結果の表示も付け替える (今のジョブに重ねる。古い写しで状態を戻さないように)
     for (const job of await db.listJobs()) {
       if (job.warlord_id === other.id || job.target_id === other.id) {
-        await db.saveJob({ ...job, warlord_id: job.warlord_id === other.id ? keep.id : job.warlord_id, target_id: job.target_id === other.id ? keep.id : job.target_id });
+        await queue.patchJob(job.id, {
+          ...(job.warlord_id === other.id ? { warlord_id: keep.id } : {}),
+          ...(job.target_id === other.id ? { target_id: keep.id } : {}),
+        });
       }
     }
     queue.notifyQueueChange();
