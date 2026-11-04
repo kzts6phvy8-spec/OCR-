@@ -273,3 +273,15 @@ export const putExtraction = retrying(async function putExtraction(id: string, e
 export const getExtraction = retrying(async function getExtraction(id: string): Promise<OcrExtraction | null> {
   return (await (await db()).get("extractions", id))?.ext ?? null;
 });
+
+/** どの武将の画像にも入っていない画像を消す (解析の記録が指していても消す。同じ画像の重なりを消す時用) */
+export const deleteImagesNotInGallery = retrying(async function deleteImagesNotInGallery(ids: string[]) {
+  const d = await db();
+  const used = new Set((await d.getAll("warlords")).flatMap((w) => [w.image_url, ...w.gallery_images]));
+  for (const id of ids) {
+    if (used.has(id)) continue;
+    await d.delete("images", id);
+    await d.delete("signatures", id);
+    await d.delete("extractions", id);
+  }
+});
