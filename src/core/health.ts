@@ -81,26 +81,8 @@ function findOniGroupIssues(warlords: Warlord[]): Issue[] {
     });
   }
 
-  // シーズンを決める: 選んだシーズン → 連携スキルの文章 → 連携スキルで指している鬼 (「鬼憑毛利元就」など) のシーズン
-  const seasonOf = new Map<string, string>();
-  for (const w of onis) {
-    const s = w.oni_season || detectSeason(w.synergy_skills);
-    if (s) seasonOf.set(w.id, s);
-  }
+  const seasonOf = resolveOniSeasons(onis);
   const byName = new Map(onis.map((w) => [w.name, w]));
-  for (let round = 0; round < 3; round++) {
-    for (const w of onis) {
-      if (seasonOf.has(w.id)) continue;
-      for (const s of w.synergy_skills) {
-        const names = [...splitPartners(s.partner), oniGroupName(s.partner, s.effect)].map((n) => n.replace(/^鬼憑/, ""));
-        const via = names.map((n) => byName.get(n)).find((o) => o && o.id !== w.id && seasonOf.has(o.id));
-        if (via) {
-          seasonOf.set(w.id, seasonOf.get(via.id)!);
-          break;
-        }
-      }
-    }
-  }
 
   // シーズンが分からない鬼: 連携スキルのつながり (組の名前・「鬼憑 + 武将名」・相手の名前) でまとめ、4 人そろっていれば知らせない
   const unknown: Warlord[] = [];
@@ -200,4 +182,32 @@ function findOniGroupIssues(warlords: Warlord[]): Issue[] {
     }
   }
   return issues;
+}
+
+/**
+ * 鬼憑武将それぞれのシーズンを決める (武将 ID → シーズン)。
+ * 選んだシーズン → 連携スキルの文章 → 連携スキルで指している鬼 (「鬼憑毛利元就」など) のシーズン
+ * → この鬼を連携スキルで指している鬼のシーズン、の順に探す。
+ */
+export function resolveOniSeasons(onis: Warlord[]): Map<string, string> {
+  const seasonOf = new Map<string, string>();
+  for (const w of onis) {
+    const s = w.oni_season || detectSeason(w.synergy_skills);
+    if (s) seasonOf.set(w.id, s);
+  }
+  const byName = new Map(onis.map((w) => [w.name, w]));
+  const refsOf = (w: Warlord) =>
+    w.synergy_skills.flatMap((s) => [...splitPartners(s.partner), oniGroupName(s.partner, s.effect)]).map((n) => n.replace(/^鬼憑/, "")).filter(Boolean);
+  for (let round = 0; round < 4; round++) {
+    for (const w of onis) {
+      if (seasonOf.has(w.id)) continue;
+      const via =
+        refsOf(w)
+          .map((n) => byName.get(n))
+          .find((o) => o && o.id !== w.id && seasonOf.has(o.id)) ??
+        onis.find((o) => o.id !== w.id && seasonOf.has(o.id) && refsOf(o).includes(w.name));
+      if (via) seasonOf.set(w.id, seasonOf.get(via.id)!);
+    }
+  }
+  return seasonOf;
 }
