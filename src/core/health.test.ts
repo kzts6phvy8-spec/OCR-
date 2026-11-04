@@ -60,4 +60,18 @@ describe("自動点検", () => {
     expect(msgs.join()).toMatch(/鬼の組ではありません/);
     expect(msgs.join()).not.toMatch(/まだ読み取れていない/);
   });
+
+  it("「鬼憑 + 武将名」で書かれた連携スキルも、同じ組としてつなぐ", () => {
+    const oni = (name: string, partner: string) =>
+      w({ name, faction: "鬼憑武将", gallery_images: ids(3), synergy_skills: [{ partner, effect: `${partner}1体以上が場内にいる場合、攻+10%` }] });
+    const four = [
+      oni("毛利元就", "鬼憑毛利元就"),
+      oni("小早川隆景", "鬼憑毛利元就"),
+      oni("吉川元春", "鬼憑小早川隆景"),
+      oni("村上武吉", "鬼憑吉川元春"),
+    ];
+    expect(findIssues(four).filter((i) => i.kind === "oni_group_incomplete")).toEqual([]);
+    // 1 人だけなら知らせる
+    expect(findIssues([four[0]]).map((i) => i.message).join()).toMatch(/あと 3 人/);
+  });
 });
