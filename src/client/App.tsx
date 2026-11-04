@@ -115,7 +115,15 @@ export default function App() {
   useEffect(() => {
     // 特異武将として登録されてしまった姫武将を通常に戻し、
     // 古い表記の優先度を、覚醒スキルの発動条件から新しい表記 (甲・1 など) に直す (順番に行う)
-    void api.fixHimeSpecial().then((n) => {
+    void api
+      .dedupeImages()
+      .then((r) => {
+        if (r.images === 0) return;
+        toast("success", `同じスクショが 2 重に登録されていた ${r.warlords} 人から、重なった画像 ${r.images} 枚を外しました`);
+        void refreshWarlords();
+      })
+      .then(() => api.fixHimeSpecial())
+      .then((n) => {
       if (n === 0) return;
       toast("success", `特異武将になっていた姫武将 ${n} 人を、姫武将 (特異ではない) に直しました`);
       void refreshWarlords();

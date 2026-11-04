@@ -83,6 +83,12 @@ export const api = {
     return { updated, unmatched };
   },
 
+  /** 中身がまったく同じ画像が 2 重に登録された武将を、1 枚にまとめる (起動時に呼ぶ) */
+  async dedupeImages(): Promise<{ warlords: number; images: number }> {
+    const { dedupeAllImages } = await import("./dedupe.ts");
+    return dedupeAllImages();
+  },
+
   /** 特異武将として登録されてしまった姫武将を通常に戻す (姫武将は特異武将とは別物)。起動時に呼ぶ */
   async fixHimeSpecial(): Promise<number> {
     let fixed = 0;
@@ -392,7 +398,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["dedupeImages", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }

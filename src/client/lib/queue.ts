@@ -13,6 +13,7 @@ import { nextDailyReset } from "./quota.ts";
 import { isStalled, probeIfNeeded } from "./probe.ts";
 import { artChecker } from "./visual.ts";
 import { logError } from "./errorLog.ts";
+import { dedupeWarlordImages } from "./dedupe.ts";
 import type { OcrExtraction } from "../../core/ocrSchema.ts";
 
 // 画像を解析するキュー。AI への問い合わせは 2 枚同時に進め、保存 (同じ武将への統合) は 1 件ずつ順番に行う。
@@ -322,6 +323,8 @@ async function processJob(job: OcrJob) {
     } catch {
       /* 縮小できなくても解析結果には影響しない */
     }
+    // 同じスクショが 2 重に入ったら 1 枚にまとめる
+    await ingestLock(() => dedupeWarlordImages(result.warlord.id)).catch(() => 0);
     backoffMs = 0;
     await update(job, {
       status: "done",
@@ -489,8 +492,14 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
     extraction = parseGeminiRestBody(r.body ?? "");
     const result = await ingestJob(job, extraction);
     await db.putExtraction(job.image_id, extraction).catch(() => {});
-    // 縮小は待たずに次の結果へ (ただし iPhone のメモリを食わないよう、縮小どうしは 1 枚ずつ)
-    shrinkChain = shrinkChain.then(() => shrinkStoredImage(job.image_id));
+    // 縮小は待たずに次の結果へ (ただし iPhone のメモリを食わないよう、縮小どうしは 1 枚ずつ)。
+    // 縮小し終えたら、同じスクショが 2 重に入っていないか確かめる (縮小前後で中身が変わるため、縮小の後で)
+    const warlordId = result.warlord.id;
+    shrinkChain = shrinkChain
+      .then(() => shrinkStoredImage(job.image_id))
+      .then(() => ingestLock(() => dedupeWarlordImages(warlordId)))
+      .then(() => undefined)
+      .catch(() => undefined);
     await update(job, {
       status: "done",
       warlord_id: result.warlord.id,
