@@ -226,7 +226,7 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
       star_level: int(t.star_level, 1, 5),
       position: "",
       name: "",
-      effect: talentEffect(str(t.effect) || str(t.name)),
+      effect: str(t.effect) ? talentEffect(str(t.effect), str(t.name)) : str(t.name),
       unlocked: Boolean(t.unlocked),
     }))
     .filter((t) => t.effect);
@@ -416,15 +416,17 @@ export function mergeWarlord(
 
 /** DB に保存する前の最終正規化 (手動編集・インポートにも適用) */
 /**
- * 天賦の効果を「効果と数値」だけにする。「固守:物理防御+30%」「気勢 奥義ゲージ+1」のような名前は取り除く。
- * 名前らしいのは、先頭の短い語 (数字・記号を含まない 1〜6 文字) の後に「:」か空白が続く時だけ。
+ * 読み取った天賦の効果を「効果と数値」だけにする。「固守:物理防御+30%」の「固守:」のような先頭の名前を取り除く。
+ * AI の読み取り結果にだけ使う (保存済みのデータに何度もかけると、効果の一部まで削ってしまうため)。
+ * name: AI が名前として読んだもの。効果の先頭が name ならそれを取り除く。
+ * 名前とみなすのは、先頭の短い語 (1〜6 文字) の後に「:」が続き、その後が文字で始まる時だけ
+ * (「物理攻撃:+18%」「計略ダメージ:10%軽減」の前半は効果の一部なので残す)。
  */
-export function talentEffect(text: string): string {
-  const t = text.normalize("NFKC").trim();
-  const m =
-    t.match(/^([^\s:+\-%0-9.]{1,6})\s*[:：]\s*(.+)$/) ??
-    // 「気勢 奥義ゲージ+1」: 名前の後の空白に続くのが、文字で始まる効果の時だけ (「物理防御 +30%」は名前ではない)
-    t.match(/^([^\s:+\-%0-9.]{1,6})\s+([^\s+\-%0-9.][^+\-]*[+\-]\s*\d.*)$/);
+export function talentEffect(text: string, name = ""): string {
+  let t = text.normalize("NFKC").trim();
+  const n = name.normalize("NFKC").trim();
+  if (n && t !== n && t.startsWith(n)) t = t.slice(n.length).replace(/^[\s:：・]+/, "").trim();
+  const m = t.match(/^([^\s:+\-%0-9.]{1,6})\s*[:：]\s*([^\s:+\-%0-9.].*)$/);
   return (m ? m[2] : t).trim();
 }
 
@@ -467,7 +469,8 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
         // 天賦は効果と数値だけを持つ (「固守」「気勢」などの名前は持たない)
         position: "",
         name: "",
-        effect: talentEffect(String(t?.effect ?? "").trim() || String(t?.name ?? "").trim()),
+        // 保存済みの効果は削らない。前の版の「名前だけ」の天賦は、名前を効果の欄に移す
+        effect: String(t?.effect ?? "").trim() || String(t?.name ?? "").trim(),
         unlocked: Boolean(t?.unlocked),
       }))
       .filter((t) => t.effect)

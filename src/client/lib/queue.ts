@@ -186,7 +186,7 @@ export async function retryJobs(ids: string[], targetId?: string, adoptSpecial =
       warnings: [],
       attempts: 0,
       ...(targetId ? { target_id: targetId } : {}),
-      ...(adoptSpecial ? { adopt_special: true } : {}),
+      adopt_special: adoptSpecial,
       updated_at: new Date().toISOString(),
     });
   }
@@ -202,6 +202,12 @@ export function resumeNow() {
   backoffMs = 0;
   notify();
   void runQueue();
+}
+
+/** 保存されている今のジョブに変更を重ねて保存する (古い写しで上書きしないため。api からも使う) */
+export async function patchJob(id: string, patch: Partial<OcrJob>) {
+  const current = await db.getJob(id);
+  if (current) await update(current, patch);
 }
 
 async function update(job: OcrJob, patch: Partial<OcrJob>): Promise<OcrJob> {
@@ -566,12 +572,17 @@ export async function takeOverRemoteJobs() {
   } catch {
     /* サーバーに届かなくても続ける */
   }
+  // 取り消しを待つ間に結果を受け取り終えたジョブは、引き取らない (同じ画像を二重に解析しないように)
+  let moved = 0;
   for (const job of remote) {
-    await db.saveJob({ ...job, status: "queued", local: true, attempts: 0, updated_at: new Date().toISOString() });
+    const fresh = await db.getJob(job.id);
+    if (!fresh || fresh.status !== "remote") continue;
+    await update(fresh, { status: "queued", local: true, attempts: 0 });
+    moved++;
   }
   notify();
   void runQueue();
-  return remote.length;
+  return moved;
 }
 
 /**
@@ -583,11 +594,15 @@ export async function resendRemoteJobs() {
   const remote = (await db.listJobs()).filter((j) => j.status === "remote");
   if (remote.length === 0 || !bgActive(settings)) return 0;
   await callServer(settings, "cancel", { ids: remote.map((j) => j.id) });
+  let moved = 0;
   for (const job of remote) {
-    await db.saveJob({ ...job, status: "queued", local: false, attempts: 0, updated_at: new Date().toISOString() });
+    const fresh = await db.getJob(job.id);
+    if (!fresh || fresh.status !== "remote") continue;
+    await update(fresh, { status: "queued", local: false, attempts: 0 });
+    moved++;
   }
   resumeNow();
-  return remote.length;
+  return moved;
 }
 
 /** 待機中・サーバーで解析待ち・失敗のジョブを取り除く (解析中のものは取り除けない) */

@@ -50,7 +50,8 @@ export async function dedupeAllImages(): Promise<{ warlords: number; images: num
   let warlords = 0;
   let images = 0;
   for (const w of await db.listWarlords()) {
-    const n = await dedupeWarlordImages(w.id);
+    // 1 人で失敗しても (途中で消された等)、ほかの武将は続ける
+    const n = await dedupeWarlordImages(w.id).catch(() => 0);
     if (n) {
       warlords++;
       images += n;

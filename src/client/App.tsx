@@ -113,42 +113,50 @@ export default function App() {
   }, [refreshWarlordsSoon, toast]);
 
   useEffect(() => {
-    // 特異武将として登録されてしまった姫武将を通常に戻し、
-    // 古い表記の優先度を、覚醒スキルの発動条件から新しい表記 (甲・1 など) に直す (順番に行う)
-    void api
-      .dedupeImages()
-      .then((r) => {
+    // 起動時の手直しと点検。1 つが失敗しても、ほかの手直しは続ける (失敗はエラーの記録に残す)
+    const step = async (where: string, fn: () => Promise<void>) => {
+      try {
+        await fn();
+      } catch (e) {
+        logError(`起動時の手直し (${where})`, e instanceof Error ? e.message : String(e));
+      }
+    };
+    void (async () => {
+      // 同じスクショが 2 重に登録された画像を 1 枚にまとめる
+      await step("画像の重なり", async () => {
+        const r = await api.dedupeImages();
         if (r.images === 0) return;
         toast("success", `同じスクショが 2 重に登録されていた ${r.warlords} 人から、重なった画像 ${r.images} 枚を外しました`);
         void refreshWarlords();
-      })
-      .then(() => api.fixHimeSpecial())
-      .then((n) => {
-      if (n === 0) return;
-      toast("success", `特異武将になっていた姫武将 ${n} 人を、姫武将 (特異ではない) に直しました`);
-      void refreshWarlords();
-    })
-      .then(() => api.fillPriorities())
-      .then(({ updated, unmatched }) => {
-      if (updated === 0) return;
-      toast(
-        "success",
-        `${updated} 人の覚醒スキルの優先度を、発動条件から新しい表記に直しました`,
-        unmatched ? `発動条件が一覧に無かった ${unmatched} 人は、そのままです (武将の編集画面で直せます)` : undefined,
-      );
-      void refreshWarlords();
-    })
+      });
+      // 特異武将として登録されてしまった姫武将を通常に戻す
+      await step("姫武将", async () => {
+        const n = await api.fixHimeSpecial();
+        if (n === 0) return;
+        toast("success", `特異武将になっていた姫武将 ${n} 人を、姫武将 (特異ではない) に直しました`);
+        void refreshWarlords();
+      });
+      // 古い表記の優先度を新しい表記 (甲・1 など) に直し、天賦・兵種の書き方をそろえる
+      await step("優先度・書き方", async () => {
+        const { updated, unmatched } = await api.fillPriorities();
+        if (updated === 0) return;
+        toast(
+          "success",
+          `${updated} 人の覚醒スキルの優先度を、発動条件から新しい表記に直しました`,
+          unmatched ? `発動条件が一覧に無かった ${unmatched} 人は、そのままです (武将の編集画面で直せます)` : undefined,
+        );
+        void refreshWarlords();
+      });
       // 鬼憑武将の連携スキルを、同じシーズンの組の鬼に広める
-      .then(() => api.shareAllOniSynergies())
-      .then((n) => {
+      await step("鬼の連携スキル", async () => {
+        const n = await api.shareAllOniSynergies();
         if (n === 0) return;
         toast("success", `鬼憑武将の連携スキルを ${n} 人分整えました`, "混ざっていた通常・特異武将の連携を取り除き、同じ組の鬼の連携を入れました");
         void refreshWarlords();
-      })
-      // 図鑑データを点検し、直せるものは直す (結果は「データ管理」に出る)
-      .then(() => api.runHealthCheck())
-      .then((r) => {
-        if (r.fixed.length) void refreshWarlords();
+      });
+      // 自動点検 (結果は「データ管理」に出る)
+      await step("自動点検", async () => {
+        const r = await api.runHealthCheck();
         const many = r.warnings.filter((i) => i.kind === "too_many_images").length;
         const single = r.warnings.filter((i) => i.kind === "single_image").length;
         const oni = r.warnings.filter((i) => i.kind === "oni_group_incomplete").length;
@@ -159,11 +167,10 @@ export default function App() {
             "「データ管理」タブの「自動点検」で見られます",
           );
         }
-      })
+      });
       // 立ち絵の見比べを速くするため、まだ指紋の無い登録画像の指紋を少しずつ作る
-      .then(() => backfillSignatures())
-      // 途中で失敗しても、エラーの記録に残す (点検画面からコピーして送れるように)
-      .catch((e) => logError("起動時の手直し", e instanceof Error ? e.message : String(e)));
+      await step("立ち絵の指紋", () => backfillSignatures());
+    })();
   }, [refreshWarlords, toast]);
 
   useEffect(() => {

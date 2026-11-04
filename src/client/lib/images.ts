@@ -42,8 +42,23 @@ export async function compressImage(file: Blob, opts = ANALYSIS): Promise<Blob> 
   return blob;
 }
 
-/** 解析が終わった画像を保存用の大きさに縮める */
-export const shrinkForGallery = (blob: Blob) => compressImage(blob, GALLERY);
+/**
+ * 解析が終わった画像を保存用の大きさに縮める。すでに保存用の大きさの JPEG はそのまま返す
+ * (再解析のたびに圧縮し直して画質が落ちたり、同じ画像の中身が変わって重なりを見つけられなくなったりしないように)。
+ */
+export async function shrinkForGallery(blob: Blob): Promise<Blob> {
+  if (blob.type === "image/jpeg") {
+    try {
+      const bmp = await createImageBitmap(blob);
+      const fits = Math.max(bmp.width, bmp.height) <= GALLERY.maxEdge;
+      bmp.close();
+      if (fits) return blob;
+    } catch {
+      /* 大きさを測れなければ縮める */
+    }
+  }
+  return compressImage(blob, GALLERY);
+}
 
 export function blobToBase64(blob: Blob): Promise<string> {
   return blobToDataUrl(blob).then((url) => url.slice(url.indexOf(",") + 1));

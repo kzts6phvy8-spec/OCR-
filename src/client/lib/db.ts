@@ -278,6 +278,8 @@ export const getExtraction = retrying(async function getExtraction(id: string): 
 export const deleteImagesNotInGallery = retrying(async function deleteImagesNotInGallery(ids: string[]) {
   const d = await db();
   const used = new Set((await d.getAll("warlords")).flatMap((w) => [w.image_url, ...w.gallery_images]));
+  // 解析待ち・解析中のジョブが使う画像は消さない (再解析の途中など)
+  for (const j of await d.getAll("jobs")) if (j.status !== "done") used.add(j.image_id);
   for (const id of ids) {
     if (used.has(id)) continue;
     await d.delete("images", id);
