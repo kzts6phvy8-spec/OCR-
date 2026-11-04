@@ -103,18 +103,60 @@ function findOniGroupIssues(warlords: Warlord[]): Issue[] {
     });
   }
 
-  // 組の名前 (鬼憑徳川四天王 など) で書かれた連携スキル: 同じ組の名前を持つ鬼を数える
-  const byGroup = new Map<string, Warlord[]>();
-  for (const w of [...onis, ...notOni]) {
-    for (const g of groupsOf(w)) byGroup.set(g, [...(byGroup.get(g) ?? []), w]);
+  // 組を数える。連携スキルの書き方は 2 通りあるので、どちらでも同じ組としてつなぐ:
+  // - 組の名前 (「鬼憑徳川四天王2体以上…」): 同じ組の名前を持つ鬼どうし
+  // - 「鬼憑 + 武将名」(「鬼憑毛利元就」など。その武将の鬼を指す): その武将とつなぐ
+  const allNames = new Set(warlords.map((w) => w.name));
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    const p = parent.get(x) ?? x;
+    if (p === x) return x;
+    const r = find(p);
+    parent.set(x, r);
+    return r;
+  };
+  const link = (x: string, y: string) => {
+    const rx = find(x);
+    const ry = find(y);
+    if (rx !== ry) parent.set(rx, ry);
+  };
+  const members = [...onis, ...notOni];
+  const groupLabel = new Map<string, string>(); // 武将名 → その武将が持つ組の名前 (知らせる時の見出し用)
+  for (const w of members) {
+    find(`w:${w.name}`);
+    for (const g of groupsOf(w)) {
+      const target = g.replace(/^鬼憑/, "");
+      if (allNames.has(target)) link(`w:${w.name}`, `w:${target}`);
+      else link(`w:${w.name}`, `g:${g}`);
+      if (!groupLabel.has(w.name)) groupLabel.set(w.name, g);
+    }
+    for (const s of w.synergy_skills) {
+      for (const n of splitPartners(s.partner)) {
+        const target = n.replace(/^鬼憑/, "");
+        if (target !== w.name && oniNames.has(target)) link(`w:${w.name}`, `w:${target}`);
+      }
+    }
   }
-  for (const [group, members] of byGroup) {
-    const unique = [...new Map(members.map((m) => [m.name, m])).values()];
+  const components = new Map<string, Warlord[]>();
+  for (const w of members) {
+    if (groupsOf(w).size === 0) continue; // 組が分からない鬼は上で知らせている
+    const root = find(`w:${w.name}`);
+    components.set(root, [...(components.get(root) ?? []), w]);
+  }
+  // 組に加わっていても、組の連携スキル自体はまだ読み取れていない鬼も数える
+  for (const w of onis) {
+    if (groupsOf(w).size > 0) continue;
+    const root = find(`w:${w.name}`);
+    if (components.has(root)) components.get(root)!.push(w);
+  }
+  for (const list of components.values()) {
+    const unique = [...new Map(list.map((m) => [m.name, m])).values()];
     if (unique.length >= ONI_GROUP_SIZE) continue;
+    const label = groupLabel.get(unique[0].name) ?? unique[0].name;
     issues.push({
       kind: "oni_group_incomplete",
       autoFix: false,
-      message: `鬼の組「${group}」で図鑑に登録されているのは ${unique.map((m) => m.name).join("・")} の ${unique.length} 人です。あと ${ONI_GROUP_SIZE - unique.length} 人が登録されていません`,
+      message: `鬼の組「${label}」で図鑑に登録されているのは ${unique.map((m) => m.name).join("・")} の ${unique.length} 人です。あと ${ONI_GROUP_SIZE - unique.length} 人が登録されていないか、連携スキルがまだ読み取れていません`,
       warlordIds: unique.map((m) => m.id),
     });
   }
@@ -124,7 +166,9 @@ function findOniGroupIssues(warlords: Warlord[]): Issue[] {
   for (const w of onis) {
     for (const s of w.synergy_skills) {
       if (oniGroupName(s.partner, s.effect)) continue;
-      const missing = splitPartners(s.partner).filter((n) => n !== w.name && !oniNames.has(n));
+      const missing = splitPartners(s.partner)
+        .map((n) => n.replace(/^鬼憑/, ""))
+        .filter((n) => n !== w.name && !oniNames.has(n));
       const key = [w.name, ...splitPartners(s.partner)].sort().join("、");
       if (missing.length === 0 || reported.has(key)) continue;
       reported.add(key);
