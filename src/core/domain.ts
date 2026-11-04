@@ -16,6 +16,7 @@ import {
   type WarlordInput,
 } from "./types.ts";
 import { inferPriorityFromCondition } from "./priorityRules.ts";
+import { detectSeason, normalizeSeason } from "./seasons.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
 
 const SPECIAL_MARKER_RE = /【\s*特\s*】/g;
@@ -485,10 +486,14 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
       .map((s) => ({ partner: String(s?.partner ?? "").trim(), effect: String(s?.effect ?? "").trim() }))
       .filter((s) => s.partner),
     no_synergy: Boolean(v.no_synergy),
+    oni_season: normalizeSeason(v.oni_season),
     image_url: String(v.image_url ?? "").trim() || gallery[0] || "",
     gallery_images: gallery,
   };
   if (out.has_weapon_awakening || out.awakening_after_weapon || out.awakening_skill_name) out.has_awakening = true;
+  // 鬼憑武将のシーズン: 手で選んでいなければ、連携スキルの文章から見つける
+  if (out.faction === "鬼憑武将" && !out.oni_season) out.oni_season = detectSeason(out.synergy_skills);
+  if (out.faction !== "鬼憑武将") out.oni_season = "";
   // 優先度が無い・古い表記 (極高 など) の時は、覚醒スキルの発動条件から一覧表で判断する
   if (!AWAKENING_PRIORITIES.includes(out.awakening_priority)) {
     const inferred = inferPriorityFromCondition(out.awakening_before_weapon || out.awakening_after_weapon);

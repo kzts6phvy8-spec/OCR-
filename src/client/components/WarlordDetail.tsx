@@ -34,6 +34,7 @@ import { useToast } from "../lib/toast.tsx";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { talentText, warlordToText } from "../../core/text.ts";
 import { StoredImage } from "./StoredImage.tsx";
+import { ONI_SEASONS } from "../../core/seasons.ts";
 import { WarlordPicker } from "./WarlordPicker.tsx";
 import { onQueueChange } from "../lib/queue.ts";
 import { differsByOneChar } from "../../core/ingest.ts";
@@ -369,6 +370,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                   {view.is_special && <SpecialBadge size="md" />}
                   <h2 className="font-serif text-3xl font-extrabold">{view.name}</h2>
                   {view.faction && <span className="rounded-lg bg-ebony-700 px-3 py-1 text-sm">{view.faction}</span>}
+                  {view.oni_season && <span className="rounded-lg border border-hi-600/60 px-3 py-1 text-sm text-hi-400">{view.oni_season}</span>}
                   <span className="font-mono text-lg font-bold text-shu-300">
                     {view.level > 0 && `Lv.${view.level} `}
                     {view.stars > 0 && <span className="text-base">★{view.stars}</span>}
@@ -863,6 +865,16 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
               ))}
             </select>
           </Field>
+          {draft.faction === "鬼憑武将" && (
+            <Field label="シーズン (4 人の組)">
+              <select className="field" value={draft.oni_season ?? ""} onChange={(e) => set("oni_season", e.target.value)}>
+                <option value="">— (連携スキルから自動)</option>
+                {ONI_SEASONS.map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Lv">
             <input type="number" min={0} className="field" value={draft.level || ""} onChange={(e) => set("level", num(e.target.value))} />
           </Field>

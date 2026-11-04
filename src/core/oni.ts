@@ -5,6 +5,7 @@
 import type { SynergySkill, Warlord } from "./types.ts";
 import type { WarlordRepo } from "./ingest.ts";
 import { normalizeInput, partnerKey, sameSynergy, splitPartners } from "./domain.ts";
+import { seasonInText } from "./seasons.ts";
 
 export const ONI_FACTION = "鬼憑武将";
 
@@ -64,6 +65,19 @@ export async function shareOniSynergies(repo: WarlordRepo, w: Warlord): Promise<
           normalizeInput({ ...input, synergy_skills: [...other.synergy_skills, { partner, effect: s.effect }] }),
         );
         changed.push(saved);
+      }
+    }
+  }
+  // 同じシーズンの鬼は、シーズンの名前が書かれた連携スキル (「鬼憑徳川四天王2体以上…」など) が同じなので、それも広める
+  if (w.oni_season && repo.list) {
+    const seasonal = w.synergy_skills.filter((s) => s.effect.trim() && seasonInText(`${s.partner} ${s.effect}`) === w.oni_season);
+    if (seasonal.length) {
+      for (const other of await repo.list()) {
+        if (other.id === w.id || other.faction !== ONI_FACTION || other.oni_season !== w.oni_season || other.is_special !== w.is_special) continue;
+        const add = seasonal.filter((s) => !other.synergy_skills.some((x) => sameSynergy(x, s)));
+        if (add.length === 0) continue;
+        const { id: _i, created_at: _c, updated_at: _u, screenshot_count: _s, ...input } = other;
+        changed.push(await repo.update(other.id, normalizeInput({ ...input, synergy_skills: [...other.synergy_skills, ...add.map((s) => ({ ...s }))] })));
       }
     }
   }

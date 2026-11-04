@@ -85,3 +85,20 @@ describe("鬼憑武将の連携スキル", () => {
     expect(sp.warlord.synergy_skills.map((x) => x.partner)).toEqual(["出浦盛清"]);
   });
 });
+
+describe("鬼のシーズン", () => {
+  it("同じシーズンの鬼に、シーズンの連携スキルを広める", async () => {
+    const r = createMemoryRepo();
+    const add2 = (name: string, synergy?: { partner: string; effect: string }, season = "") =>
+      ingestExtraction(r, makeExtraction({ name, faction: "鬼憑武将", synergy_skills: synergy ? [synergy] : [] }), {
+        mode: "auto",
+        targetId: null,
+        imageId: name,
+      }).then(async (res) => (season ? r.update(res.warlord.id, { ...res.warlord, oni_season: season }) : res.warlord));
+    await add2("内藤昌豊", undefined, "武田四天王");
+    const syn = { partner: "鬼憑武田四天王", effect: "鬼憑武田四天王2体以上が場内にいる場合、攻+10%" };
+    await add2("山県昌景", syn);
+    const naito = (await r.findByName("内藤昌豊"))[0];
+    expect(naito.synergy_skills).toEqual([syn]);
+  });
+});

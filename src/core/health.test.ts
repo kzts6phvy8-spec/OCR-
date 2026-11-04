@@ -31,7 +31,7 @@ describe("自動点検", () => {
     const oni = (name: string) => w({ name, faction: "鬼憑武将", gallery_images: ids(3), synergy_skills: [syn(1), syn(2)] });
     const two = findIssues([oni("井伊直政"), oni("酒井忠次")]).filter((i) => i.kind === "oni_group_incomplete");
     expect(two).toHaveLength(1);
-    expect(two[0].message).toMatch(/あと 2 人/);
+    expect(two[0].message).toMatch(/徳川四天王」で図鑑に登録されているのは 井伊直政・酒井忠次 の 2 人です。あと 2 人/);
     expect(kinds([oni("井伊直政"), oni("酒井忠次"), oni("本多忠勝"), oni("榊原康政")])).toEqual([]);
     // 連携相手に名前が並んでいる時は、登録されていない名前を知らせる
     const named = w({ name: "鬼A", faction: "鬼憑武将", gallery_images: ids(3), synergy_skills: [{ partner: "鬼B、鬼C、鬼D", effect: "同時に場内にいる場合、攻+10%" }] });
@@ -47,10 +47,9 @@ describe("自動点検", () => {
       w({ name: "酒井忠次", faction: "東海", gallery_images: ids(3), synergy_skills: [syn] }), // 勢力の読み違い
       w({ name: "本多忠勝", faction: "鬼憑武将", gallery_images: ids(3) }), // 連携スキルがまだ
     ]).map((i) => i.message);
-    expect(msgs.join()).toMatch(/酒井忠次」は鬼の組「鬼憑徳川四天王」の連携スキルがあるのに、勢力が「鬼憑武将」になっていません/);
-    expect(msgs.join()).toMatch(/鬼「本多忠勝」の連携スキルがまだ読み取れていない/);
-    // 勢力の違う武将も組の人数には数える (井伊直政・酒井忠次の 2 人)
-    expect(msgs.join()).toMatch(/あと 2 人/);
+    expect(msgs.join()).toMatch(/酒井忠次」は鬼の組「徳川四天王」の連携スキルがあるのに、勢力が「鬼憑武将」になっていません/);
+    expect(msgs.join()).toMatch(/鬼「本多忠勝」のシーズンが分かりません/);
+    expect(msgs.join()).toMatch(/シーズン「徳川四天王」で図鑑に登録されているのは 井伊直政 の 1 人/);
   });
 
   it("鬼の組ではない連携スキルしかない鬼憑武将は、勢力の読み違いとして知らせる", () => {
@@ -72,6 +71,15 @@ describe("自動点検", () => {
     ];
     expect(findIssues(four).filter((i) => i.kind === "oni_group_incomplete")).toEqual([]);
     // 1 人だけなら知らせる
-    expect(findIssues([four[0]]).map((i) => i.message).join()).toMatch(/あと 3 人/);
+    expect(findIssues([four[0]]).map((i) => i.message).join()).toMatch(/シーズンが分かりません/);
+  });
+
+  it("シーズンは連携スキルの文章から見つけ、手で選んだシーズンも使う", () => {
+    const oni = (name: string, input: Partial<WarlordInput> = {}) => w({ name, faction: "鬼憑武将", gallery_images: ids(3), ...input });
+    const syn = { partner: "鬼憑武田四天王", effect: "鬼憑武田四天王2体以上が場内にいる場合、攻+10%" };
+    const list = [oni("山県昌景", { synergy_skills: [syn] }), oni("馬場信春", { synergy_skills: [syn] }), oni("内藤昌豊", { oni_season: "武田四天王" }), oni("高坂昌信", { oni_season: "武田四天王" })];
+    expect(list[0].oni_season).toBe("武田四天王");
+    expect(findIssues(list).filter((i) => i.kind === "oni_group_incomplete")).toEqual([]);
+    expect(findIssues(list.slice(0, 3)).map((i) => i.message).join()).toMatch(/「武田四天王」で図鑑に登録されているのは .* 3 人です。あと 1 人/);
   });
 });
