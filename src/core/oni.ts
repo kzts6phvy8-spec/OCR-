@@ -29,6 +29,8 @@ export async function cleanOniSynergies(
   if (w.faction !== ONI_FACTION) return { warlord: w, removed: [], suspicious: [] };
   const odd = w.synergy_skills.filter((s) => !isOniSynergy(s));
   if (odd.length === 0) return { warlord: w, removed: [], suspicious: [] };
+  // 鬼の組の連携スキルが 1 つも無い武将は、鬼ではない (勢力の読み違い) かもしれないので、何も取り除かない
+  if (!w.synergy_skills.some(isOniSynergy)) return { warlord: w, removed: [], suspicious: odd };
   const others = (await repo.findByName(w.name)).filter((o) => o.faction !== ONI_FACTION);
   const removed = odd.filter((s) => others.some((o) => o.synergy_skills.some((x) => sameSynergy(x, s))));
   const suspicious = odd.filter((s) => !removed.includes(s));

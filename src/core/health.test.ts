@@ -52,4 +52,12 @@ describe("自動点検", () => {
     // 勢力の違う武将も組の人数には数える (井伊直政・酒井忠次の 2 人)
     expect(msgs.join()).toMatch(/あと 2 人/);
   });
+
+  it("鬼の組ではない連携スキルしかない鬼憑武将は、勢力の読み違いとして知らせる", () => {
+    const msgs = findIssues([
+      w({ name: "猿飛佐助", is_special: true, faction: "鬼憑武将", gallery_images: ids(3), synergy_skills: [{ partner: "出浦盛清", effect: "出浦盛清と同時に場内にいる場合、回避+10%" }] }),
+    ]).map((i) => i.message);
+    expect(msgs.join()).toMatch(/鬼の組ではありません/);
+    expect(msgs.join()).not.toMatch(/まだ読み取れていない/);
+  });
 });
