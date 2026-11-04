@@ -159,7 +159,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
   };
   const reanalyze = async () => {
     if (!warlord) return;
-    if (!confirm(`登録済みの ${warlord.gallery_images.length} 枚を、もう一度解析して「${warlord.name}」に統合しますか？\n空欄の項目だけが埋まります。立ち絵が違う画像が混ざっていたら、先に立ち絵ごとに分けます。`)) return;
+    if (!confirm(`登録済みの ${warlord.gallery_images.length} 枚を、もう一度解析しますか？\n「${warlord.name}」の読み取った内容 (スキル・天賦・連携など) を、この画像だけから作り直します。手で直した内容は消えます (名前・通常/特異・勢力はそのまま)。立ち絵が違う画像が混ざっていたら、先に立ち絵ごとに分けます。`)) return;
     try {
       // 立ち絵が違う画像が混ざっていたら、再解析より先に分ける (この武将に統合し直すと混ざったままになるため)
       const split = await api.splitWarlord(warlord.id);
