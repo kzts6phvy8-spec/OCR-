@@ -35,6 +35,7 @@ import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { talentText, warlordToText } from "../../core/text.ts";
 import { StoredImage } from "./StoredImage.tsx";
 import { ONI_SEASONS } from "../../core/seasons.ts";
+import { CLOSED_SYNERGY_FACTIONS, synergyPartners } from "../../core/synergyScope.ts";
 import { WarlordPicker } from "./WarlordPicker.tsx";
 import { onQueueChange } from "../lib/queue.ts";
 import { differsByOneChar } from "../../core/ingest.ts";
@@ -800,7 +801,8 @@ function DetailView({
         {w.synergy_skills.length ? (
           <div className="grid gap-2 md:grid-cols-2">
             {w.synergy_skills.map((s, i) => {
-              const partners = allWarlords.filter((p) => p.name === s.partner);
+              // コラボ武将はコラボ武将と、鬼は鬼とだけ連携する (同じ名前の通常・特異などは相手にしない)
+              const partners = synergyPartners(w, s.partner, allWarlords);
               return (
                 <div key={i} className="rounded-lg border border-ebony-700 bg-ebony-900 p-3">
                   <div className="mb-1 flex items-center gap-2">
@@ -811,7 +813,9 @@ function DetailView({
                         onClick={() => onOpenOther(p.id)}
                         className="rounded border border-ebony-600 px-1.5 text-[10px] text-ash hover:border-gold-500 hover:text-gold-300"
                       >
-                        {p.is_special ? "特異" : "通常"}を見る
+                        {p.name !== s.partner ? `${p.name} ` : ""}
+                        {p.is_special ? "特異" : "通常"}
+                        {p.faction && CLOSED_SYNERGY_FACTIONS.includes(p.faction) ? `(${p.faction})` : ""}を見る
                       </button>
                     ))}
                   </div>
