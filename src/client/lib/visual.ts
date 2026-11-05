@@ -1,5 +1,6 @@
 import type { Warlord } from "../../core/types.ts";
 import type { ArtCheck } from "../../core/ingest.ts";
+import { MAX_IMAGES_PER_WARLORD } from "../../core/health.ts";
 import * as db from "./db.ts";
 import { artSignature, blobToBase64, compressImage, signatureSimilarity } from "./images.ts";
 import { geminiHttpError } from "./geminiShared.ts";
@@ -200,7 +201,30 @@ export function interpretAnswer(text: string, strict = false): "same" | "differe
 }
 
 /** 判定する画像 (端末内の画像 ID) が、登録済みの武将と同じ立ち絵かを確かめる関数を作る */
-export function artChecker(imageId: string): ArtCheck {
+/** 画面の種類 (基本情報・天賦・連携など) を比べやすくする */
+const screenKey = (t: string) => t.normalize("NFKC").replace(/\s|画面|情報/g, "");
+
+/**
+ * 候補の武将が「同じ武将らしくない」手がかりがあるか。あれば、AI が迷った時に統合しない (確信が無ければ別の武将とする)。
+ * - 画像がもう 6 枚ある (1 人の武将に統合される画像は多くても 6 枚)
+ * - 判定する画像と同じ種類の画面 (天賦の画面どうし など) が、もう登録されている
+ */
+async function looksLikeAnother(candidate: Warlord, ids: string[], screens: string[]): Promise<boolean> {
+  if (candidate.gallery_images.length >= MAX_IMAGES_PER_WARLORD) return true;
+  const mine = new Set(screens.map(screenKey).filter(Boolean));
+  if (mine.size === 0) return false;
+  for (const id of ids) {
+    const ext = await db.getExtraction(id).catch(() => null);
+    if (ext?.screen_types.some((t) => mine.has(screenKey(t)))) return true;
+  }
+  return false;
+}
+
+/**
+ * 判定する画像 (端末内の画像 ID) が、登録済みの武将と同じ立ち絵かを確かめる関数を作る。
+ * screens: 判定する画像に写っている画面の種類 (読み取り結果から)。
+ */
+export function artChecker(imageId: string, screens: string[] = []): ArtCheck {
   return async (candidate, opts = {}) => {
     const ids = imagesOf(candidate).filter((id) => id !== imageId);
     if (ids.length === 0) return "unknown";
@@ -229,7 +253,9 @@ export function artChecker(imageId: string): ArtCheck {
       if (blob) parts.push({ image: await blobToBase64(await compressImage(blob, PREVIEW)) });
     }
     parts.push({ text: "判定する画像:" }, { image: await blobToBase64(await compressImage(targetBlob, PREVIEW)) });
-    return interpretAnswer(await ask(parts, loadSettings()), opts.strict);
+    // 別の武将らしい手がかりがあれば、AI が迷った時 (確信の無い「違う」) も別の武将とする
+    const strict = opts.strict || (await looksLikeAnother(candidate, ids, screens));
+    return interpretAnswer(await ask(parts, loadSettings()), strict);
   };
 }
 
