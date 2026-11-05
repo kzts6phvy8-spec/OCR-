@@ -313,7 +313,7 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
       adoptSpecial: job.adopt_special,
       imageId: job.image_id,
       faction: job.faction ?? "",
-      sameArt: artChecker(job.image_id),
+      sameArt: artChecker(job.image_id, extraction.screen_types),
       excludeIds: job.exclude_ids,
       similarNames: async (name) => {
         // 名前だけを索引から読む (全武将の中身を毎回読むと遅い)
