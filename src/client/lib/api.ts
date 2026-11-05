@@ -233,21 +233,10 @@ export const api = {
     const w = await db.getWarlord(id);
     if (!w || w.gallery_images.length === 0) return [];
     // 読み取った内容は、この武将の画像だけから作り直す (今の内容に重ねると、前に混ざった別の武将の情報が残り続けるため)。
-    // 名前・通常/特異・勢力・「連携スキルなし」の印と画像はそのまま
-    await db.updateWarlord(
-      id,
-      normalizeInput({
-        ...emptyWarlordInput(),
-        name: w.name,
-        is_special: w.is_special,
-        faction: w.faction,
-        no_synergy: w.no_synergy,
-        gallery_images: w.gallery_images,
-        image_url: w.image_url,
-      }),
-    );
+    // 消すのは、この回の最初の画像の読み取りが成功して保存する直前 (全部失敗した時に、武将が空のまま残らないように)
+    const resetBatch = crypto.randomUUID();
     const images = w.gallery_images.map((imageId, i) => ({ fileName: `${w.name} の画像${i + 1} (再解析)`, imageId }));
-    return queue.enqueue(images, "auto", id, "", true);
+    return queue.enqueue(images, "auto", id, "", true, { resetBatch });
   },
 
   /**
@@ -331,7 +320,16 @@ export const api = {
     const kept = [...keep, ...unknown];
     await db.updateWarlord(
       id,
-      normalizeInput({ ...emptyWarlordInput(), name: w.name, is_special: w.is_special, faction: w.faction, gallery_images: [], image_url: "" }),
+      normalizeInput({
+        ...emptyWarlordInput(),
+        name: w.name,
+        is_special: w.is_special,
+        faction: w.faction,
+        oni_season: w.oni_season,
+        no_synergy: w.no_synergy,
+        gallery_images: [],
+        image_url: "",
+      }),
     );
     const label = `${w.name} (立ち絵ごとに分ける)`;
     let count = 0;
@@ -421,7 +419,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["dedupeImages", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }

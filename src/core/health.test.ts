@@ -78,8 +78,14 @@ describe("自動点検", () => {
     const oni = (name: string, input: Partial<WarlordInput> = {}) => w({ name, faction: "鬼憑武将", gallery_images: ids(3), ...input });
     const syn = { partner: "鬼憑武田四天王", effect: "鬼憑武田四天王2体以上が場内にいる場合、攻+10%" };
     const list = [oni("山県昌景", { synergy_skills: [syn] }), oni("馬場信春", { synergy_skills: [syn] }), oni("内藤昌豊", { oni_season: "武田四天王" }), oni("高坂昌信", { oni_season: "武田四天王" })];
-    expect(list[0].oni_season).toBe("武田四天王");
+    // 文章から分かるシーズンは保存せず、使う時に見つける
+    expect(list[0].oni_season).toBe("");
     expect(findIssues(list).filter((i) => i.kind === "oni_group_incomplete")).toEqual([]);
     expect(findIssues(list.slice(0, 3)).map((i) => i.message).join()).toMatch(/「武田四天王」で図鑑に登録されているのは .* 3 人です。あと 1 人/);
+  });
+
+  it("「鬼憑」の付かないシーズン名 (普通の武将の連携) では、鬼の組とみなさない", () => {
+    const normal = w({ name: "吉川元春", faction: "中.九", gallery_images: ids(3), synergy_skills: [{ partner: "小早川隆景", effect: "毛利両川: 2人が場内にいる場合、攻+10%" }] });
+    expect(findIssues([normal]).filter((i) => i.kind === "oni_group_incomplete")).toEqual([]);
   });
 });

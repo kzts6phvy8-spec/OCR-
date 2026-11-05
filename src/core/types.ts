@@ -81,6 +81,8 @@ export interface Warlord {
   no_synergy?: boolean;
   /** 鬼憑武将のシーズン (4 人の組。例: 徳川四天王)。連携スキルから自動で入るほか、手でも選べる */
   oni_season?: string;
+  /** 最後に「再解析」で読み取った内容を作り直した回 (同じ回の 2 枚目以降で消し直さないため) */
+  reset_batch?: string;
 
   /** 代表画像の ID (端末内の画像ストア) */
   image_url: string;
@@ -133,6 +135,8 @@ export interface OcrJob {
   exclude_ids?: string[];
   /** 統合先が新しく作ったばかりの武将: 通常/特異は画像の読み取り結果に合わせる */
   adopt_special?: boolean;
+  /** 「再解析」の回。この回の最初の保存の前に、統合先の読み取った内容を空にする */
+  reset_batch?: string;
   created_at: string;
   updated_at: string;
 }

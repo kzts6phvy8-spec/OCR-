@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Flame } from "lucide-react";
 import type { Warlord } from "../../core/types.ts";
 import { ONI_SEASONS, detectSeason } from "../../core/seasons.ts";
@@ -6,13 +7,15 @@ import { ONI_GROUP_SIZE, resolveOniSeasons } from "../../core/health.ts";
 // 「データ管理」の鬼のシーズン一覧: シーズン (4 人の組) ごとに、図鑑に登録されている鬼を並べる
 
 export function OniSeasonPanel({ warlords, onOpenWarlord }: { warlords: Warlord[]; onOpenWarlord: (id: string) => void }) {
-  const onis = warlords.filter((w) => w.faction === "鬼憑武将");
-  // シーズンの名前が書かれた連携スキルがあるのに、勢力が鬼憑武将になっていない武将 (勢力の読み違い)
-  const wrongFaction = warlords.filter((w) => w.faction !== "鬼憑武将" && detectSeason(w.synergy_skills));
+  const { onis, wrongFaction, seasonOf, unknown } = useMemo(() => {
+    const onis = warlords.filter((w) => w.faction === "鬼憑武将");
+    // 「鬼憑 + シーズン名」の連携スキルがあるのに、勢力が鬼憑武将になっていない武将 (勢力の読み違い)
+    const wrongFaction = warlords.filter((w) => w.faction !== "鬼憑武将" && detectSeason(w.synergy_skills));
+    // 点検と同じ決め方 (選んだシーズン・連携スキルの文章・連携スキルで指し合う鬼から)
+    const seasonOf = resolveOniSeasons(onis);
+    return { onis, wrongFaction, seasonOf, unknown: onis.filter((w) => !seasonOf.has(w.id)) };
+  }, [warlords]);
   if (onis.length === 0 && wrongFaction.length === 0) return null;
-  // 点検と同じ決め方 (選んだシーズン・連携スキルの文章・連携スキルで指し合う鬼から)
-  const seasonOf = resolveOniSeasons(onis);
-  const unknown = onis.filter((w) => !seasonOf.has(w.id));
   return (
     <section className="panel p-5 md:col-span-2">
       <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
@@ -41,7 +44,7 @@ export function OniSeasonPanel({ warlords, onOpenWarlord }: { warlords: Warlord[
                     <button key={w.id} onClick={() => onOpenWarlord(w.id)} className="rounded border border-ebony-600 px-1.5 py-0.5 text-xs text-gold-300">
                       {w.is_special ? "【特】" : ""}
                       {w.name}
-                      {!w.oni_season && <span className="ml-0.5 text-[10px] text-ash">(推定)</span>}
+                      {!w.oni_season && !detectSeason(w.synergy_skills) && <span className="ml-0.5 text-[10px] text-ash">(推定)</span>}
                     </button>
                   ))}
                 </div>
