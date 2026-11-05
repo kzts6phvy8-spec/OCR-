@@ -487,13 +487,15 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
       .filter((s) => s.partner),
     no_synergy: Boolean(v.no_synergy),
     oni_season: normalizeSeason(v.oni_season),
+    reset_batch: typeof v.reset_batch === "string" ? v.reset_batch : undefined,
     image_url: String(v.image_url ?? "").trim() || gallery[0] || "",
     gallery_images: gallery,
   };
   if (out.has_weapon_awakening || out.awakening_after_weapon || out.awakening_skill_name) out.has_awakening = true;
   // 鬼憑武将のシーズン: 手で選んでいなければ、連携スキルの文章から見つける
-  if (out.faction === "鬼憑武将" && !out.oni_season) out.oni_season = detectSeason(out.synergy_skills);
-  if (out.faction !== "鬼憑武将") out.oni_season = "";
+  // 鬼憑武将のシーズン: 保存するのは手で選んだものだけ。連携スキルの文章から分かるものは、使う時に毎回見つける
+  // (保存すると、連携スキルが直った・取り除かれた後も古いシーズンが残ってしまうため)
+  if (out.faction !== "鬼憑武将" || out.oni_season === detectSeason(out.synergy_skills)) out.oni_season = "";
   // 優先度が無い・古い表記 (極高 など) の時は、覚醒スキルの発動条件から一覧表で判断する
   if (!AWAKENING_PRIORITIES.includes(out.awakening_priority)) {
     const inferred = inferPriorityFromCondition(out.awakening_before_weapon || out.awakening_after_weapon);

@@ -1,6 +1,6 @@
 import type { Faction, OcrJob, UploadMode } from "../../core/types.ts";
 import { differsByOneChar, ingestExtraction } from "../../core/ingest.ts";
-import { warlordLabel } from "../../core/domain.ts";
+import { emptyWarlordInput, normalizeInput, warlordLabel } from "../../core/domain.ts";
 import * as db from "./db.ts";
 import { bgActive, loadSettings } from "./settings.ts";
 import { callServer, type RemoteResult, type ServerCounts } from "./remote.ts";
@@ -136,6 +136,8 @@ export async function enqueue(
     reuse?: boolean;
     /** この武将たちには統合しない */
     excludeIds?: string[];
+    /** 再解析の回 (最初の保存の前に、統合先の読み取った内容を空にする) */
+    resetBatch?: string;
   } = {},
 ) {
   const now = new Date().toISOString();
@@ -149,6 +151,7 @@ export async function enqueue(
   const jobs: OcrJob[] = imageIds.map((f) => ({
     ...(keepImage ? { keep_image: true } : {}),
     ...(opts.excludeIds?.length ? { exclude_ids: opts.excludeIds } : {}),
+    ...(opts.resetBatch ? { reset_batch: opts.resetBatch } : {}),
     // 読み取り結果があれば、この端末で保存だけ行う
     ...(saved.has(f.imageId) ? { extraction: saved.get(f.imageId), local: true } : {}),
     id: crypto.randomUUID(),
@@ -284,6 +287,26 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
     // 順番を待つ間に取り除かれた・統合先が付け替えられたかもしれないので、今の状態で保存する
     const job = await db.getJob(snapshot.id);
     if (!job || (job.status !== "processing" && job.status !== "remote")) throw new JobCancelled();
+    // 再解析: この回で最初に保存する画像の前に、統合先の読み取った内容を空にする (名前・通常/特異・勢力・シーズン・印・画像は残す)
+    if (job.reset_batch && job.target_id) {
+      const target = await db.getWarlord(job.target_id);
+      if (target && target.reset_batch !== job.reset_batch) {
+        await db.updateWarlord(
+          target.id,
+          normalizeInput({
+            ...emptyWarlordInput(),
+            name: target.name,
+            is_special: target.is_special,
+            faction: target.faction,
+            oni_season: target.oni_season,
+            no_synergy: target.no_synergy,
+            gallery_images: target.gallery_images,
+            image_url: target.image_url,
+            reset_batch: job.reset_batch,
+          }),
+        );
+      }
+    }
     return ingestExtraction(db.repo, extraction, {
       mode: job.mode,
       targetId: job.target_id,

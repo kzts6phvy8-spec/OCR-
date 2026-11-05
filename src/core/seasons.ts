@@ -27,10 +27,19 @@ export function seasonInText(text: string): string {
   return ONI_SEASONS.find((s) => t.includes(norm(s))) ?? "";
 }
 
-/** 連携スキルからシーズンを見つける */
+/**
+ * 鬼の連携スキルの文章から、シーズンを見つける。「鬼憑徳川四天王」のように「鬼憑」の直後にシーズン名がある時だけ
+ * (「徳川四天王」「毛利両川」などは普通の武将の連携スキルにも出てくるので、名前だけでは鬼のシーズンとみなさない)。
+ */
+export function oniSeasonInText(text: string): string {
+  const t = norm(text);
+  return ONI_SEASONS.find((s) => t.includes(`鬼憑${norm(s)}`)) ?? "";
+}
+
+/** 連携スキルからシーズンを見つける (「鬼憑 + シーズン名」がある時だけ) */
 export function detectSeason(synergies: { partner: string; effect: string }[]): string {
   for (const s of synergies) {
-    const found = seasonInText(`${s.partner} ${s.effect}`);
+    const found = oniSeasonInText(`${s.partner} ${s.effect}`);
     if (found) return found;
   }
   return "";
