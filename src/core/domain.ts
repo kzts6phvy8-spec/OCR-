@@ -325,22 +325,23 @@ export const fixColumnOrderTalents = (talents: Talent[]): Talent[] =>
 /**
  * 天賦の並びが「列の順番 (星 1・3・5・2・4)」でずれているかを、解放済みかどうかの並びから判断する (AI なし)。
  * 天賦は星1 から順に解放されるので、正しい並びなら「解放済み → 未解放」と前から続く。
- *  - "column": 今の並びではありえず、並べ替えると筋が通る → ずれている
- *  - "ok":     今の並びで筋が通り、並べ替えるとありえない → 合っている
- *  - "unknown": 全部解放済み・全部未解放などで見分けられない
+ * 前の版の読み取りには、正しい並び・列の順番・左右が逆 (星 2・1・4・3・5) の 3 通りがありうるので、
+ * 3 通りのうち筋が通るのが 1 通りだけの時だけ決める。
+ *  - "column": 列の順番でずれている
+ *  - "ok":     合っている
+ *  - "unknown": 見分けられない (全部解放済み・左右逆と区別できない など)
  */
+const READ_PATTERNS = { ok: [0, 1, 2, 3, 4, 5], column: COLUMN_ORDER_TO_STAR, swapped: [0, 2, 1, 4, 3, 5] } as const;
 export function detectTalentOrder(talents: Talent[]): "column" | "ok" | "unknown" {
   const stars = talents.map((t) => t.star_level).sort((a, b) => a - b);
   if (stars.join() !== "1,2,3,4,5") return "unknown";
-  const isPrefix = (list: Talent[]) => {
-    const flags = [...list].sort((a, b) => a.star_level - b.star_level).map((t) => t.unlocked);
+  const fits = (map: readonly number[]) => {
+    const flags = talents.map((t) => ({ star: map[t.star_level], unlocked: t.unlocked })).sort((a, b) => a.star - b.star).map((t) => t.unlocked);
     return flags.every((f, i) => i === 0 || !f || flags[i - 1]);
   };
-  const now = isPrefix(talents);
-  const fixed = isPrefix(fixColumnOrderTalents(talents));
-  if (!now && fixed) return "column";
-  if (now && !fixed) return "ok";
-  return "unknown";
+  const matches = (Object.keys(READ_PATTERNS) as (keyof typeof READ_PATTERNS)[]).filter((k) => fits(READ_PATTERNS[k]));
+  if (matches.length !== 1 || matches[0] === "swapped") return "unknown";
+  return matches[0];
 }
 
 export const undoTalentReorder = (talents: Talent[]): Talent[] =>
@@ -546,6 +547,7 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     oni_season: normalizeSeason(v.oni_season),
     talent_order_v2: Boolean(v.talent_order_v2),
     talent_reorder_undone: Boolean(v.talent_reorder_undone),
+    talent_check_v2: Boolean(v.talent_check_v2),
     reset_batch: typeof v.reset_batch === "string" ? v.reset_batch : undefined,
     image_url: String(v.image_url ?? "").trim() || gallery[0] || "",
     gallery_images: gallery,

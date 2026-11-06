@@ -114,6 +114,14 @@ export const api = {
     let fixed = 0;
     let unknown = 0;
     for (const w of await db.listWarlords()) {
+      // 前の版の自動判断は、星2・星3 まで解放の武将で左右逆の読み取りと取り違えることがあった。
+      // その武将は確かめ済みの印を外して、AI の読み直しの対象に戻す (1 回だけ)
+      if (!w.talent_check_v2) {
+        const unlockedCount = w.talents.filter((t) => t.unlocked).length;
+        const recheck = w.talent_order_v2 && w.talents.length === 5 && (unlockedCount === 2 || unlockedCount === 3);
+        await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), talent_check_v2: true, ...(recheck ? { talent_order_v2: false } : {}) }));
+        if (recheck) w.talent_order_v2 = false;
+      }
       if (w.talent_order_v2 || w.talents.length === 0) continue;
       const order = detectTalentOrder(w.talents);
       if (order === "unknown") {

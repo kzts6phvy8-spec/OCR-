@@ -85,6 +85,8 @@ export interface Warlord {
   talent_order_v2?: boolean;
   /** 前の版の並べ替えを元に戻し済みか */
   talent_reorder_undone?: boolean;
+  /** 天賦の並びの自動判断の見直し (左右逆の読み取りと取り違えないように) を済ませたか */
+  talent_check_v2?: boolean;
   /** 最後に「再解析」で読み取った内容を作り直した回 (同じ回の 2 枚目以降で消し直さないため) */
   reset_batch?: string;
 
