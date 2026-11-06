@@ -3,6 +3,9 @@ import {
   decideSpecial,
   detectTalentOrder,
   fixTalentOrder,
+  learnTalentStats,
+  talentKind,
+  talentRules,
   emptyWarlordInput,
   extractionToPatch,
   mergeWarlord,
@@ -254,5 +257,25 @@ describe("天賦の並びを効果の中身から見分ける", () => {
   it("手がかりになる効果が無ければ決めない", () => {
     const talents = [1, 2, 3, 4, 5].map((n) => ({ star_level: n, position: "", name: "", effect: `攻+${n}%`, unlocked: true }));
     expect(detectTalentOrder(talents)).toBe("unknown");
+  });
+});
+
+describe("並びが確かな武将から天賦の法則を学ぶ", () => {
+  const row = (effects: string[]) => effects.map((e, i) => ({ star_level: i + 1, position: "", name: "", effect: e, unlocked: true }));
+  const known = Array.from({ length: 6 }, (_, i) => row([`物理防御+${10 + i}%`, "計攻+10%", "兵数上限+500", "計ダメ+10%", "ダメージ軽減+5%"]));
+  it("効果の種類は数値を除いて比べる", () => {
+    expect(talentKind("物理防御+30%")).toBe("物理防御");
+  });
+  it("はっきりした法則を見つける", () => {
+    const rules = talentRules(learnTalentStats(known));
+    expect(rules.find((r) => r.kind === "物理防御")).toMatchObject({ star: 1, share: 1, count: 6 });
+  });
+  it("学んだ法則で、手がかりの決まりが無い効果でも並びのずれを直せる", () => {
+    const stats = learnTalentStats(known);
+    const real = ["物理防御+30%", "計攻+20%", "兵数上限+800", "計ダメ+12%", "ダメージ軽減+8%"];
+    const column = [0, 1, 3, 5, 2, 4];
+    const talents = [1, 2, 3, 4, 5].map((stored) => ({ star_level: stored, position: "", name: "", effect: real[column[stored] - 1], unlocked: true }));
+    expect(detectTalentOrder(talents, stats)).toBe("column");
+    expect(detectTalentOrder(row(real), stats)).toBe("ok");
   });
 });

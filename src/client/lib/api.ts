@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
-import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
+import type { ExportPayload, Faction, OcrJob, Talent, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { decideSpecial, detectTalentOrder, emptyWarlordInput, fixTalentOrder, mergeWarlord, normalizeInput, undoTalentReorder } from "../../core/domain.ts";
+import { decideSpecial, detectTalentOrder, emptyWarlordInput, fixTalentOrder, learnTalentStats, talentRules, mergeWarlord, normalizeInput, undoTalentReorder } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
@@ -112,8 +112,9 @@ export const api = {
    */
   async autoFixTalentOrder(): Promise<{ fixed: number; unknown: number; cancelled: number }> {
     let fixed = 0;
-    let unknown = 0;
     const decided = new Set<string>();
+    const known: Talent[][] = [];
+    let pending: Warlord[] = [];
     for (const w of await db.listWarlords()) {
       // 前の版の自動判断は、星2・星3 まで解放の武将で左右逆の読み取りと取り違えることがあった。
       // その武将は確かめ済みの印を外して、もう一度判断する (1 回だけ)
@@ -125,22 +126,42 @@ export const api = {
       }
       if (w.talent_order_v2) {
         decided.add(w.id);
+        known.push(w.talents);
         continue;
       }
-      if (w.talents.length === 0) continue;
-      const order = detectTalentOrder(w.talents);
-      if (order === "unknown") {
-        unknown++;
-        continue;
-      }
-      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), talents: fixTalentOrder(w.talents, order), talent_order_v2: true }));
-      decided.add(w.id);
-      if (order !== "ok") fixed++;
+      if (w.talents.length > 0) pending.push(w);
     }
+    // 並びが確かな武将から「効果の種類ごとに星いくつに出やすいか」を学び、それで残りを判断する。
+    // 決まった武将も学ぶ材料に加えて、決まらなくなるまで繰り返す
+    for (let round = 0; round < 5 && pending.length > 0; round++) {
+      const stats = learnTalentStats(known);
+      const rest: Warlord[] = [];
+      for (const w of pending) {
+        const order = detectTalentOrder(w.talents, stats);
+        if (order === "unknown") {
+          rest.push(w);
+          continue;
+        }
+        const talents = fixTalentOrder(w.talents, order);
+        await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), talents, talent_order_v2: true }));
+        decided.add(w.id);
+        known.push(talents);
+        if (order !== "ok") fixed++;
+      }
+      if (rest.length === pending.length) break;
+      pending = rest;
+    }
+    const unknown = pending.length;
     // 並びが決まった武将の、待機中の「天賦の読み直し」は取り消す (AI の回数を使わない)
     const stale = (await db.listJobs()).filter((j) => j.talents_only && j.status === "queued" && j.target_id && decided.has(j.target_id));
     const cancelled = stale.length ? await queue.removeJobs(stale.map((j) => j.id)) : 0;
     return { fixed, unknown, cancelled };
+  },
+
+  /** 並びが確かな武将から見つけた天賦の法則 (例: 物理防御は 9 割が星1) */
+  async talentRules() {
+    const known = (await db.listWarlords()).filter((w) => w.talent_order_v2 && w.talents.length > 0).map((w) => w.talents);
+    return { from: known.length, rules: talentRules(learnTalentStats(known)) };
   },
 
   /** 中身がまったく同じ画像が 2 重に登録された武将を、1 枚にまとめる (起動時に呼ぶ) */
