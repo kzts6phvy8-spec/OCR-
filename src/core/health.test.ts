@@ -88,4 +88,9 @@ describe("自動点検", () => {
     const normal = w({ name: "吉川元春", faction: "中.九", gallery_images: ids(3), synergy_skills: [{ partner: "小早川隆景", effect: "毛利両川: 2人が場内にいる場合、攻+10%" }] });
     expect(findIssues([normal]).filter((i) => i.kind === "oni_group_incomplete")).toEqual([]);
   });
+
+  it("織田四天王もシーズンとして見つける", async () => {
+    const { detectSeason } = await import("./seasons.ts");
+    expect(detectSeason([{ partner: "鬼憑織田四天王", effect: "鬼憑織田四天王2体以上が場内にいる場合、攻+10%" }])).toBe("織田四天王");
+  });
 });
