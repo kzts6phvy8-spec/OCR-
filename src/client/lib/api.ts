@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { decideSpecial, detectTalentOrder, emptyWarlordInput, fixColumnOrderTalents, mergeWarlord, normalizeInput, undoTalentReorder } from "../../core/domain.ts";
+import { decideSpecial, detectTalentOrder, emptyWarlordInput, fixTalentOrder, mergeWarlord, normalizeInput, undoTalentReorder } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
@@ -110,29 +110,37 @@ export const api = {
    * 天賦の並びのずれを、解放済み/未解放の並びから見分けて直す (AI なし・起動時に呼ぶ)。
    * 見分けられた武将には印を付け、「天賦を読み直す」の対象から外す
    */
-  async autoFixTalentOrder(): Promise<{ fixed: number; unknown: number }> {
+  async autoFixTalentOrder(): Promise<{ fixed: number; unknown: number; cancelled: number }> {
     let fixed = 0;
     let unknown = 0;
+    const decided = new Set<string>();
     for (const w of await db.listWarlords()) {
       // 前の版の自動判断は、星2・星3 まで解放の武将で左右逆の読み取りと取り違えることがあった。
-      // その武将は確かめ済みの印を外して、AI の読み直しの対象に戻す (1 回だけ)
+      // その武将は確かめ済みの印を外して、もう一度判断する (1 回だけ)
       if (!w.talent_check_v2) {
         const unlockedCount = w.talents.filter((t) => t.unlocked).length;
         const recheck = w.talent_order_v2 && w.talents.length === 5 && (unlockedCount === 2 || unlockedCount === 3);
         await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), talent_check_v2: true, ...(recheck ? { talent_order_v2: false } : {}) }));
         if (recheck) w.talent_order_v2 = false;
       }
-      if (w.talent_order_v2 || w.talents.length === 0) continue;
+      if (w.talent_order_v2) {
+        decided.add(w.id);
+        continue;
+      }
+      if (w.talents.length === 0) continue;
       const order = detectTalentOrder(w.talents);
       if (order === "unknown") {
         unknown++;
         continue;
       }
-      const talents = order === "column" ? fixColumnOrderTalents(w.talents) : w.talents;
-      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), talents, talent_order_v2: true }));
-      if (order === "column") fixed++;
+      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), talents: fixTalentOrder(w.talents, order), talent_order_v2: true }));
+      decided.add(w.id);
+      if (order !== "ok") fixed++;
     }
-    return { fixed, unknown };
+    // 並びが決まった武将の、待機中の「天賦の読み直し」は取り消す (AI の回数を使わない)
+    const stale = (await db.listJobs()).filter((j) => j.talents_only && j.status === "queued" && j.target_id && decided.has(j.target_id));
+    const cancelled = stale.length ? await queue.removeJobs(stale.map((j) => j.id)) : 0;
+    return { fixed, unknown, cancelled };
   },
 
   /** 中身がまったく同じ画像が 2 重に登録された武将を、1 枚にまとめる (起動時に呼ぶ) */
