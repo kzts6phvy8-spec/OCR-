@@ -129,6 +129,14 @@ export default function App() {
         toast("success", `${n} 人の天賦の並べ替えを元に戻しました`, "正しい星の番号は「データ管理」の「全員の天賦を読み直す」で、画面の位置から決め直せます");
         void refreshWarlords();
       });
+      // 天賦の並びのずれ (星 1・3・5・2・4) を、解放済み/未解放の並びから見分けて直す (AI なし)
+      await step("天賦の並び", async () => {
+        const r = await api.autoFixTalentOrder();
+        if (r.fixed > 0) {
+          toast("success", `${r.fixed} 人の天賦の並びを直しました`, "解放済み/未解放の並びから、ずれている武将を見分けました (AI は使っていません)");
+          void refreshWarlords();
+        }
+      });
       // 同じスクショが 2 重に登録された画像を 1 枚にまとめる
       await step("画像の重なり", async () => {
         const r = await api.dedupeImages();
