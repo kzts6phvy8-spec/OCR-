@@ -214,7 +214,16 @@ describe("天賦の並びのずれを見分ける", () => {
     expect(detectTalentOrder(make([true, false, false, true, false]))).toBe("column");
   });
   it("正しい並びはそのまま", () => {
-    expect(detectTalentOrder(make([true, true, false, false, false]))).toBe("ok");
+    expect(detectTalentOrder(make([true, true, true, false, false]))).toBe("ok");
+  });
+  it("左右逆の読み取りと区別できない時は決めない", () => {
+    // 星2 まで: 正しい並びと左右逆のどちらでも筋が通る
+    expect(detectTalentOrder(make([true, true, false, false, false]))).toBe("unknown");
+    // 星3 まで: 列の順番と左右逆のどちらでも筋が通る
+    expect(detectTalentOrder(make([true, true, false, true, false]))).toBe("unknown");
+  });
+  it("星4 まで解放で列の順番なら分かる", () => {
+    expect(detectTalentOrder(make([true, true, false, true, true]))).toBe("column");
   });
   it("全部解放済みなら見分けられない", () => {
     expect(detectTalentOrder(make([true, true, true, true, true]))).toBe("unknown");
