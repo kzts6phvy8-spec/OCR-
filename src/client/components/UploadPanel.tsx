@@ -443,7 +443,8 @@ function JobRow({
             <span className="ml-2 rounded bg-ebony-700 px-1 text-[10px]">{job.mode === "force_special" ? "強制: 特異" : "強制: 通常"}</span>
           )}
         </p>
-        {job.status === "error" && (
+        {/* 天賦の読み直しは統合先が決まっているので、統合先を選ぶ欄は出さない */}
+        {job.status === "error" && !job.talents_only && (
           <div className="mt-1.5">
             {picking ? (
               <div className="space-y-2">
