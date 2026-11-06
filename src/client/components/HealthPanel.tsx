@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { CheckCircle2, ClipboardCopy, Loader2, ShieldCheck, Split, Trash2, TriangleAlert } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, Images, Loader2, ShieldCheck, Split, Trash2, TriangleAlert } from "lucide-react";
 import { api, lastHealthReport, type HealthReport } from "../lib/api.ts";
 import { clearErrorLog, getErrorLog } from "../lib/errorLog.ts";
 import { useToast } from "../lib/toast.tsx";
 import type { Warlord } from "../../core/types.ts";
+import type { CrossDuplicate } from "../lib/dedupe.ts";
+import { StoredImage } from "./StoredImage.tsx";
 
 // 「データ管理」の自動点検: 起動のたびに、画像が 7 枚以上・1 枚だけの武将を知らせる。
 // 点検結果とエラーの記録をコピーして送れるようにする。
@@ -43,6 +45,33 @@ export function HealthPanel({
       toast("success", "点検結果とエラーの記録をコピーしました", "Claude との会話に貼り付けて送ってください");
     } catch {
       toast("error", "コピーできませんでした");
+    }
+  };
+
+  // 同じ画像なのに別々の武将に登録されているもの (押した時だけ調べる。全部の画像を読むので少し時間がかかる)
+  const [dups, setDups] = useState<CrossDuplicate[] | null>(null);
+  const [scan, setScan] = useState<{ done: number; total: number } | null>(null);
+  const findDups = async () => {
+    setScan({ done: 0, total: 0 });
+    try {
+      const { findCrossDuplicates } = await import("../lib/dedupe.ts");
+      setDups(await findCrossDuplicates((done, total) => setScan({ done, total })));
+    } catch (e) {
+      toast("error", "調べられませんでした", (e as Error).message);
+    } finally {
+      setScan(null);
+    }
+  };
+  const removeFrom = async (warlordId: string, imageId: string) => {
+    const w = byId.get(warlordId);
+    if (!w || !confirm(`この画像を「${w.is_special ? "【特】" : ""}${w.name}」から外しますか？\n(ほかの武将に入っている同じ画像は残ります)`)) return;
+    try {
+      await api.updateWarlord(warlordId, {}, { removeImages: [imageId] });
+      setDups((cur) => cur?.map((d) => ({ ...d, entries: d.entries.filter((e) => !(e.warlordId === warlordId && e.imageId === imageId)) })).filter((d) => d.entries.length > 1) ?? null);
+      toast("success", "画像を外しました");
+      onChanged();
+    } catch (e) {
+      toast("error", "外せませんでした", (e as Error).message);
     }
   };
 
@@ -140,6 +169,50 @@ export function HealthPanel({
           )}
         </>
       )}
+      <div className="mt-4 border-t border-ebony-700 pt-3">
+        <button
+          onClick={() => void findDups()}
+          disabled={scan !== null}
+          className="flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-sm text-ash disabled:opacity-40"
+        >
+          {scan ? <Loader2 className="size-4 animate-spin" /> : <Images className="size-4" />}
+          {scan ? `調べています (${scan.done} / ${scan.total || "…"} 枚)` : "同じ画像なのに別の武将に登録されているものを探す"}
+        </button>
+        {dups && dups.length === 0 && <p className="mt-2 text-sm text-emerald-300">見つかりませんでした</p>}
+        {dups && dups.length > 0 && (
+          <ul className="mt-2 space-y-2">
+            {dups.map((d, i) => (
+              <li key={i} className="rounded-lg border border-amber-500/40 bg-amber-900/15 p-2.5 text-sm">
+                <p className="text-amber-200">
+                  {d.kind === "exact" ? "まったく同じ画像が、別々の武将に入っています" : "ほぼ同じ画像 (同じ画面のスクショ) が、同じ名前の別々の武将に入っています"}
+                </p>
+                <div className="mt-2 grid gap-2">
+                  {d.entries.map((e) => {
+                    const w = byId.get(e.warlordId);
+                    if (!w) return null;
+                    return (
+                      <div key={`${e.warlordId}-${e.imageId}`} className="flex items-center gap-2">
+                        <StoredImage id={e.imageId} alt="" className="h-14 w-11 shrink-0 rounded border border-ebony-700 object-cover object-left" />
+                        <button onClick={() => onOpenWarlord(w.id)} className="min-w-0 flex-1 truncate text-left text-gold-300">
+                          {w.is_special ? "【特】" : ""}
+                          {w.name}
+                          <span className="ml-1 text-[11px] text-ash">
+                            {[w.rarity, w.faction].filter(Boolean).join(" ・")} ・画像 {w.screenshot_count} 枚
+                          </span>
+                        </button>
+                        <button onClick={() => void removeFrom(w.id, e.imageId)} className="shrink-0 rounded border border-hi-600/60 px-2 py-0.5 text-xs text-hi-400">
+                          ここから外す
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="mt-1.5 text-[11px] text-ash">同じ武将が 2 人に分かれているなら、武将の画面の「別の武将に分かれた時: まとめる」でまとめられます</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }
