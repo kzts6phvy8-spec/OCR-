@@ -42,6 +42,16 @@ function signatureOf(imageId: string) {
   return p;
 }
 
+/** 画像の指紋をまとめて (保存済みのものは読むだけ、無ければ作る) */
+export async function signaturesOf(imageIds: string[]): Promise<Map<string, Float32Array>> {
+  const out = new Map<string, Float32Array>();
+  for (const id of imageIds) {
+    const sig = await signatureOf(id);
+    if (sig) out.set(id, sig);
+  }
+  return out;
+}
+
 /**
  * 見比べの基準にする、図鑑に登録済みの画像の指紋 (画像 ID → 指紋・持ち主の武将)。
  * 結果を続けて保存する間に何度も作り直さないよう、30 秒は使い回す。

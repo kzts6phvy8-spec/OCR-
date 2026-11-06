@@ -59,3 +59,56 @@ export async function dedupeAllImages(): Promise<{ warlords: number; images: num
   }
   return { warlords, images };
 }
+
+export interface CrossDuplicate {
+  /** 同じ画像が入っている武将たちと、それぞれの中の画像 ID */
+  entries: { warlordId: string; imageId: string }[];
+  /** exact: 中身がまったく同じ / similar: 同じ名前の武将どうしで、立ち絵の指紋がほぼ同じ */
+  kind: "exact" | "similar";
+}
+
+/**
+ * 同じ画像なのに、別々の武将に登録されているものを探す (確かめる用。何も書き換えない)。
+ * 中身がまったく同じ画像と、同じ名前の武将どうしで指紋がほぼ同じ画像 (撮り直し・縮め直し) を挙げる。
+ */
+export async function findCrossDuplicates(onProgress?: (done: number, total: number) => void): Promise<CrossDuplicate[]> {
+  const warlords = await db.listWarlords();
+  const entries = warlords.flatMap((w) => w.gallery_images.map((imageId) => ({ warlordId: w.id, imageId, name: w.name })));
+  const byHash = new Map<string, { warlordId: string; imageId: string }[]>();
+  for (const [i, e] of entries.entries()) {
+    hashes.delete(e.imageId);
+    const h = await hashOf(e.imageId);
+    if (h) byHash.set(h, [...(byHash.get(h) ?? []), e]);
+    if (i % 20 === 0) onProgress?.(i, entries.length);
+  }
+  const result: CrossDuplicate[] = [];
+  const exactIds = new Set<string>();
+  for (const list of byHash.values()) {
+    if (new Set(list.map((e) => e.warlordId)).size < 2) continue;
+    result.push({ kind: "exact", entries: list.map(({ warlordId, imageId }) => ({ warlordId, imageId })) });
+    list.forEach((e) => exactIds.add(e.imageId));
+  }
+  // 同じ名前の武将どうしで、指紋がほぼ同じ画像 (中身は少し違うが、同じ画面のスクショ)
+  const { signaturesOf } = await import("./visual.ts");
+  const sigs = await signaturesOf(entries.map((e) => e.imageId));
+  const { signatureSimilarity } = await import("./images.ts");
+  const byName = new Map<string, typeof entries>();
+  for (const e of entries) byName.set(e.name, [...(byName.get(e.name) ?? []), e]);
+  for (const list of byName.values()) {
+    if (new Set(list.map((e) => e.warlordId)).size < 2) continue;
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i];
+        const b = list[j];
+        if (a.warlordId === b.warlordId || exactIds.has(a.imageId) || exactIds.has(b.imageId)) continue;
+        const sa = sigs.get(a.imageId);
+        const sb = sigs.get(b.imageId);
+        if (sa && sb && signatureSimilarity(sa, sb) >= 0.99) {
+          result.push({ kind: "similar", entries: [a, b].map(({ warlordId, imageId }) => ({ warlordId, imageId })) });
+        }
+      }
+    }
+  }
+  onProgress?.(entries.length, entries.length);
+  return result;
+}
