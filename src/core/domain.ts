@@ -301,7 +301,10 @@ export const starFromReadingOrder = (n: number) => READING_ORDER_TO_STAR[n] ?? n
 
 /** 「1段目左」などの位置から星の番号を決める (分からなければ null) */
 export function starFromPosition(position: string): number | null {
-  const p = position.normalize("NFKC").replace(/\s/g, "").replace(/一/g, "1").replace(/二/g, "2").replace(/三/g, "3");
+  const p = position.normalize("NFKC").replace(/\s/g, "").replace(/一/g, "1").replace(/二/g, "2").replace(/三/g, "3").replace(/四/g, "4").replace(/五/g, "5");
+  // 装備の画面の「星一解放:…」のように、星の番号が書かれている時はそのまま
+  const star = p.match(/星([1-5])/)?.[1];
+  if (star) return Number(star);
   const row = p.match(/([123])段/)?.[1];
   if (!row) return null;
   if (row === "3") return 5;

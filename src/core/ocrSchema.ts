@@ -58,7 +58,7 @@ export const OcrExtractionSchema = z.object({
   talents: z.array(
     z.object({
       star_level: z.number().describe("星1〜星5 (1 段目の左が星1・右が星2、2 段目の左が星3・右が星4、3 段目が星5)"),
-      position: z.string().describe("画面の位置: 1段目左 / 1段目右 / 2段目左 / 2段目右 / 3段目 のどれか"),
+      position: z.string().describe("画面の位置: 1段目左 / 1段目右 / 2段目左 / 2段目右 / 3段目 のどれか。「星一解放:…」と書かれた一覧なら、その「星一解放」〜「星五解放」"),
       name: z.string().describe("常に空文字 (「固守」「気勢」などの天賦の名前は書かない)"),
       effect: z.string().describe("効果と数値だけ (例: 物理防御+30%、奥義ゲージ+1)"),
       unlocked: z.boolean().describe("解放済み (グレーアウトしていない) なら true"),
