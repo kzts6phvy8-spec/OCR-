@@ -631,6 +631,7 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     talent_order_v2: Boolean(v.talent_order_v2),
     talent_reorder_undone: Boolean(v.talent_reorder_undone),
     talent_check_v2: Boolean(v.talent_check_v2),
+    talent_ai_read: Boolean(v.talent_ai_read),
     reset_batch: typeof v.reset_batch === "string" ? v.reset_batch : undefined,
     image_url: String(v.image_url ?? "").trim() || gallery[0] || "",
     gallery_images: gallery,

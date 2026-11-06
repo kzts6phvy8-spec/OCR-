@@ -438,13 +438,32 @@ export const api = {
    * 天賦を読み直す (画面の位置から星の番号を決め直す)。ids を渡さなければ、画像のある全員。
    * 武将 1 人につき AI に 1 回問い合わせる (この iPhone で解析する。終わるまでアプリを開いたままにする)
    */
+  /**
+   * 天賦を AI で読み直す武将。指定が無ければ、天賦の法則に当てはまらない武将だけ:
+   *  - 並びを法則で決められなかった武将
+   *  - 並びは確かめ済みでも、法則とはっきり食い違う武将 (AI で読み直した武将は除く。それは本当にそういう武将)
+   */
+  async talentRereadTargets(): Promise<{ undecided: Warlord[]; conflicting: Warlord[] }> {
+    const all = (await db.listWarlords()).filter((w) => w.gallery_images.length > 0);
+    const stats = learnTalentStats(all.filter((w) => w.talent_order_v2 && w.talents.length > 0).map((w) => w.talents));
+    const undecided = all.filter((w) => !w.talent_order_v2);
+    const conflicting = all.filter((w) => w.talent_order_v2 && !w.talent_ai_read && w.talents.length > 0 && !["ok", "unknown"].includes(detectTalentOrder(w.talents, stats)));
+    return { undecided, conflicting };
+  },
+
   async rereadTalents(ids?: string[]): Promise<number> {
-    // 指定が無ければ、並びがまだ確かめられていない武将だけ (確かめ済みの武将に AI を使わない)
-    const list = (await db.listWarlords()).filter(
-      (w) => w.gallery_images.length > 0 && (ids ? ids.includes(w.id) : !w.talent_order_v2),
-    );
+    let list: Warlord[];
+    if (ids) {
+      list = (await db.listWarlords()).filter((w) => w.gallery_images.length > 0 && ids.includes(w.id));
+    } else {
+      const t = await api.talentRereadTargets();
+      list = [...t.undecided, ...t.conflicting];
+    }
+    // すでに待機中の読み直しがある武将は二重に入れない
+    const waiting = new Set((await db.listJobs()).filter((j) => j.talents_only && (j.status === "queued" || j.status === "processing")).map((j) => j.target_id));
     let count = 0;
     for (const w of list) {
+      if (waiting.has(w.id)) continue;
       await queue.enqueue(
         [{ fileName: `${w.is_special ? "【特】" : ""}${w.name} (天賦の読み直し)`, imageId: w.image_url || w.gallery_images[0] }],
         "auto",

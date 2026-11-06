@@ -347,7 +347,7 @@ async function processTalentReread(job: OcrJob) {
     const fresh = await db.getWarlord(w.id);
     if (!fresh) throw new Error("天賦を読み直す武将が見つかりません");
     const { id: _i, created_at: _c, updated_at: _u, screenshot_count: _s, ...input } = fresh;
-    return db.updateWarlord(fresh.id, normalizeInput({ ...input, talents, talent_order_v2: true }));
+    return db.updateWarlord(fresh.id, normalizeInput({ ...input, talents, talent_order_v2: true, talent_ai_read: true }));
   });
   await update(job, {
     status: "done",
