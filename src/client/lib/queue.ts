@@ -402,6 +402,14 @@ async function processJob(job: OcrJob) {
       await update(job, { status: "queued", attempts: Math.max(0, job.attempts - 1), extraction });
       return;
     }
+    if (job.talents_only && err instanceof OcrError && err.retryable && job.attempts < 6) {
+      // 天賦の読み直しで Gemini が混み合っている (503 など): 失敗にせず、間をあけてやり直す (6 回まで)。
+      // 混んでいる間は他のジョブも同じように失敗するので、キュー全体を休ませる
+      pausedUntil = Math.max(pausedUntil, Date.now() + Math.max(15_000 * job.attempts, err.retryAfterMs));
+      pauseReason = err.message;
+      await update(job, { status: "queued" });
+      return;
+    }
     if (extraction && err instanceof OcrError && err.retryable && job.attempts < 3) {
       // 立ち絵の確認が一時的に失敗した: 少し待ってからやり直す (3 回まで。回数は戻さない)
       pausedUntil = Math.max(pausedUntil, Date.now() + Math.max(5_000, err.retryAfterMs));
