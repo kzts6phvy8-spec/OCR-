@@ -200,6 +200,8 @@ describe("天賦の星の番号", () => {
     expect(fixTalentOrder(read).map((t) => t.effect)).toEqual(["計略防御+10%", "受止め+10%", "奥義ゲージ+1", "ダメージ軽減+10%", "ダメージ+10%"]);
     // 位置が読めれば、位置から決める
     expect(["1段目左", "1段目右", "2段目左", "2段目右", "3段目"].map(starFromPosition)).toEqual([1, 2, 3, 4, 5]);
+    // 装備の画面の「星一解放」〜「星五解放」は、書かれた番号のまま
+    expect(["星一解放", "星二解放", "星三解放", "星四解放", "星五解放"].map(starFromPosition)).toEqual([1, 2, 3, 4, 5]);
     const patch = extractionToPatch(makeExtraction({ talents: [{ star_level: 9, position: "2段目右", name: "", effect: "回避+15%", unlocked: true }] }));
     expect(patch.talents?.[0].star_level).toBe(4);
     // 前の版の天賦に重ねる時は、先に直す
