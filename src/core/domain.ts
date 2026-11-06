@@ -314,6 +314,14 @@ export function starFromPosition(position: string): number | null {
  * 正しかった武将 (お宮など) まで並べ替えてしまったため
  */
 const UNDO_REORDER = [0, 1, 4, 2, 5, 3];
+
+/**
+ * 左の列を上から (①③⑤)、続けて右の列を上から (②④) 読んだ順に番号が振られた天賦を、星1〜星5 の順に直す
+ * (フロイスのように並びがずれている武将だけに、手で使う。データの 1〜5 番目が、実際の星 1・3・5・2・4)
+ */
+const COLUMN_ORDER_TO_STAR = [0, 1, 3, 5, 2, 4];
+export const fixColumnOrderTalents = (talents: Talent[]): Talent[] =>
+  talents.map((t) => ({ ...t, star_level: COLUMN_ORDER_TO_STAR[t.star_level] ?? t.star_level })).sort((a, b) => a.star_level - b.star_level);
 export const undoTalentReorder = (talents: Talent[]): Talent[] =>
   talents.map((t) => ({ ...t, star_level: UNDO_REORDER[t.star_level] ?? t.star_level })).sort((a, b) => a.star_level - b.star_level);
 

@@ -7,6 +7,7 @@ import {
   Merge,
   RotateCcw,
   Split,
+  ArrowDownUp,
   Copy,
   ChevronRight,
   Lock,
@@ -33,6 +34,7 @@ import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
 import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { talentText, warlordToText } from "../../core/text.ts";
+import { fixColumnOrderTalents } from "../../core/domain.ts";
 import { StoredImage } from "./StoredImage.tsx";
 import { ONI_SEASONS } from "../../core/seasons.ts";
 import { CLOSED_SYNERGY_FACTIONS, synergyPartners } from "../../core/synergyScope.ts";
@@ -414,6 +416,20 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                       className="flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-ash hover:text-washi"
                     >
                       <RotateCcw className="size-4" /> 天賦だけ読み直す
+                    </button>
+                  )}
+                  {view.talents.length > 1 && (
+                    <button
+                      onClick={async () => {
+                        const preview = fixColumnOrderTalents(view.talents).map((t) => `星${t.star_level}:${t.effect}`).join("\n");
+                        if (!confirm(`天賦の並びを直しますか？ (AI は使いません)\n左の列→右の列の順になっているのを、星1〜星5 の順にします:\n\n${preview}`)) return;
+                        const saved = await api.updateWarlord(view.id, { talents: fixColumnOrderTalents(view.talents) });
+                        toast("success", "天賦の並びを直しました", "違っていたら、もう一度押しても元には戻らないので「天賦だけ読み直す」を使ってください");
+                        onSaved(saved);
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-ash hover:text-washi"
+                    >
+                      <ArrowDownUp className="size-4" /> 天賦の並びを直す (AI なし)
                     </button>
                   )}
                   {view.gallery_images.length > 1 && (
