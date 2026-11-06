@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { decideSpecial, emptyWarlordInput, fixTalentOrder, mergeWarlord, normalizeInput } from "../../core/domain.ts";
+import { decideSpecial, emptyWarlordInput, mergeWarlord, normalizeInput, undoTalentReorder } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
@@ -33,8 +33,7 @@ export const api = {
   warlords: () => db.listWarlords(),
 
   async createWarlord(input: Partial<WarlordInput>): Promise<Warlord> {
-    // 手で入れた天賦は、画面どおりの星の番号
-    const record = normalizeInput({ ...input, talent_order_v2: true });
+    const record = normalizeInput(input);
     if (!record.name) throw new Error("武将名は必須です");
     return db.insertWarlord(record);
   },
@@ -47,8 +46,6 @@ export const api = {
     const current = await db.getWarlord(id);
     if (!current) throw new Error("武将が見つかりません");
     const merged = { ...toInput(current), ...input };
-    // 手で天賦を直した時は、その星の番号が正しい
-    if (input.talents) merged.talent_order_v2 = true;
     if (opts.removeImages?.length) {
       const removed = new Set(opts.removeImages);
       merged.gallery_images = current.gallery_images.filter((g) => !removed.has(g));
@@ -92,18 +89,21 @@ export const api = {
   },
 
   /**
-   * 前の版で保存した天賦の星の番号を、画面の並び (①② / ③④ / ⑤) に合わせて直す (起動時に呼ぶ。1 人につき 1 回だけ)。
-   * AI は左の列→右の列の順に番号を振っていたので、番号 1〜5 を実際の星 1・3・5・2・4 に置き換える。直した人数を返す
+   * 前の版で全員の天賦にかけてしまった並べ替えを、元に戻す (起動時に呼ぶ。1 人につき 1 回だけ)。
+   * 正しかった武将まで並べ替えてしまったため。戻した人数を返す
    */
-  async fixTalentOrders(): Promise<number> {
-    let fixed = 0;
+  async undoTalentReorders(): Promise<number> {
+    let undone = 0;
     for (const w of await db.listWarlords()) {
-      if (w.talent_order_v2) continue;
+      if (!w.talent_order_v2 || w.talent_reorder_undone) continue;
       const input = toInput(w);
-      await db.updateWarlord(w.id, normalizeInput({ ...input, talents: fixTalentOrder(w.talents), talent_order_v2: true }));
-      if (w.talents.length) fixed++;
+      await db.updateWarlord(
+        w.id,
+        normalizeInput({ ...input, talents: undoTalentReorder(w.talents), talent_order_v2: false, talent_reorder_undone: true }),
+      );
+      if (w.talents.length) undone++;
     }
-    return fixed;
+    return undone;
   },
 
   /** 中身がまったく同じ画像が 2 重に登録された武将を、1 枚にまとめる (起動時に呼ぶ) */
@@ -376,6 +376,27 @@ export const api = {
     return { groups: moved.length + 1, jobs: count };
   },
 
+  /**
+   * 天賦を読み直す (画面の位置から星の番号を決め直す)。ids を渡さなければ、画像のある全員。
+   * 武将 1 人につき AI に 1 回問い合わせる (この iPhone で解析する。終わるまでアプリを開いたままにする)
+   */
+  async rereadTalents(ids?: string[]): Promise<number> {
+    const list = (await db.listWarlords()).filter((w) => w.gallery_images.length > 0 && (!ids || ids.includes(w.id)));
+    let count = 0;
+    for (const w of list) {
+      await queue.enqueue(
+        [{ fileName: `${w.is_special ? "【特】" : ""}${w.name} (天賦の読み直し)`, imageId: w.image_url || w.gallery_images[0] }],
+        "auto",
+        w.id,
+        "",
+        true,
+        { talentsOnly: true },
+      );
+      count++;
+    }
+    return count;
+  },
+
   async exportText(): Promise<Blob> {
     const list = (await db.listWarlords()).sort((a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
     return new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" });
@@ -437,7 +458,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["fixTalentOrders", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["undoTalentReorders", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }

@@ -122,11 +122,11 @@ export default function App() {
       }
     };
     void (async () => {
-      // 天賦の星の番号を、画面の並びに合わせて直す (前の版で保存した分。1 人につき 1 回だけ)
-      await step("天賦の星の番号", async () => {
-        const n = await api.fixTalentOrders();
+      // 前の版で全員にかけてしまった天賦の並べ替えを元に戻す (1 人につき 1 回だけ)
+      await step("天賦の並べ替えを戻す", async () => {
+        const n = await api.undoTalentReorders();
         if (n === 0) return;
-        toast("success", `${n} 人の天賦の星の番号を、画面の並びに合わせて直しました`, "左の列→右の列の順に読んでいたのを、星1〜星5 の順に直しました");
+        toast("success", `${n} 人の天賦の並べ替えを元に戻しました`, "正しい星の番号は「データ管理」の「全員の天賦を読み直す」で、画面の位置から決め直せます");
         void refreshWarlords();
       });
       // 同じスクショが 2 重に登録された画像を 1 枚にまとめる

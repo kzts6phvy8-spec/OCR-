@@ -138,6 +138,8 @@ export async function enqueue(
     excludeIds?: string[];
     /** 再解析の回 (最初の保存の前に、統合先の読み取った内容を空にする) */
     resetBatch?: string;
+    /** 天賦だけを読み直す */
+    talentsOnly?: boolean;
   } = {},
 ) {
   const now = new Date().toISOString();
@@ -152,6 +154,7 @@ export async function enqueue(
     ...(keepImage ? { keep_image: true } : {}),
     ...(opts.excludeIds?.length ? { exclude_ids: opts.excludeIds } : {}),
     ...(opts.resetBatch ? { reset_batch: opts.resetBatch } : {}),
+    ...(opts.talentsOnly ? { talents_only: true } : {}),
     // 読み取り結果があれば、この端末で保存だけ行う
     ...(saved.has(f.imageId) ? { extraction: saved.get(f.imageId), local: true } : {}),
     id: crypto.randomUUID(),
@@ -334,10 +337,33 @@ function pauseForRateLimit(err: OcrError) {
   pauseReason = err.message;
 }
 
+/** 天賦だけを読み直すジョブ: 武将の画像をまとめて AI に見せ、天賦を位置から決め直して置き換える */
+async function processTalentReread(job: OcrJob) {
+  const w = job.target_id ? await db.getWarlord(job.target_id) : null;
+  if (!w) throw new Error("天賦を読み直す武将が見つかりません");
+  const { rereadTalents } = await import("./talentReread.ts");
+  const talents = await rereadTalents(w);
+  const saved = await ingestLock(async () => {
+    const fresh = await db.getWarlord(w.id);
+    if (!fresh) throw new Error("天賦を読み直す武将が見つかりません");
+    const { id: _i, created_at: _c, updated_at: _u, screenshot_count: _s, ...input } = fresh;
+    return db.updateWarlord(fresh.id, normalizeInput({ ...input, talents, talent_order_v2: true }));
+  });
+  await update(job, {
+    status: "done",
+    warlord_id: saved.id,
+    warlord_label: warlordLabel(saved),
+    merged: true,
+    warnings: talents.length < 5 ? [`天賦を ${talents.length} 個しか読み取れませんでした`] : [],
+    extraction: null,
+  });
+}
+
 async function processJob(job: OcrJob) {
   const startedAt = Date.now();
   let extraction: OcrExtraction | null = job.extraction ?? null;
   try {
+    if (job.talents_only) return await processTalentReread(job);
     const image = await db.getImage(job.image_id);
     if (!image) throw new Error("画像が見つかりません");
     if (!extraction) {
