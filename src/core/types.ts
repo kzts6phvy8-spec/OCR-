@@ -87,6 +87,8 @@ export interface Warlord {
   talent_reorder_undone?: boolean;
   /** 天賦の並びの自動判断の見直し (左右逆の読み取りと取り違えないように) を済ませたか */
   talent_check_v2?: boolean;
+  /** 天賦を AI で画面の位置から読み直し済みか (法則に当てはまらなくても、それは本当にそういう武将) */
+  talent_ai_read?: boolean;
   /** 最後に「再解析」で読み取った内容を作り直した回 (同じ回の 2 枚目以降で消し直さないため) */
   reset_batch?: string;
 
