@@ -224,7 +224,8 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
   const talents = ext.talents
     .filter((t) => str(t.name) || str(t.effect))
     .map((t) => ({
-      star_level: int(t.star_level, 1, 5),
+      // 星の番号は画面の位置から決める。位置が分からなければ、AI が左の列→右の列の順に振った番号とみなして直す
+      star_level: starFromPosition(str(t.position)) ?? starFromReadingOrder(int(t.star_level, 1, 5)),
       position: "",
       name: "",
       effect: str(t.effect) ? talentEffect(str(t.effect), str(t.name)) : str(t.name),
@@ -232,6 +233,7 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
     }))
     .filter((t) => t.effect);
   set("talents", talents);
+  if (talents.length) patch.talent_order_v2 = true;
 
   // 兵種は選べる兵種の一覧だけを持つ (「現在の兵種」は持たない)
   set("troop_variants", uniqueStrings([...ext.troop_variants, ...(ext.troop_type ? [str(ext.troop_type)] : [])]));
@@ -288,6 +290,29 @@ const FIELD_LABELS: Record<string, string> = {
   awakening_skill_name: "覚醒スキル名",
   awakening_priority: "覚醒優先度",
 };
+
+/**
+ * 天賦の星の番号。画面の天賦は ①② / ③④ / ⑤ の 3 段に並ぶ (1 段目の左が星1・右が星2、2 段目の左が星3・右が星4、3 段目が星5)。
+ * AI は左の列を上から (①③⑤)、続けて右の列を上から (②④) 読んで 1〜5 と振っていた (利用者がフロイスで確かめた)。
+ * そのため、AI の番号 1〜5 は、実際の星 1・3・5・2・4 に当たる。
+ */
+const READING_ORDER_TO_STAR = [0, 1, 3, 5, 2, 4];
+export const starFromReadingOrder = (n: number) => READING_ORDER_TO_STAR[n] ?? n;
+
+/** 「1段目左」などの位置から星の番号を決める (分からなければ null) */
+export function starFromPosition(position: string): number | null {
+  const p = position.normalize("NFKC").replace(/\s/g, "").replace(/一/g, "1").replace(/二/g, "2").replace(/三/g, "3");
+  const row = p.match(/([123])段/)?.[1];
+  if (!row) return null;
+  if (row === "3") return 5;
+  if (/左/.test(p)) return row === "1" ? 1 : 3;
+  if (/右/.test(p)) return row === "1" ? 2 : 4;
+  return null;
+}
+
+/** 前の版で保存した天賦の星の番号を、実際の星に直す */
+export const fixTalentOrder = (talents: Talent[]): Talent[] =>
+  talents.map((t) => ({ ...t, star_level: starFromReadingOrder(t.star_level) })).sort((a, b) => a.star_level - b.star_level);
 
 export function mergeTalents(base: Talent[], incoming: Talent[]): Talent[] {
   const result = base.map((t) => ({ ...t }));
@@ -403,7 +428,12 @@ export function mergeWarlord(
   if (patch.has_awakening) merged.has_awakening = true;
   if (patch.has_weapon_awakening) merged.has_weapon_awakening = true;
 
-  if (patch.talents) merged.talents = mergeTalents(merged.talents, patch.talents);
+  if (patch.talents) {
+    // 星の番号を直す前の (前の版の) 天賦なら、先に直してから重ねる
+    if (!merged.talent_order_v2) merged.talents = fixTalentOrder(merged.talents);
+    merged.talents = mergeTalents(merged.talents, patch.talents);
+    merged.talent_order_v2 = true;
+  }
   if (patch.synergy_skills) merged.synergy_skills = mergeSynergies(merged.synergy_skills, patch.synergy_skills);
   if (patch.troop_variants) merged.troop_variants = uniqueStrings([...merged.troop_variants, ...patch.troop_variants]);
 
@@ -487,6 +517,7 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
       .filter((s) => s.partner),
     no_synergy: Boolean(v.no_synergy),
     oni_season: normalizeSeason(v.oni_season),
+    talent_order_v2: Boolean(v.talent_order_v2),
     reset_batch: typeof v.reset_batch === "string" ? v.reset_batch : undefined,
     image_url: String(v.image_url ?? "").trim() || gallery[0] || "",
     gallery_images: gallery,

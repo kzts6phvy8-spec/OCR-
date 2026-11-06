@@ -81,6 +81,8 @@ export interface Warlord {
   no_synergy?: boolean;
   /** 鬼憑武将のシーズン (4 人の組。例: 徳川四天王)。連携スキルから自動で入るほか、手でも選べる */
   oni_season?: string;
+  /** 天賦の星の番号を、画面の並び (①② / ③④ / ⑤) に合わせて直し済みか */
+  talent_order_v2?: boolean;
   /** 最後に「再解析」で読み取った内容を作り直した回 (同じ回の 2 枚目以降で消し直さないため) */
   reset_batch?: string;
 
