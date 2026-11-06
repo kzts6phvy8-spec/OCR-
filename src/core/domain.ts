@@ -342,22 +342,80 @@ const typicalStar = (effect: string): number | null => {
   return TYPICAL_STAR.find(([re]) => re.test(text))?.[1] ?? null;
 };
 
-export function detectTalentOrder(talents: Talent[]): TalentOrder {
+/** 天賦の効果の種類 (数値や記号を除いたもの)。例: 「物理防御+30%」→「物理防御」 */
+export const talentKind = (effect: string): string =>
+  effect.normalize("NFKC").replace(/[\d.+\-%()\s、,。]/g, "").replace(/[上昇増加]+$/, "");
+
+/** 並びが確かな武将から学んだ「効果の種類ごとに、星いくつに出やすいか」の数 */
+export type TalentStats = Map<string, number[]>;
+
+/** 並びが確かな武将の天賦から、効果の種類ごとの星の出かたを数える */
+export function learnTalentStats(lists: Talent[][]): TalentStats {
+  const stats: TalentStats = new Map();
+  for (const talents of lists) {
+    for (const t of talents) {
+      if (t.star_level < 1 || t.star_level > 5) continue;
+      const kind = talentKind(t.effect);
+      if (!kind) continue;
+      const counts = stats.get(kind) ?? [0, 0, 0, 0, 0, 0];
+      counts[t.star_level]++;
+      stats.set(kind, counts);
+    }
+  }
+  return stats;
+}
+
+/** 学んだ法則のうち、はっきりしているもの (例: 物理防御は 9 割が星1) */
+export function talentRules(stats: TalentStats, minCount = 5, minShare = 0.7): { kind: string; star: number; share: number; count: number }[] {
+  const rules: { kind: string; star: number; share: number; count: number }[] = [];
+  for (const [kind, counts] of stats) {
+    const total = counts.reduce((a, b) => a + b, 0);
+    if (total < minCount) continue;
+    const star = counts.indexOf(Math.max(...counts.slice(1)), 1);
+    const share = counts[star] / total;
+    if (share >= minShare) rules.push({ kind, star, share, count: total });
+  }
+  return rules.sort((a, b) => a.star - b.star || b.count - a.count);
+}
+
+/** 3 通りの読み方の確からしさの差がこれ以上 (約 20 倍) の時だけ決める */
+const DECIDE_MARGIN = Math.log(20);
+
+/**
+ * stats (並びが確かな武将から学んだ法則) を渡すと、効果の中身の判断にそれを使う。
+ * 渡さなければ、見破り・奥義ゲージなどの決まった傾向だけで判断する。
+ */
+export function detectTalentOrder(talents: Talent[], stats?: TalentStats): TalentOrder {
   const stars = talents.map((t) => t.star_level).sort((a, b) => a - b);
   if (stars.join() !== "1,2,3,4,5") return "unknown";
   const fits = (map: readonly number[]) => {
     const flags = talents.map((t) => ({ star: map[t.star_level], unlocked: t.unlocked })).sort((a, b) => a.star - b.star).map((t) => t.unlocked);
     return flags.every((f, i) => i === 0 || !f || flags[i - 1]);
   };
+  const candidates = (Object.keys(READ_PATTERNS) as (keyof typeof READ_PATTERNS)[]).filter((k) => fits(READ_PATTERNS[k]));
+  if (candidates.length === 0) return "unknown";
+  if (candidates.length === 1) return candidates[0];
+
+  if (stats) {
+    // 学んだ星の出かた (決まった傾向は 3 回分の下駄をはかせる) から、それぞれの読み方の確からしさを比べる
+    const logLikelihood = (map: readonly number[]) =>
+      talents.reduce((sum, t) => {
+        const counts = [...(stats.get(talentKind(t.effect)) ?? [0, 0, 0, 0, 0, 0])];
+        const typical = typicalStar(t.effect);
+        if (typical) counts[typical] += 3;
+        const total = counts.slice(1).reduce((a, b) => a + b, 0);
+        return sum + Math.log((counts[map[t.star_level]] + 0.5) / (total + 2.5));
+      }, 0);
+    const scored = candidates.map((k) => ({ k, s: logLikelihood(READ_PATTERNS[k]) })).sort((a, b) => b.s - a.s);
+    return scored[0].s - scored[1].s >= DECIDE_MARGIN ? scored[0].k : "unknown";
+  }
+
   // 効果の中身の当たり (当たり +1、外れ -1)
   const score = (map: readonly number[]) =>
     talents.reduce((sum, t) => {
       const typical = typicalStar(t.effect);
       return typical === null ? sum : sum + (map[t.star_level] === typical ? 1 : -1);
     }, 0);
-  const candidates = (Object.keys(READ_PATTERNS) as (keyof typeof READ_PATTERNS)[]).filter((k) => fits(READ_PATTERNS[k]));
-  if (candidates.length === 0) return "unknown";
-  if (candidates.length === 1) return candidates[0];
   const scored = candidates.map((k) => ({ k, s: score(READ_PATTERNS[k]) })).sort((a, b) => b.s - a.s);
   if (scored[0].s <= 0 || scored[0].s === scored[1].s) return "unknown";
   return scored[0].k;

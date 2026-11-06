@@ -170,6 +170,7 @@ export function HealthPanel({
         </>
       )}
       <div className="mt-4 border-t border-ebony-700 pt-3">
+        <TalentRules />
         <button
           onClick={async () => {
             const n = warlords.filter((w) => w.gallery_images.length > 0 && !w.talent_order_v2).length;
@@ -234,5 +235,39 @@ export function HealthPanel({
         )}
       </div>
     </section>
+  );
+}
+
+/** 並びが確かな武将のデータから見つけた天賦の法則を見せる (この法則で、並びがずれた武将を AI なしで直している) */
+function TalentRules() {
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.talentRules>> | null>(null);
+  return (
+    <details
+      className="mb-3 text-xs text-ash"
+      onToggle={(e) => {
+        if ((e.currentTarget as HTMLDetailsElement).open && !data) void api.talentRules().then(setData);
+      }}
+    >
+      <summary className="cursor-pointer text-sm text-gold-300">データから見つけた天賦の法則</summary>
+      {!data ? (
+        <p className="mt-1">調べています…</p>
+      ) : data.rules.length === 0 ? (
+        <p className="mt-1">まだはっきりした法則は見つかっていません (並びが確かな武将 {data.from} 人)</p>
+      ) : (
+        <>
+          <p className="mt-1">並びが確かな武将 {data.from} 人の天賦から見つけた法則です。この法則で、並びがずれた武将を AI なしで直しています。</p>
+          <ul className="mt-1 space-y-0.5 pl-1">
+            {data.rules.map((r) => (
+              <li key={r.kind}>
+                <span className="text-gold-300">星{r.star}</span> {r.kind}{" "}
+                <span className="text-ebony-500">
+                  ({Math.round(r.share * 100)}% ・{r.count} 件)
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </details>
   );
 }
