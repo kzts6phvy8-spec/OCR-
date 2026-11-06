@@ -172,10 +172,14 @@ export function HealthPanel({
       <div className="mt-4 border-t border-ebony-700 pt-3">
         <button
           onClick={async () => {
-            const n = warlords.filter((w) => w.gallery_images.length > 0).length;
+            const n = warlords.filter((w) => w.gallery_images.length > 0 && !w.talent_order_v2).length;
+            if (n === 0) {
+              toast("info", "天賦の並びはすべて確かめ済みです");
+              return;
+            }
             if (
               !confirm(
-                `全員 (${n} 人) の天賦を読み直しますか？\n登録画像から天賦の画面を探し、画面の位置で星1〜星5 を決め直して置き換えます。\nAI に ${n} 回問い合わせます (Flash-Lite の無料枠なら 1 日 約 500 回)。この iPhone で解析するので、終わるまでアプリを開いたままにしてください。`,
+                `天賦の並びを自動で見分けられなかった ${n} 人の天賦を読み直しますか？\n(全員が解放済みなどで、データだけでは見分けられなかった武将です。見分けられた武将はもう直してあります)\n登録画像から天賦の画面を探し、画面の位置で星1〜星5 を決め直して置き換えます。\nAI に ${n} 回問い合わせます (Flash-Lite の無料枠なら 1 日 約 500 回)。この iPhone で解析するので、終わるまでアプリを開いたままにしてください。`,
               )
             )
               return;
@@ -184,7 +188,7 @@ export function HealthPanel({
           }}
           className="mb-2 flex items-center gap-1.5 rounded-lg border border-gold-600/60 px-3 py-1.5 text-sm text-gold-400"
         >
-          <RotateCcw className="size-4" /> 全員の天賦を読み直す (星の番号を画面の位置から決め直す)
+          <RotateCcw className="size-4" /> 見分けられなかった武将の天賦を読み直す (AI)
         </button>
         <button
           onClick={() => void findDups()}

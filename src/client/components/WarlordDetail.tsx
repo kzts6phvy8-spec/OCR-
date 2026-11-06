@@ -423,7 +423,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                       onClick={async () => {
                         const preview = fixColumnOrderTalents(view.talents).map((t) => `星${t.star_level}:${t.effect}`).join("\n");
                         if (!confirm(`天賦の並びを直しますか？ (AI は使いません)\n左の列→右の列の順になっているのを、星1〜星5 の順にします:\n\n${preview}`)) return;
-                        const saved = await api.updateWarlord(view.id, { talents: fixColumnOrderTalents(view.talents) });
+                        const saved = await api.updateWarlord(view.id, { talents: fixColumnOrderTalents(view.talents), talent_order_v2: true });
                         toast("success", "天賦の並びを直しました", "違っていたら、もう一度押しても元には戻らないので「天賦だけ読み直す」を使ってください");
                         onSaved(saved);
                       }}

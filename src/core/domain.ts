@@ -322,6 +322,27 @@ const UNDO_REORDER = [0, 1, 4, 2, 5, 3];
 const COLUMN_ORDER_TO_STAR = [0, 1, 3, 5, 2, 4];
 export const fixColumnOrderTalents = (talents: Talent[]): Talent[] =>
   talents.map((t) => ({ ...t, star_level: COLUMN_ORDER_TO_STAR[t.star_level] ?? t.star_level })).sort((a, b) => a.star_level - b.star_level);
+/**
+ * 天賦の並びが「列の順番 (星 1・3・5・2・4)」でずれているかを、解放済みかどうかの並びから判断する (AI なし)。
+ * 天賦は星1 から順に解放されるので、正しい並びなら「解放済み → 未解放」と前から続く。
+ *  - "column": 今の並びではありえず、並べ替えると筋が通る → ずれている
+ *  - "ok":     今の並びで筋が通り、並べ替えるとありえない → 合っている
+ *  - "unknown": 全部解放済み・全部未解放などで見分けられない
+ */
+export function detectTalentOrder(talents: Talent[]): "column" | "ok" | "unknown" {
+  const stars = talents.map((t) => t.star_level).sort((a, b) => a - b);
+  if (stars.join() !== "1,2,3,4,5") return "unknown";
+  const isPrefix = (list: Talent[]) => {
+    const flags = [...list].sort((a, b) => a.star_level - b.star_level).map((t) => t.unlocked);
+    return flags.every((f, i) => i === 0 || !f || flags[i - 1]);
+  };
+  const now = isPrefix(talents);
+  const fixed = isPrefix(fixColumnOrderTalents(talents));
+  if (!now && fixed) return "column";
+  if (now && !fixed) return "ok";
+  return "unknown";
+}
+
 export const undoTalentReorder = (talents: Talent[]): Talent[] =>
   talents.map((t) => ({ ...t, star_level: UNDO_REORDER[t.star_level] ?? t.star_level })).sort((a, b) => a.star_level - b.star_level);
 

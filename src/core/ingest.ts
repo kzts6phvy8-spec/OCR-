@@ -259,6 +259,8 @@ export async function ingestExtraction(
   if (opts.faction) merged.faction = opts.faction;
 
   const record = normalizeInput(merged);
+  // 天賦がすべて今回の読み取り (画面の位置から星を決める) から入った時は、並びは確かめ済み
+  if ((!existing || existing.talents.length === 0) && record.talents.length > 0) record.talent_order_v2 = true;
   if (record.gallery_images.length > MAX_IMAGES_PER_WARLORD) {
     warnings.push(
       `「${record.name}」の画像が ${record.gallery_images.length} 枚になりました (1 人の武将は多くても ${MAX_IMAGES_PER_WARLORD} 枚)。別の武将の画像が混ざっているかもしれません`,

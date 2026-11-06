@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   decideSpecial,
+  detectTalentOrder,
   emptyWarlordInput,
   extractionToPatch,
   mergeWarlord,
@@ -203,5 +204,20 @@ describe("天賦の星の番号", () => {
       unlocked: true,
     }));
     expect(undoTalentReorder(broken).map((t) => t.effect)).toEqual(["計略攻撃+30%", "通常会心+45%", "兵数上限+30%", "計略ダメージ+45%", "ダメージ+25%"]);
+  });
+});
+
+describe("天賦の並びのずれを見分ける", () => {
+  const make = (flags: boolean[]) => flags.map((u, i) => ({ star_level: i + 1, position: "", name: "", effect: `効果${i + 1}`, unlocked: u }));
+  it("列の順番 (星 1・3・5・2・4) で入っていると分かる", () => {
+    // 星2 まで解放: 正しくは 〇〇××× → 列の順番だと 〇××〇×
+    expect(detectTalentOrder(make([true, false, false, true, false]))).toBe("column");
+  });
+  it("正しい並びはそのまま", () => {
+    expect(detectTalentOrder(make([true, true, false, false, false]))).toBe("ok");
+  });
+  it("全部解放済みなら見分けられない", () => {
+    expect(detectTalentOrder(make([true, true, true, true, true]))).toBe("unknown");
+    expect(detectTalentOrder(make([true, true, true]))).toBe("unknown");
   });
 });

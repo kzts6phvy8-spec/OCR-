@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { decideSpecial, emptyWarlordInput, mergeWarlord, normalizeInput, undoTalentReorder } from "../../core/domain.ts";
+import { decideSpecial, detectTalentOrder, emptyWarlordInput, fixColumnOrderTalents, mergeWarlord, normalizeInput, undoTalentReorder } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
@@ -104,6 +104,27 @@ export const api = {
       if (w.talents.length) undone++;
     }
     return undone;
+  },
+
+  /**
+   * 天賦の並びのずれを、解放済み/未解放の並びから見分けて直す (AI なし・起動時に呼ぶ)。
+   * 見分けられた武将には印を付け、「天賦を読み直す」の対象から外す
+   */
+  async autoFixTalentOrder(): Promise<{ fixed: number; unknown: number }> {
+    let fixed = 0;
+    let unknown = 0;
+    for (const w of await db.listWarlords()) {
+      if (w.talent_order_v2 || w.talents.length === 0) continue;
+      const order = detectTalentOrder(w.talents);
+      if (order === "unknown") {
+        unknown++;
+        continue;
+      }
+      const talents = order === "column" ? fixColumnOrderTalents(w.talents) : w.talents;
+      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), talents, talent_order_v2: true }));
+      if (order === "column") fixed++;
+    }
+    return { fixed, unknown };
   },
 
   /** 中身がまったく同じ画像が 2 重に登録された武将を、1 枚にまとめる (起動時に呼ぶ) */
@@ -381,7 +402,10 @@ export const api = {
    * 武将 1 人につき AI に 1 回問い合わせる (この iPhone で解析する。終わるまでアプリを開いたままにする)
    */
   async rereadTalents(ids?: string[]): Promise<number> {
-    const list = (await db.listWarlords()).filter((w) => w.gallery_images.length > 0 && (!ids || ids.includes(w.id)));
+    // 指定が無ければ、並びがまだ確かめられていない武将だけ (確かめ済みの武将に AI を使わない)
+    const list = (await db.listWarlords()).filter(
+      (w) => w.gallery_images.length > 0 && (ids ? ids.includes(w.id) : !w.talent_order_v2),
+    );
     let count = 0;
     for (const w of list) {
       await queue.enqueue(
@@ -458,7 +482,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["undoTalentReorders", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["undoTalentReorders", "autoFixTalentOrder", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }
