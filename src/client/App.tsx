@@ -132,8 +132,12 @@ export default function App() {
       // 天賦の並びのずれ (星 1・3・5・2・4) を、解放済み/未解放の並びから見分けて直す (AI なし)
       await step("天賦の並び", async () => {
         const r = await api.autoFixTalentOrder();
-        if (r.fixed > 0) {
-          toast("success", `${r.fixed} 人の天賦の並びを直しました`, "解放済み/未解放の並びから、ずれている武将を見分けました (AI は使っていません)");
+        if (r.fixed > 0 || r.cancelled > 0) {
+          toast(
+            "success",
+            `${r.fixed} 人の天賦の並びを直しました`,
+            `解放済みかどうかと効果の中身から見分けました (AI は使っていません)${r.cancelled ? `。いらなくなった読み直し ${r.cancelled} 件を取り消しました` : ""}`,
+          );
           void refreshWarlords();
         }
       });

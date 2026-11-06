@@ -323,26 +323,51 @@ const COLUMN_ORDER_TO_STAR = [0, 1, 3, 5, 2, 4];
 export const fixColumnOrderTalents = (talents: Talent[]): Talent[] =>
   talents.map((t) => ({ ...t, star_level: COLUMN_ORDER_TO_STAR[t.star_level] ?? t.star_level })).sort((a, b) => a.star_level - b.star_level);
 /**
- * 天賦の並びが「列の順番 (星 1・3・5・2・4)」でずれているかを、解放済みかどうかの並びから判断する (AI なし)。
- * 天賦は星1 から順に解放されるので、正しい並びなら「解放済み → 未解放」と前から続く。
- * 前の版の読み取りには、正しい並び・列の順番・左右が逆 (星 2・1・4・3・5) の 3 通りがありうるので、
- * 3 通りのうち筋が通るのが 1 通りだけの時だけ決める。
- *  - "column": 列の順番でずれている
- *  - "ok":     合っている
- *  - "unknown": 見分けられない (全部解放済み・左右逆と区別できない など)
+ * 天賦の並びのずれを、AI を使わずにデータから判断する。
+ * 前の版の読み取りには、正しい並び・列の順番 (星 1・3・5・2・4)・左右が逆 (星 2・1・4・3・5) の 3 通りがありうる。
+ * 手がかりは 2 つ:
+ *  1. 解放済みかどうか: 天賦は星1 から順に解放されるので、「解放済み → 未解放」と前から続く読み方だけが正しい
+ *  2. 効果の中身: 見破り・回避・通常会心・スキル会心はだいたい星2、奥義ゲージ・兵数上限はだいたい星3
+ * 1 で筋が通る読み方のうち、2 の当たりが一番多いものが 1 つに決まる時だけ決める (決まらなければ "unknown")。
  */
 const READ_PATTERNS = { ok: [0, 1, 2, 3, 4, 5], column: COLUMN_ORDER_TO_STAR, swapped: [0, 2, 1, 4, 3, 5] } as const;
-export function detectTalentOrder(talents: Talent[]): "column" | "ok" | "unknown" {
+export type TalentOrder = keyof typeof READ_PATTERNS | "unknown";
+
+const TYPICAL_STAR: [RegExp, number][] = [
+  [/見破り|回避|(?:通常|スキル)会心(?!ダメ)/, 2],
+  [/奥義ゲージ|兵数上限|兵力上限/, 3],
+];
+const typicalStar = (effect: string): number | null => {
+  const text = effect.normalize("NFKC");
+  return TYPICAL_STAR.find(([re]) => re.test(text))?.[1] ?? null;
+};
+
+export function detectTalentOrder(talents: Talent[]): TalentOrder {
   const stars = talents.map((t) => t.star_level).sort((a, b) => a - b);
   if (stars.join() !== "1,2,3,4,5") return "unknown";
   const fits = (map: readonly number[]) => {
     const flags = talents.map((t) => ({ star: map[t.star_level], unlocked: t.unlocked })).sort((a, b) => a.star - b.star).map((t) => t.unlocked);
     return flags.every((f, i) => i === 0 || !f || flags[i - 1]);
   };
-  const matches = (Object.keys(READ_PATTERNS) as (keyof typeof READ_PATTERNS)[]).filter((k) => fits(READ_PATTERNS[k]));
-  if (matches.length !== 1 || matches[0] === "swapped") return "unknown";
-  return matches[0];
+  // 効果の中身の当たり (当たり +1、外れ -1)
+  const score = (map: readonly number[]) =>
+    talents.reduce((sum, t) => {
+      const typical = typicalStar(t.effect);
+      return typical === null ? sum : sum + (map[t.star_level] === typical ? 1 : -1);
+    }, 0);
+  const candidates = (Object.keys(READ_PATTERNS) as (keyof typeof READ_PATTERNS)[]).filter((k) => fits(READ_PATTERNS[k]));
+  if (candidates.length === 0) return "unknown";
+  if (candidates.length === 1) return candidates[0];
+  const scored = candidates.map((k) => ({ k, s: score(READ_PATTERNS[k]) })).sort((a, b) => b.s - a.s);
+  if (scored[0].s <= 0 || scored[0].s === scored[1].s) return "unknown";
+  return scored[0].k;
 }
+
+/** detectTalentOrder の結果に合わせて、天賦を星1〜星5 の順に直す */
+export const fixTalentOrder = (talents: Talent[], order: TalentOrder): Talent[] =>
+  order === "unknown" || order === "ok"
+    ? talents
+    : talents.map((t) => ({ ...t, star_level: READ_PATTERNS[order][t.star_level] ?? t.star_level })).sort((a, b) => a.star_level - b.star_level);
 
 export const undoTalentReorder = (talents: Talent[]): Talent[] =>
   talents.map((t) => ({ ...t, star_level: UNDO_REORDER[t.star_level] ?? t.star_level })).sort((a, b) => a.star_level - b.star_level);

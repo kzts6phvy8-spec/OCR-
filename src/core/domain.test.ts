@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decideSpecial,
   detectTalentOrder,
+  fixTalentOrder,
   emptyWarlordInput,
   extractionToPatch,
   mergeWarlord,
@@ -228,5 +229,30 @@ describe("天賦の並びのずれを見分ける", () => {
   it("全部解放済みなら見分けられない", () => {
     expect(detectTalentOrder(make([true, true, true, true, true]))).toBe("unknown");
     expect(detectTalentOrder(make([true, true, true]))).toBe("unknown");
+  });
+});
+
+describe("天賦の並びを効果の中身から見分ける", () => {
+  // 正しい星1〜5 の効果。見破りは星2、奥義ゲージは星3 にあることが多い
+  const real = ["計攻+10%", "見破り+15%", "奥義ゲージ+1", "計ダメ+10%", "ダメ+10%"];
+  const build = (map: number[]) =>
+    // map[保存された番号] = 本当の星
+    [1, 2, 3, 4, 5].map((stored) => ({ star_level: stored, position: "", name: "", effect: real[map[stored] - 1], unlocked: true }));
+  it("全部解放済みでも、列の順番なら分かって直せる", () => {
+    const talents = build([0, 1, 3, 5, 2, 4]);
+    expect(detectTalentOrder(talents)).toBe("column");
+    expect(fixTalentOrder(talents, "column").map((t) => t.effect)).toEqual(real);
+  });
+  it("左右逆も分かって直せる", () => {
+    const talents = build([0, 2, 1, 4, 3, 5]);
+    expect(detectTalentOrder(talents)).toBe("swapped");
+    expect(fixTalentOrder(talents, "swapped").map((t) => t.effect)).toEqual(real);
+  });
+  it("正しい並びは ok", () => {
+    expect(detectTalentOrder(build([0, 1, 2, 3, 4, 5]))).toBe("ok");
+  });
+  it("手がかりになる効果が無ければ決めない", () => {
+    const talents = [1, 2, 3, 4, 5].map((n) => ({ star_level: n, position: "", name: "", effect: `攻+${n}%`, unlocked: true }));
+    expect(detectTalentOrder(talents)).toBe("unknown");
   });
 });
