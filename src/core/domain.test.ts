@@ -187,27 +187,21 @@ describe("天賦の効果", () => {
 });
 
 describe("天賦の星の番号", () => {
-  it("AI が左の列→右の列の順に振った番号を、実際の星に直す (フロイスの例)", async () => {
-    const { fixTalentOrder, starFromPosition, extractionToPatch, mergeWarlord, emptyWarlordInput } = await import("./domain.ts");
+  it("画面の位置から星を決め、前の版の並べ替えは元に戻せる", async () => {
+    const { starFromPosition, undoTalentReorder, extractionToPatch } = await import("./domain.ts");
     const { makeExtraction } = await import("./testUtils.ts");
-    const read = ["計略防御+10%", "奥義ゲージ+1", "ダメージ+10%", "受止め+10%", "ダメージ軽減+10%"].map((effect, i) => ({
+    expect(["1段目左", "1段目右", "2段目左", "2段目右", "3段目"].map(starFromPosition)).toEqual([1, 2, 3, 4, 5]);
+    expect(["星一解放", "星二解放", "星三解放", "星四解放", "星五解放"].map(starFromPosition)).toEqual([1, 2, 3, 4, 5]);
+    const patch = extractionToPatch(makeExtraction({ talents: [{ star_level: 9, position: "2段目右", name: "", effect: "回避+15%", unlocked: true }] }));
+    expect(patch.talents?.[0].star_level).toBe(4);
+    // お宮: 正しかった並び (計攻・会心・兵数・計ダメ・ダメ) が、前の版の並べ替えで 計攻・計ダメ・会心・ダメ・兵数 になっていた
+    const broken = ["計略攻撃+30%", "計略ダメージ+45%", "通常会心+45%", "ダメージ+25%", "兵数上限+30%"].map((effect, i) => ({
       star_level: i + 1,
       position: "",
       name: "",
       effect,
       unlocked: true,
     }));
-    expect(fixTalentOrder(read).map((t) => t.effect)).toEqual(["計略防御+10%", "受止め+10%", "奥義ゲージ+1", "ダメージ軽減+10%", "ダメージ+10%"]);
-    // 位置が読めれば、位置から決める
-    expect(["1段目左", "1段目右", "2段目左", "2段目右", "3段目"].map(starFromPosition)).toEqual([1, 2, 3, 4, 5]);
-    // 装備の画面の「星一解放」〜「星五解放」は、書かれた番号のまま
-    expect(["星一解放", "星二解放", "星三解放", "星四解放", "星五解放"].map(starFromPosition)).toEqual([1, 2, 3, 4, 5]);
-    const patch = extractionToPatch(makeExtraction({ talents: [{ star_level: 9, position: "2段目右", name: "", effect: "回避+15%", unlocked: true }] }));
-    expect(patch.talents?.[0].star_level).toBe(4);
-    // 前の版の天賦に重ねる時は、先に直す
-    const old = { ...emptyWarlordInput(), name: "フロイス", talents: read };
-    const { merged } = mergeWarlord(old, patch);
-    expect(merged.talent_order_v2).toBe(true);
-    expect(merged.talents.find((t) => t.star_level === 2)?.effect).toBe("受止め+10%");
+    expect(undoTalentReorder(broken).map((t) => t.effect)).toEqual(["計略攻撃+30%", "通常会心+45%", "兵数上限+30%", "計略ダメージ+45%", "ダメージ+25%"]);
   });
 });

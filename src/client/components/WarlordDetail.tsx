@@ -405,6 +405,17 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                       <RotateCcw className="size-4" /> 登録画像を再解析
                     </button>
                   )}
+                  {view.gallery_images.length > 0 && (
+                    <button
+                      onClick={async () => {
+                        await api.rereadTalents([view.id]);
+                        toast("info", "天賦を読み直します", "画面の位置から星1〜星5 を決め直します (AI 1 回)");
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-ash hover:text-washi"
+                    >
+                      <RotateCcw className="size-4" /> 天賦だけ読み直す
+                    </button>
+                  )}
                   {view.gallery_images.length > 1 && (
                     <button onClick={splitByArt} className="flex items-center gap-1.5 rounded-lg border border-hi-600/60 px-3 py-1.5 text-hi-400">
                       <Split className="size-4" /> 立ち絵が違う画像が混ざった時: 分ける

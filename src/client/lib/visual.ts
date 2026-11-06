@@ -150,9 +150,9 @@ const RESPONSE_SCHEMA = {
   required: ["art_visible", "same", "confidence"],
 };
 
-type Part = { text: string } | { image: string };
+export type Part = { text: string } | { image: string };
 
-async function ask(parts: Part[], settings: Settings, schema: object = RESPONSE_SCHEMA, maxTokens = 100): Promise<string> {
+export async function ask(parts: Part[], settings: Settings, schema: object = RESPONSE_SCHEMA, maxTokens = 100): Promise<string> {
   if (settings.provider === "claude") {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true, timeout: 45_000, maxRetries: 1 });

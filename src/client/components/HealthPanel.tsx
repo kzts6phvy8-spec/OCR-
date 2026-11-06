@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, ClipboardCopy, Images, Loader2, ShieldCheck, Split, Trash2, TriangleAlert } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, Images, Loader2, RotateCcw, ShieldCheck, Split, Trash2, TriangleAlert } from "lucide-react";
 import { api, lastHealthReport, type HealthReport } from "../lib/api.ts";
 import { clearErrorLog, getErrorLog } from "../lib/errorLog.ts";
 import { useToast } from "../lib/toast.tsx";
@@ -170,6 +170,22 @@ export function HealthPanel({
         </>
       )}
       <div className="mt-4 border-t border-ebony-700 pt-3">
+        <button
+          onClick={async () => {
+            const n = warlords.filter((w) => w.gallery_images.length > 0).length;
+            if (
+              !confirm(
+                `全員 (${n} 人) の天賦を読み直しますか？\n登録画像から天賦の画面を探し、画面の位置で星1〜星5 を決め直して置き換えます。\nAI に ${n} 回問い合わせます (Flash-Lite の無料枠なら 1 日 約 500 回)。この iPhone で解析するので、終わるまでアプリを開いたままにしてください。`,
+              )
+            )
+              return;
+            const count = await api.rereadTalents();
+            toast("info", `${count} 人の天賦を読み直します`, "進み具合は「スクショ解析」タブで見られます");
+          }}
+          className="mb-2 flex items-center gap-1.5 rounded-lg border border-gold-600/60 px-3 py-1.5 text-sm text-gold-400"
+        >
+          <RotateCcw className="size-4" /> 全員の天賦を読み直す (星の番号を画面の位置から決め直す)
+        </button>
         <button
           onClick={() => void findDups()}
           disabled={scan !== null}

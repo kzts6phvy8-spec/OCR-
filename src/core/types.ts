@@ -83,6 +83,8 @@ export interface Warlord {
   oni_season?: string;
   /** 天賦の星の番号を、画面の並び (①② / ③④ / ⑤) に合わせて直し済みか */
   talent_order_v2?: boolean;
+  /** 前の版の並べ替えを元に戻し済みか */
+  talent_reorder_undone?: boolean;
   /** 最後に「再解析」で読み取った内容を作り直した回 (同じ回の 2 枚目以降で消し直さないため) */
   reset_batch?: string;
 
@@ -137,6 +139,8 @@ export interface OcrJob {
   exclude_ids?: string[];
   /** 統合先が新しく作ったばかりの武将: 通常/特異は画像の読み取り結果に合わせる */
   adopt_special?: boolean;
+  /** 天賦だけを読み直す (統合先の天賦を置き換える) */
+  talents_only?: boolean;
   /** 「再解析」の回。この回の最初の保存の前に、統合先の読み取った内容を空にする */
   reset_batch?: string;
   created_at: string;
