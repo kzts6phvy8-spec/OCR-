@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { decideSpecial, emptyWarlordInput, mergeWarlord, normalizeInput } from "../../core/domain.ts";
+import { decideSpecial, emptyWarlordInput, fixTalentOrder, mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
@@ -33,7 +33,8 @@ export const api = {
   warlords: () => db.listWarlords(),
 
   async createWarlord(input: Partial<WarlordInput>): Promise<Warlord> {
-    const record = normalizeInput(input);
+    // 手で入れた天賦は、画面どおりの星の番号
+    const record = normalizeInput({ ...input, talent_order_v2: true });
     if (!record.name) throw new Error("武将名は必須です");
     return db.insertWarlord(record);
   },
@@ -46,6 +47,8 @@ export const api = {
     const current = await db.getWarlord(id);
     if (!current) throw new Error("武将が見つかりません");
     const merged = { ...toInput(current), ...input };
+    // 手で天賦を直した時は、その星の番号が正しい
+    if (input.talents) merged.talent_order_v2 = true;
     if (opts.removeImages?.length) {
       const removed = new Set(opts.removeImages);
       merged.gallery_images = current.gallery_images.filter((g) => !removed.has(g));
@@ -86,6 +89,21 @@ export const api = {
       }
     }
     return { updated, unmatched, rewritten };
+  },
+
+  /**
+   * 前の版で保存した天賦の星の番号を、画面の並び (①② / ③④ / ⑤) に合わせて直す (起動時に呼ぶ。1 人につき 1 回だけ)。
+   * AI は左の列→右の列の順に番号を振っていたので、番号 1〜5 を実際の星 1・3・5・2・4 に置き換える。直した人数を返す
+   */
+  async fixTalentOrders(): Promise<number> {
+    let fixed = 0;
+    for (const w of await db.listWarlords()) {
+      if (w.talent_order_v2) continue;
+      const input = toInput(w);
+      await db.updateWarlord(w.id, normalizeInput({ ...input, talents: fixTalentOrder(w.talents), talent_order_v2: true }));
+      if (w.talents.length) fixed++;
+    }
+    return fixed;
   },
 
   /** 中身がまったく同じ画像が 2 重に登録された武将を、1 枚にまとめる (起動時に呼ぶ) */
@@ -419,7 +437,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["fixTalentOrders", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }

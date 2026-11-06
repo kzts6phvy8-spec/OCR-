@@ -122,6 +122,13 @@ export default function App() {
       }
     };
     void (async () => {
+      // 天賦の星の番号を、画面の並びに合わせて直す (前の版で保存した分。1 人につき 1 回だけ)
+      await step("天賦の星の番号", async () => {
+        const n = await api.fixTalentOrders();
+        if (n === 0) return;
+        toast("success", `${n} 人の天賦の星の番号を、画面の並びに合わせて直しました`, "左の列→右の列の順に読んでいたのを、星1〜星5 の順に直しました");
+        void refreshWarlords();
+      });
       // 同じスクショが 2 重に登録された画像を 1 枚にまとめる
       await step("画像の重なり", async () => {
         const r = await api.dedupeImages();
