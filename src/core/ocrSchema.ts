@@ -32,7 +32,7 @@ export const OcrExtractionSchema = z.object({
 
   special_marker_visible: z.boolean().describe("画面に【特】の表記が実際に写っている場合のみ true"),
   // 前の版で送った解析 (サーバーで待っている分) の結果には無いので、無くても通す
-  meisho_marker_visible: z.boolean().optional().describe("奥義スキルの欄の右上に「名将一覧」と書かれたボタン・表記が実際に写っている場合のみ true"),
+  meisho_marker_visible: z.boolean().optional().describe("奥義スキル名の行の右端に青い「名将一覧」のボタンが写っている、または「名将修行」の画面の場合のみ true"),
 
   growth_total: nullableString('成長値合計 (例: "9" や "8.5")'),
   attack: statSchema(),
