@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, Talent, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { decideSpecial, detectTalentOrder, emptyWarlordInput, fixTalentOrder, learnTalentStats, talentRules, mergeWarlord, normalizeInput, undoTalentReorder } from "../../core/domain.ts";
+import { decideSpecial, detectTalentOrder, emptyWarlordInput, fixTalentOrder, learnTalentStats, talentRules, mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
@@ -86,24 +86,6 @@ export const api = {
       }
     }
     return { updated, unmatched, rewritten };
-  },
-
-  /**
-   * 前の版で全員の天賦にかけてしまった並べ替えを、元に戻す (起動時に呼ぶ。1 人につき 1 回だけ)。
-   * 正しかった武将まで並べ替えてしまったため。戻した人数を返す
-   */
-  async undoTalentReorders(): Promise<number> {
-    let undone = 0;
-    for (const w of await db.listWarlords()) {
-      if (!w.talent_order_v2 || w.talent_reorder_undone) continue;
-      const input = toInput(w);
-      await db.updateWarlord(
-        w.id,
-        normalizeInput({ ...input, talents: undoTalentReorder(w.talents), talent_order_v2: false, talent_reorder_undone: true }),
-      );
-      if (w.talents.length) undone++;
-    }
-    return undone;
   },
 
   /**
@@ -482,12 +464,12 @@ export const api = {
    * ファイル名は「【特】武将名(二つ名)_レア度_勢力.jpg」
    */
   async exportArtZip(onProgress?: (done: number, total: number) => void): Promise<{ blob: Blob; count: number; missing: number }> {
-    const { zipParts, safeFileName } = await import("../../core/zip.ts");
+    const { crc32, zipParts, safeFileName } = await import("../../core/zip.ts");
     const { cropLeft } = await import("./images.ts");
     const list = (await db.listWarlords()).sort(
       (a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special) || a.faction.localeCompare(b.faction, "ja"),
     );
-    const entries: { name: string; data: Uint8Array<ArrayBuffer> }[] = [];
+    const entries: { name: string; data: Blob; crc: number }[] = [];
     const used = new Set<string>();
     let missing = 0;
     for (const [i, w] of list.entries()) {
@@ -511,7 +493,8 @@ export const api = {
       let name = `${base}.jpg`;
       for (let n = 2; used.has(name); n++) name = `${base}_${n}.jpg`;
       used.add(name);
-      entries.push({ name, data: new Uint8Array(await art.arrayBuffer()) });
+      // 中身は Blob のまま持つ (全員分を読み込んだままにすると iPhone のメモリが足りなくなる)
+      entries.push({ name, data: art, crc: crc32(new Uint8Array(await art.arrayBuffer())) });
     }
     onProgress?.(list.length, list.length);
     return { blob: new Blob(zipParts(entries), { type: "application/zip" }), count: entries.length, missing };
@@ -578,7 +561,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["undoTalentReorders", "autoFixTalentOrder", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["autoFixTalentOrder", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }
