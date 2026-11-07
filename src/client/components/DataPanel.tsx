@@ -25,7 +25,7 @@ export function DataPanel({
   const [busy, setBusy] = useState(false);
   const [artProgress, setArtProgress] = useState<string | null>(null);
   // まとめた ZIP は、保存画面を閉じてしまっても作り直さずにもう一度保存できるように持っておく
-  const [artZip, setArtZip] = useState<{ blob: Blob; name: string } | null>(null);
+  const [artZips, setArtZips] = useState<{ blob: Blob; name: string }[]>([]);
   const saveArtZip = (zip: { blob: Blob; name: string }) => saveFile(zip.blob, zip.name, "戦国布武 武将の立ち絵");
 
   const exportArt = async () => {
@@ -33,10 +33,15 @@ export function DataPanel({
     setBusy(true);
     try {
       const r = await api.exportArtZip((done, total) => setArtProgress(`${done} / ${total}`));
-      const zip = { blob: r.blob, name: `立ち絵-${today()}.zip` };
-      setArtZip(zip);
-      await saveArtZip(zip);
-      toast("success", `${r.count} 人の立ち絵をまとめました`, r.missing ? `画像が無い武将 ${r.missing} 人は入っていません` : undefined);
+      const n = r.blobs.length;
+      const zips = r.blobs.map((blob, i) => ({ blob, name: n === 1 ? `立ち絵-${today()}.zip` : `立ち絵-${today()}-${i + 1}of${n}.zip` }));
+      setArtZips(zips);
+      toast(
+        "success",
+        `${r.count} 人の立ち絵を ${n} 個の ZIP にまとめました`,
+        `下の「1 / ${n} を保存」から順に保存してください (1 つ 28MB 以下)${r.missing ? `。画像が無い武将 ${r.missing} 人は入っていません` : ""}`,
+      );
+      if (n === 1) await saveArtZip(zips[0]);
     } catch (e) {
       toast("error", "立ち絵をまとめられませんでした", (e as Error).message);
     } finally {
@@ -127,7 +132,7 @@ export function DataPanel({
           <Images className="size-5" /> 全武将の立ち絵をまとめて保存
         </h2>
         <p className="mb-4 text-sm text-ash">
-          全武将 ({count} 件) の代表画像から立ち絵 (画面の左側) を切り出し、1 つの ZIP ファイルにまとめます。ファイル名は「武将名_レア度_勢力.jpg」です。「ファイル」アプリで開くと展開できます。
+          全武将 ({count} 件) の代表画像から立ち絵 (画面の左側) を切り出し、ZIP ファイルにまとめます (1 つ 28MB 以下になるように、いくつかに分けます)。ファイル名は「武将名_レア度_勢力.jpg」です。「ファイル」アプリで開くと展開できます。
         </p>
         <button
           onClick={exportArt}
@@ -136,13 +141,18 @@ export function DataPanel({
         >
           <Images className="size-4" /> {artProgress ? `まとめています… ${artProgress}` : "立ち絵 (.zip) を保存"}
         </button>
-        {artZip && !artProgress && (
-          <button
-            onClick={() => void saveArtZip(artZip)}
-            className="ml-2 inline-flex items-center gap-2 rounded-lg border border-gold-600/60 px-4 py-2 text-sm text-gold-300"
-          >
-            <Download className="size-4" /> まとめた ZIP をもう一度保存
-          </button>
+        {artZips.length > 0 && !artProgress && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {artZips.map((zip, i) => (
+              <button
+                key={zip.name}
+                onClick={() => void saveArtZip(zip)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gold-600/60 px-3 py-1.5 text-sm text-gold-300"
+              >
+                <Download className="size-4" /> {i + 1} / {artZips.length} を保存 ({(zip.blob.size / 1_000_000).toFixed(1)}MB)
+              </button>
+            ))}
+          </div>
         )}
       </section>
 

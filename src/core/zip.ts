@@ -81,5 +81,30 @@ export function zipParts(entries: ZipEntry[], date = new Date()): BlobPart[] {
   return [...parts, ...central, end];
 }
 
+/** ZIP 1 つに入れた時に増える大きさ (中身 + 見出し) */
+const entryBytes = (e: ZipEntry) => 30 + 46 + 2 * new TextEncoder().encode(e.name).length + e.data.size;
+
+/**
+ * 1 つの ZIP が maxBytes 以下になるように、中身を順番のまま分ける
+ * (1 つだけで maxBytes を超える中身は、それだけで 1 つの ZIP にする)
+ */
+export function splitForZip(entries: ZipEntry[], maxBytes: number): ZipEntry[][] {
+  const groups: ZipEntry[][] = [];
+  let current: ZipEntry[] = [];
+  let size = 22;
+  for (const e of entries) {
+    const add = entryBytes(e);
+    if (current.length > 0 && size + add > maxBytes) {
+      groups.push(current);
+      current = [];
+      size = 22;
+    }
+    current.push(e);
+    size += add;
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
 /** ファイル名に使えない文字を除く */
 export const safeFileName = (s: string) => s.replace(/[\\/:*?"<>|\r\n]/g, "_").trim() || "無名";
