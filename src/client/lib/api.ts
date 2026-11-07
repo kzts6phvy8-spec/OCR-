@@ -460,11 +460,11 @@ export const api = {
   },
 
   /**
-   * 全武将の立ち絵 (代表画像の左側) を 1 つの ZIP ファイルにまとめる。
+   * 全武将の立ち絵 (代表画像の左側) を ZIP ファイルにまとめる (1 つ 28MB 以下になるように分ける)。
    * ファイル名は「【特】武将名(二つ名)_レア度_勢力.jpg」
    */
-  async exportArtZip(onProgress?: (done: number, total: number) => void): Promise<{ blob: Blob; count: number; missing: number }> {
-    const { crc32, zipParts, safeFileName } = await import("../../core/zip.ts");
+  async exportArtZip(onProgress?: (done: number, total: number) => void, maxBytes = 28_000_000): Promise<{ blobs: Blob[]; count: number; missing: number }> {
+    const { crc32, splitForZip, zipParts, safeFileName } = await import("../../core/zip.ts");
     const { cropLeft } = await import("./images.ts");
     const list = (await db.listWarlords()).sort(
       (a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special) || a.faction.localeCompare(b.faction, "ja"),
@@ -497,7 +497,9 @@ export const api = {
       entries.push({ name, data: art, crc: crc32(new Uint8Array(await art.arrayBuffer())) });
     }
     onProgress?.(list.length, list.length);
-    return { blob: new Blob(zipParts(entries), { type: "application/zip" }), count: entries.length, missing };
+    // アップロードできる大きさに収まるよう、いくつかの ZIP に分ける
+    const blobs = splitForZip(entries, maxBytes).map((g) => new Blob(zipParts(g), { type: "application/zip" }));
+    return { blobs, count: entries.length, missing };
   },
 
   async exportText(): Promise<Blob> {
