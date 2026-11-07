@@ -122,13 +122,6 @@ export default function App() {
       }
     };
     void (async () => {
-      // 前の版で全員にかけてしまった天賦の並べ替えを元に戻す (1 人につき 1 回だけ)
-      await step("天賦の並べ替えを戻す", async () => {
-        const n = await api.undoTalentReorders();
-        if (n === 0) return;
-        toast("success", `${n} 人の天賦の並べ替えを元に戻しました`, "正しい星の番号は「データ管理」の「全員の天賦を読み直す」で、画面の位置から決め直せます");
-        void refreshWarlords();
-      });
       // 天賦の並びのずれ (星 1・3・5・2・4) を、解放済み/未解放の並びから見分けて直す (AI なし)
       await step("天賦の並び", async () => {
         const r = await api.autoFixTalentOrder();

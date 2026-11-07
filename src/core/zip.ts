@@ -19,7 +19,10 @@ export function crc32(data: Uint8Array): number {
 
 export interface ZipEntry {
   name: string;
-  data: Uint8Array<ArrayBuffer>;
+  /** 中身 (Blob のまま渡すと、全部をメモリに読み込まずに済む) */
+  data: Blob;
+  /** 中身の CRC32 (crc32() で求めたもの) */
+  crc: number;
 }
 
 /** ZIP の中身を、Blob にできる部品の並びとして作る */
@@ -32,7 +35,8 @@ export function zipParts(entries: ZipEntry[], date = new Date()): BlobPart[] {
   let offset = 0;
   for (const e of entries) {
     const name = enc.encode(e.name);
-    const crc = crc32(e.data);
+    const crc = e.crc;
+    const size = e.data.size;
     const local = new Uint8Array(30 + name.length);
     const lv = new DataView(local.buffer);
     lv.setUint32(0, 0x04034b50, true);
@@ -42,8 +46,8 @@ export function zipParts(entries: ZipEntry[], date = new Date()): BlobPart[] {
     lv.setUint16(10, dosTime, true);
     lv.setUint16(12, dosDate, true);
     lv.setUint32(14, crc, true);
-    lv.setUint32(18, e.data.length, true);
-    lv.setUint32(22, e.data.length, true);
+    lv.setUint32(18, size, true);
+    lv.setUint32(22, size, true);
     lv.setUint16(26, name.length, true);
     local.set(name, 30);
     parts.push(local, e.data);
@@ -58,13 +62,13 @@ export function zipParts(entries: ZipEntry[], date = new Date()): BlobPart[] {
     cv.setUint16(12, dosTime, true);
     cv.setUint16(14, dosDate, true);
     cv.setUint32(16, crc, true);
-    cv.setUint32(20, e.data.length, true);
-    cv.setUint32(24, e.data.length, true);
+    cv.setUint32(20, size, true);
+    cv.setUint32(24, size, true);
     cv.setUint16(28, name.length, true);
     cv.setUint32(42, offset, true);
     cen.set(name, 46);
     central.push(cen);
-    offset += local.length + e.data.length;
+    offset += local.length + size;
   }
   const centralSize = central.reduce((a, c) => a + c.length, 0);
   const end = new Uint8Array(22);
