@@ -24,13 +24,18 @@ export function DataPanel({
   const [withImages, setWithImages] = useState(count <= 100);
   const [busy, setBusy] = useState(false);
   const [artProgress, setArtProgress] = useState<string | null>(null);
+  // まとめた ZIP は、保存画面を閉じてしまっても作り直さずにもう一度保存できるように持っておく
+  const [artZip, setArtZip] = useState<{ blob: Blob; name: string } | null>(null);
+  const saveArtZip = (zip: { blob: Blob; name: string }) => saveFile(zip.blob, zip.name, "戦国布武 武将の立ち絵");
 
   const exportArt = async () => {
     if (count === 0) return toast("info", "まだ武将が登録されていません");
     setBusy(true);
     try {
       const r = await api.exportArtZip((done, total) => setArtProgress(`${done} / ${total}`));
-      await saveFile(r.blob, `立ち絵-${today()}.zip`, "戦国布武 武将の立ち絵");
+      const zip = { blob: r.blob, name: `立ち絵-${today()}.zip` };
+      setArtZip(zip);
+      await saveArtZip(zip);
       toast("success", `${r.count} 人の立ち絵をまとめました`, r.missing ? `画像が無い武将 ${r.missing} 人は入っていません` : undefined);
     } catch (e) {
       toast("error", "立ち絵をまとめられませんでした", (e as Error).message);
@@ -131,6 +136,14 @@ export function DataPanel({
         >
           <Images className="size-4" /> {artProgress ? `まとめています… ${artProgress}` : "立ち絵 (.zip) を保存"}
         </button>
+        {artZip && !artProgress && (
+          <button
+            onClick={() => void saveArtZip(artZip)}
+            className="ml-2 inline-flex items-center gap-2 rounded-lg border border-gold-600/60 px-4 py-2 text-sm text-gold-300"
+          >
+            <Download className="size-4" /> まとめた ZIP をもう一度保存
+          </button>
+        )}
       </section>
 
       <section className="panel p-5">
