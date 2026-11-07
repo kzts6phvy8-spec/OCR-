@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, Talent, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { decideSpecial, detectTalentOrder, emptyWarlordInput, hasMeishoMark, normalizeName, fixTalentOrder, learnTalentStats, talentRules, mergeWarlord, normalizeInput } from "../../core/domain.ts";
+import { decideSpecial, detectTalentOrder, emptyWarlordInput, hasMeishoMark, stripMeisho, fixTalentOrder, learnTalentStats, talentRules, mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
@@ -148,29 +148,36 @@ export const api = {
 
   /**
    * 名将の印を、すでにあるデータから付ける (AI なし・起動時に呼ぶ)。
-   * 武将名・二つ名に「名将」が混ざって読まれている武将と、保存してある読み取り結果に「名将」がある武将
+   * 保存してある読み取り結果や、武将名・二つ名・奥義スキルに「名将一覧」が混ざっている武将に付ける。
+   * 前の版は「名将」の 2 文字だけで印を付け、二つ名からその文字を消していたので、二つ名を読み取り結果から戻して判断し直す
    */
   async markMeisho(): Promise<number> {
-    const all = await db.listWarlords();
-    const taken = new Set(all.map((w) => `${w.name}|${w.is_special}`));
     let marked = 0;
-    for (const w of all) {
-      if (w.is_meisho) continue;
-      let found = hasMeishoMark({ name: w.name, title_alias: w.title_alias });
-      for (const id of found ? [] : w.gallery_images) {
+    for (const w of await db.listWarlords()) {
+      const exts = [];
+      for (const id of w.gallery_images) {
         const ext = await db.getExtraction(id).catch(() => null);
-        if (ext && hasMeishoMark(ext)) {
-          found = true;
-          break;
-        }
+        if (ext) exts.push(ext);
       }
-      if (!found) continue;
-      // 名前に混ざった「名将」は外す (外した名前の武将がすでにいる時は、取り違えないようにそのまま)
-      const clean = normalizeName(w.name).name;
-      const name = clean && clean !== w.name && !taken.has(`${clean}|${w.is_special}`) ? clean : w.name;
-      const title_alias = w.title_alias.replace(/[【\[(（]?\s*名将\s*[】\])）]?/g, "").trim();
-      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), name, title_alias, is_meisho: true }));
-      marked++;
+      // 前の版で消してしまった二つ名の「名将」を戻す
+      const lostAlias = w.title_alias.includes("名将")
+        ? null
+        : exts.map((e) => stripMeisho(String(e.title_alias ?? "").replace(/【\s*特\s*】/g, ""))).find((a) => a.includes("名将"));
+      const evidence = exts.some(hasMeishoMark) || hasMeishoMark({ name: w.name, title_alias: w.title_alias, skill: { name: w.skill_name, desc: w.skill_desc, gauge: null } });
+      const is_meisho = evidence || (w.is_meisho && !lostAlias);
+      if (is_meisho === Boolean(w.is_meisho) && !lostAlias && !evidence) continue;
+      const next = {
+        ...toInput(w),
+        name: stripMeisho(w.name) || w.name,
+        title_alias: lostAlias ?? stripMeisho(w.title_alias),
+        skill_name: stripMeisho(w.skill_name),
+        skill_desc: stripMeisho(w.skill_desc),
+        is_meisho,
+      };
+      const changed = (["name", "title_alias", "skill_name", "skill_desc", "is_meisho"] as const).some((k) => next[k] !== (w[k] ?? false));
+      if (!changed) continue;
+      await db.updateWarlord(w.id, normalizeInput(next));
+      if (is_meisho && !w.is_meisho) marked++;
     }
     return marked;
   },

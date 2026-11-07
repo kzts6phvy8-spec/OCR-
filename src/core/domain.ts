@@ -20,8 +20,12 @@ import { detectSeason, normalizeSeason } from "./seasons.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
 
 const SPECIAL_MARKER_RE = /【\s*特\s*】/g;
-/** 「名将」の表記 (武将名・二つ名に混ざって読まれた分も含む) */
-const MEISHO_RE = /[【\[(（]?\s*名将\s*[】\])）]?/g;
+/**
+ * 名将機能が開放された武将は、奥義スキルの欄の右上に「名将一覧」と書かれている。
+ * その文字が武将名・二つ名・奥義スキルに混ざって読まれた時に外す
+ * (「〜の名将」のような二つ名もあるので、「名将」だけでは外さない)
+ */
+const MEISHO_RE = /[【\[(（]?\s*名将一覧\s*[】\])）]?/g;
 const RARITY_TAG_RE = /[【\[［]\s*(?:SSR|SR|R|N|SP|UR)\s*[】\]］]/gi;
 
 export function emptyWarlordInput(): WarlordInput {
@@ -181,10 +185,14 @@ export function decideSpecial(ext: OcrExtraction, mode: UploadMode): SpecialDeci
  * OCR 結果をこの画像から確実に読み取れた項目だけの差分 (patch) に変換する。
  * 写っていない項目は patch に含めない (= 既存値を消さない)。
  */
-/** 読み取り結果に「名将」の表記があるか */
-export function hasMeishoMark(ext: Pick<OcrExtraction, "name" | "title_alias" | "meisho_marker_visible">): boolean {
-  return Boolean(ext.meisho_marker_visible) || /名将/.test(`${ext.name ?? ""} ${ext.title_alias ?? ""}`.normalize("NFKC"));
+/** 読み取り結果に「名将一覧」の表記があるか (= 名将機能が開放された武将) */
+export function hasMeishoMark(ext: Partial<Pick<OcrExtraction, "name" | "title_alias" | "meisho_marker_visible" | "skill">>): boolean {
+  const text = [ext.name, ext.title_alias, ext.skill?.name, ext.skill?.desc].map((v) => v ?? "").join(" ").normalize("NFKC");
+  return Boolean(ext.meisho_marker_visible) || /名将一覧/.test(text);
 }
+
+/** 「名将一覧」の文字を取り除く */
+export const stripMeisho = (text: string) => text.normalize("NFKC").replace(MEISHO_RE, "").trim();
 
 export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
   const patch: Partial<WarlordInput> = {};
@@ -195,7 +203,7 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
   };
 
   set("title_alias", str(ext.title_alias).replace(SPECIAL_MARKER_RE, "").replace(MEISHO_RE, "").trim());
-  // 名将: 画面に「名将」と書かれていれば印を付ける (一度付いた印は、写っていない画像で外さない)
+  // 名将: 奥義スキルの欄の右上に「名将一覧」があれば印を付ける (一度付いた印は、写っていない画像で外さない)
   if (hasMeishoMark(ext)) patch.is_meisho = true;
   set("rarity", normalizeRarity(ext.rarity));
   set("faction", normalizeFaction(ext.faction));
@@ -212,9 +220,9 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
   set("troops_base", int(ext.troops.base, 0, 99999));
   set("troops_growth", growthString(ext.troops.growth));
 
-  set("skill_name", str(ext.skill.name));
+  set("skill_name", stripMeisho(str(ext.skill.name)));
   set("skill_gauge", int(ext.skill.gauge, 0, 3));
-  set("skill_desc", str(ext.skill.desc));
+  set("skill_desc", stripMeisho(str(ext.skill.desc)));
 
   const aw = ext.awakening;
   const split = splitAwakeningName(aw.skill_name);
