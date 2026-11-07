@@ -477,6 +477,46 @@ export const api = {
     return count;
   },
 
+  /**
+   * 全武将の立ち絵 (代表画像の左側) を 1 つの ZIP ファイルにまとめる。
+   * ファイル名は「【特】武将名(二つ名)_レア度_勢力.jpg」
+   */
+  async exportArtZip(onProgress?: (done: number, total: number) => void): Promise<{ blob: Blob; count: number; missing: number }> {
+    const { zipParts, safeFileName } = await import("../../core/zip.ts");
+    const { cropLeft } = await import("./images.ts");
+    const list = (await db.listWarlords()).sort(
+      (a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special) || a.faction.localeCompare(b.faction, "ja"),
+    );
+    const entries: { name: string; data: Uint8Array<ArrayBuffer> }[] = [];
+    const used = new Set<string>();
+    let missing = 0;
+    for (const [i, w] of list.entries()) {
+      onProgress?.(i, list.length);
+      const id = w.image_url || w.gallery_images[0];
+      const image = id ? await db.getImage(id).catch(() => null) : null;
+      if (!image) {
+        missing++;
+        continue;
+      }
+      let art: Blob;
+      try {
+        art = await cropLeft(image, 0.45, 1200);
+      } catch {
+        missing++;
+        continue;
+      }
+      const base = safeFileName(
+        [`${w.is_special ? "【特】" : ""}${w.name}${w.title_alias ? `(${w.title_alias})` : ""}`, w.rarity, w.faction].filter(Boolean).join("_"),
+      );
+      let name = `${base}.jpg`;
+      for (let n = 2; used.has(name); n++) name = `${base}_${n}.jpg`;
+      used.add(name);
+      entries.push({ name, data: new Uint8Array(await art.arrayBuffer()) });
+    }
+    onProgress?.(list.length, list.length);
+    return { blob: new Blob(zipParts(entries), { type: "application/zip" }), count: entries.length, missing };
+  },
+
   async exportText(): Promise<Blob> {
     const list = (await db.listWarlords()).sort((a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
     return new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" });
