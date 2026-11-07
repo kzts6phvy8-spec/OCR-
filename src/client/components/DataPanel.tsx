@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Download, FileJson, FileText, Trash2, Upload } from "lucide-react";
+import { Download, FileJson, FileText, Images, Trash2, Upload } from "lucide-react";
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
 import { saveFile, today } from "../lib/share.ts";
@@ -23,6 +23,22 @@ export function DataPanel({
   const [mode, setMode] = useState<"merge" | "replace">("merge");
   const [withImages, setWithImages] = useState(count <= 100);
   const [busy, setBusy] = useState(false);
+  const [artProgress, setArtProgress] = useState<string | null>(null);
+
+  const exportArt = async () => {
+    if (count === 0) return toast("info", "まだ武将が登録されていません");
+    setBusy(true);
+    try {
+      const r = await api.exportArtZip((done, total) => setArtProgress(`${done} / ${total}`));
+      await saveFile(r.blob, `立ち絵-${today()}.zip`, "戦国布武 武将の立ち絵");
+      toast("success", `${r.count} 人の立ち絵をまとめました`, r.missing ? `画像が無い武将 ${r.missing} 人は入っていません` : undefined);
+    } catch (e) {
+      toast("error", "立ち絵をまとめられませんでした", (e as Error).message);
+    } finally {
+      setArtProgress(null);
+      setBusy(false);
+    }
+  };
 
   const exportData = async () => {
     setBusy(true);
@@ -98,6 +114,22 @@ export function DataPanel({
           className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-b from-shu-400 to-shu-600 px-4 py-2 font-bold text-white disabled:opacity-50"
         >
           <Download className="size-4" /> テキスト (.txt) を保存
+        </button>
+      </section>
+
+      <section className="panel p-5 md:col-span-2">
+        <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
+          <Images className="size-5" /> 全武将の立ち絵をまとめて保存
+        </h2>
+        <p className="mb-4 text-sm text-ash">
+          全武将 ({count} 件) の代表画像から立ち絵 (画面の左側) を切り出し、1 つの ZIP ファイルにまとめます。ファイル名は「武将名_レア度_勢力.jpg」です。「ファイル」アプリで開くと展開できます。
+        </p>
+        <button
+          onClick={exportArt}
+          disabled={busy}
+          className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-b from-gold-500 to-gold-600 px-4 py-2 font-bold text-ebony-950 disabled:opacity-50"
+        >
+          <Images className="size-4" /> {artProgress ? `まとめています… ${artProgress}` : "立ち絵 (.zip) を保存"}
         </button>
       </section>
 
