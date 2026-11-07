@@ -1072,7 +1072,7 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
             onChange={(e) => setDraft((d) => ({ ...d, is_meisho: e.target.checked }))}
             className="accent-shu-500"
           />
-          名将 (画面に「名将」と書かれている武将)
+          名将 (奥義スキルの欄の右上に「名将一覧」がある武将)
         </label>
         <div className="space-y-2">
           {draft.synergy_skills.map((s, i) => (
