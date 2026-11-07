@@ -279,3 +279,17 @@ describe("並びが確かな武将から天賦の法則を学ぶ", () => {
     expect(detectTalentOrder(row(real), stats)).toBe("ok");
   });
 });
+
+describe("名将", () => {
+  it("画面の「名将」の表記で印が付き、名前からは外す", () => {
+    const patch = extractionToPatch(makeExtraction({ name: "【名将】真田幸村", meisho_marker_visible: false }));
+    expect(patch.is_meisho).toBe(true);
+    expect(normalizeName("【名将】真田幸村").name).toBe("真田幸村");
+    expect(extractionToPatch(makeExtraction({ meisho_marker_visible: true })).is_meisho).toBe(true);
+    expect(extractionToPatch(makeExtraction({ name: "日野富子" })).is_meisho).toBeUndefined();
+  });
+  it("一度付いた印は、写っていない画像で外さない", () => {
+    const base = normalizeInput({ ...emptyWarlordInput(), name: "日野富子", is_meisho: true });
+    expect(mergeWarlord(base, extractionToPatch(makeExtraction({ name: "日野富子" }))).merged.is_meisho).toBe(true);
+  });
+});

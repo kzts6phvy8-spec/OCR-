@@ -13,6 +13,17 @@ export function SpecialBadge({ size = "sm" }: { size?: "sm" | "md" }) {
   );
 }
 
+export function MeishoBadge() {
+  return (
+    <span
+      title="名将"
+      className="inline-flex shrink-0 items-center rounded border border-shu-400/70 bg-shu-700/80 px-1.5 py-0.5 font-serif text-[10px] font-bold text-white"
+    >
+      名将
+    </span>
+  );
+}
+
 export function WeaponBadge() {
   return (
     <span

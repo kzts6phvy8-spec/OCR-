@@ -14,6 +14,7 @@ export function makeExtraction(over: DeepPartial<OcrExtraction> = {}): OcrExtrac
     level: null,
     stars: null,
     special_marker_visible: false,
+    meisho_marker_visible: false,
     growth_total: null,
     attack: { ...stat },
     defense: { ...stat },
