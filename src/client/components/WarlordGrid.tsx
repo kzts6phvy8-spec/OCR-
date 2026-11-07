@@ -5,7 +5,7 @@ import { saveFile, today } from "../lib/share.ts";
 import { warlordsToText } from "../../core/text.ts";
 import { useToast } from "../lib/toast.tsx";
 import { FACTIONS, RARITIES, type Warlord } from "../../core/types.ts";
-import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
+import { MeishoBadge, RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { StoredImage } from "./StoredImage.tsx";
 import { MISSING_FIELDS, hasAnyMissing, missingLabels } from "../../core/missing.ts";
 
@@ -31,6 +31,7 @@ function searchText(w: Warlord): string {
     ...w.troop_variants,
     ...w.talents.flatMap((t) => [t.name, t.effect]),
     ...w.synergy_skills.flatMap((s) => [s.partner, s.effect]),
+    w.is_meisho ? "名将" : "",
   ]
     .join("\n")
     .normalize("NFKC")
@@ -57,6 +58,7 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
   const [rarities, setRarities] = useState<string[]>([]);
   const [special, setSpecial] = useState<SpecialFilter>("all");
   const [weaponOnly, setWeaponOnly] = useState(false);
+  const [meishoOnly, setMeishoOnly] = useState(false);
   /** 未入力の項目で絞り込み ("" = しない / "any" = どれか 1 つでも / 項目の id) */
   const [missing, setMissing] = useState("");
   const [query, setQuery] = useState("");
@@ -88,6 +90,7 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
         if (special === "normal" && w.is_special) return false;
         if (special === "special" && !w.is_special) return false;
         if (weaponOnly && !w.has_weapon_awakening) return false;
+        if (meishoOnly && !w.is_meisho) return false;
         if (missing === "any" && !hasAnyMissing(w)) return false;
         if (missing && missing !== "any" && !MISSING_FIELDS.find((f) => f.id === missing)?.missing(w)) return false;
         return terms.every((t) => text.includes(t));
@@ -108,10 +111,10 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
           return factionIdx(a) - factionIdx(b) || byName(a, b);
       }
     });
-  }, [indexed, faction, rarities, special, weaponOnly, missing, query, sort]);
+  }, [indexed, faction, rarities, special, weaponOnly, meishoOnly, missing, query, sort]);
 
   // 絞り込みを変えたら表示件数を最初に戻す
-  useEffect(() => setLimit(PAGE), [faction, rarities, special, weaponOnly, missing, query, sort]);
+  useEffect(() => setLimit(PAGE), [faction, rarities, special, weaponOnly, meishoOnly, missing, query, sort]);
 
   // 未入力の項目ごとの人数 (選択肢に表示する)
   const missingCounts = useMemo(() => {
@@ -200,6 +203,10 @@ export function WarlordGrid({ warlords, loading, onOpen, onCreate, onGoUpload, o
         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ash">
           <input type="checkbox" checked={weaponOnly} onChange={(e) => setWeaponOnly(e.target.checked)} className="accent-hi-500" />
           武器覚醒のみ
+        </label>
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ash">
+          <input type="checkbox" checked={meishoOnly} onChange={(e) => setMeishoOnly(e.target.checked)} className="accent-shu-500" />
+          名将のみ
         </label>
         <div className="flex items-center gap-1.5">
           <Flag className={`size-4 ${faction !== "all" ? "text-gold-400" : "text-ebony-500"}`} />
@@ -446,6 +453,7 @@ function WarlordCard({ w, showMissing, onClick }: { w: Warlord; showMissing: boo
         <div className="absolute top-2 left-2 flex items-center gap-1">
           <RarityBadge rarity={w.rarity} />
           {w.is_special && <SpecialBadge />}
+          {w.is_meisho && <MeishoBadge />}
         </div>
         {w.screenshot_count > 0 && (
           <span className="absolute top-2 right-2 flex items-center gap-0.5 rounded bg-ebony-950/80 px-1.5 py-0.5 text-[10px] text-ash">
@@ -490,6 +498,7 @@ function WarlordRow({ w, showMissing, onClick }: { w: Warlord; showMissing: bool
         <div className="flex items-center gap-1.5">
           <RarityBadge rarity={w.rarity} />
           {w.is_special && <SpecialBadge />}
+          {w.is_meisho && <MeishoBadge />}
           <span className="truncate font-serif text-base font-extrabold">{w.name}</span>
           {w.faction && <span className="shrink-0 rounded bg-ebony-800 px-1.5 py-0.5 text-[10px] text-ash">{w.faction}</span>}
         </div>

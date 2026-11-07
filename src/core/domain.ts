@@ -20,6 +20,8 @@ import { detectSeason, normalizeSeason } from "./seasons.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
 
 const SPECIAL_MARKER_RE = /【\s*特\s*】/g;
+/** 「名将」の表記 (武将名・二つ名に混ざって読まれた分も含む) */
+const MEISHO_RE = /[【\[(（]?\s*名将\s*[】\])）]?/g;
 const RARITY_TAG_RE = /[【\[［]\s*(?:SSR|SR|R|N|SP|UR)\s*[】\]］]/gi;
 
 export function emptyWarlordInput(): WarlordInput {
@@ -68,6 +70,7 @@ export function normalizeName(raw: string | null | undefined): {
   const name = text
     .replace(RARITY_TAG_RE, "")
     .replace(SPECIAL_MARKER_RE, "")
+    .replace(MEISHO_RE, "")
     .replace(/^(?:SSR|SR|SP)\s+/i, "")
     .replace(/[\s　・]+/g, "")
     .trim();
@@ -178,6 +181,11 @@ export function decideSpecial(ext: OcrExtraction, mode: UploadMode): SpecialDeci
  * OCR 結果をこの画像から確実に読み取れた項目だけの差分 (patch) に変換する。
  * 写っていない項目は patch に含めない (= 既存値を消さない)。
  */
+/** 読み取り結果に「名将」の表記があるか */
+export function hasMeishoMark(ext: Pick<OcrExtraction, "name" | "title_alias" | "meisho_marker_visible">): boolean {
+  return Boolean(ext.meisho_marker_visible) || /名将/.test(`${ext.name ?? ""} ${ext.title_alias ?? ""}`.normalize("NFKC"));
+}
+
 export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
   const patch: Partial<WarlordInput> = {};
   const set = <K extends keyof WarlordInput>(key: K, value: WarlordInput[K] | "" | 0 | null) => {
@@ -186,7 +194,9 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
     patch[key] = value as WarlordInput[K];
   };
 
-  set("title_alias", str(ext.title_alias).replace(SPECIAL_MARKER_RE, "").trim());
+  set("title_alias", str(ext.title_alias).replace(SPECIAL_MARKER_RE, "").replace(MEISHO_RE, "").trim());
+  // 名将: 画面に「名将」と書かれていれば印を付ける (一度付いた印は、写っていない画像で外さない)
+  if (hasMeishoMark(ext)) patch.is_meisho = true;
   set("rarity", normalizeRarity(ext.rarity));
   set("faction", normalizeFaction(ext.faction));
   set("level", int(ext.level, 0, 999));
@@ -531,6 +541,7 @@ export function mergeWarlord(
     if (next && next.length > merged[key].length) merged[key] = next;
   }
 
+  if (patch.is_meisho) merged.is_meisho = true;
   const prevLevel = merged.level;
   if (patch.level && patch.level > merged.level) merged.level = patch.level;
   if (patch.stars != null && patch.stars > merged.stars) merged.stars = patch.stars;
@@ -627,6 +638,7 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
       .map((s) => ({ partner: String(s?.partner ?? "").trim(), effect: String(s?.effect ?? "").trim() }))
       .filter((s) => s.partner),
     no_synergy: Boolean(v.no_synergy),
+    is_meisho: Boolean(v.is_meisho),
     oni_season: normalizeSeason(v.oni_season),
     talent_order_v2: Boolean(v.talent_order_v2),
     talent_reorder_undone: Boolean(v.talent_reorder_undone),

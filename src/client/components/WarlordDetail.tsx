@@ -32,7 +32,7 @@ import {
 } from "../../core/types.ts";
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
-import { RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
+import { MeishoBadge, RarityBadge, SpecialBadge, Stars, WeaponBadge } from "./Badges.tsx";
 import { talentText, warlordToText } from "../../core/text.ts";
 import { fixColumnOrderTalents } from "../../core/domain.ts";
 import { StoredImage } from "./StoredImage.tsx";
@@ -371,6 +371,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
                   {view.is_special && <SpecialBadge size="md" />}
+                  {view.is_meisho && <MeishoBadge />}
                   <h2 className="font-serif text-3xl font-extrabold">{view.name}</h2>
                   {view.faction && <span className="rounded-lg bg-ebony-700 px-3 py-1 text-sm">{view.faction}</span>}
                   {view.oni_season && <span className="rounded-lg border border-hi-600/60 px-3 py-1 text-sm text-hi-400">{view.oni_season}</span>}
@@ -1063,6 +1064,15 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
             className="accent-gold-500"
           />
           この武将には連携スキルがない (「未入力: 連携スキル」に出さない)
+        </label>
+        <label className="mb-2 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={Boolean(draft.is_meisho)}
+            onChange={(e) => setDraft((d) => ({ ...d, is_meisho: e.target.checked }))}
+            className="accent-shu-500"
+          />
+          名将 (画面に「名将」と書かれている武将)
         </label>
         <div className="space-y-2">
           {draft.synergy_skills.map((s, i) => (

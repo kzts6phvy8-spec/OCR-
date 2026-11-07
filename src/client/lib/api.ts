@@ -1,7 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, Talent, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { warlordsToText } from "../../core/text.ts";
-import { decideSpecial, detectTalentOrder, emptyWarlordInput, fixTalentOrder, learnTalentStats, talentRules, mergeWarlord, normalizeInput } from "../../core/domain.ts";
+import { decideSpecial, detectTalentOrder, emptyWarlordInput, hasMeishoMark, normalizeName, fixTalentOrder, learnTalentStats, talentRules, mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
 import * as db from "./db.ts";
@@ -144,6 +144,35 @@ export const api = {
   async talentRules() {
     const known = (await db.listWarlords()).filter((w) => w.talent_order_v2 && w.talents.length > 0).map((w) => w.talents);
     return { from: known.length, rules: talentRules(learnTalentStats(known)) };
+  },
+
+  /**
+   * 名将の印を、すでにあるデータから付ける (AI なし・起動時に呼ぶ)。
+   * 武将名・二つ名に「名将」が混ざって読まれている武将と、保存してある読み取り結果に「名将」がある武将
+   */
+  async markMeisho(): Promise<number> {
+    const all = await db.listWarlords();
+    const taken = new Set(all.map((w) => `${w.name}|${w.is_special}`));
+    let marked = 0;
+    for (const w of all) {
+      if (w.is_meisho) continue;
+      let found = hasMeishoMark({ name: w.name, title_alias: w.title_alias });
+      for (const id of found ? [] : w.gallery_images) {
+        const ext = await db.getExtraction(id).catch(() => null);
+        if (ext && hasMeishoMark(ext)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) continue;
+      // 名前に混ざった「名将」は外す (外した名前の武将がすでにいる時は、取り違えないようにそのまま)
+      const clean = normalizeName(w.name).name;
+      const name = clean && clean !== w.name && !taken.has(`${clean}|${w.is_special}`) ? clean : w.name;
+      const title_alias = w.title_alias.replace(/[【\[(（]?\s*名将\s*[】\])）]?/g, "").trim();
+      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), name, title_alias, is_meisho: true }));
+      marked++;
+    }
+    return marked;
   },
 
   /** 中身がまったく同じ画像が 2 重に登録された武将を、1 枚にまとめる (起動時に呼ぶ) */
@@ -385,6 +414,7 @@ export const api = {
         faction: w.faction,
         oni_season: w.oni_season,
         no_synergy: w.no_synergy,
+        is_meisho: w.is_meisho,
         gallery_images: [],
         image_url: "",
       }),
@@ -563,7 +593,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["autoFixTalentOrder", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["autoFixTalentOrder", "markMeisho", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }

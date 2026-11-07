@@ -79,6 +79,8 @@ export interface Warlord {
   synergy_skills: SynergySkill[];
   /** この武将には連携スキルが無い (手で付ける印。「未入力: 連携スキル」に出さない) */
   no_synergy?: boolean;
+  /** 名将の武将 (画面に「名将」と書かれている)。読み取りで見つかるほか、手でも付けられる */
+  is_meisho?: boolean;
   /** 鬼憑武将のシーズン (4 人の組。例: 徳川四天王)。連携スキルから自動で入るほか、手でも選べる */
   oni_season?: string;
   /** 天賦の星の番号を、画面の並び (①② / ③④ / ⑤) に合わせて直し済みか */

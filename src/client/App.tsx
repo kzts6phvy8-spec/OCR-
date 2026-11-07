@@ -134,6 +134,13 @@ export default function App() {
           void refreshWarlords();
         }
       });
+      // 名将の印を、すでにあるデータから付ける (AI なし)
+      await step("名将", async () => {
+        const n = await api.markMeisho();
+        if (n === 0) return;
+        toast("success", `${n} 人に「名将」の印を付けました`, "図鑑の「名将のみ」で絞り込めます");
+        void refreshWarlords();
+      });
       // 同じスクショが 2 重に登録された画像を 1 枚にまとめる
       await step("画像の重なり", async () => {
         const r = await api.dedupeImages();
