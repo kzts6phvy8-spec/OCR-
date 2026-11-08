@@ -76,8 +76,27 @@ type RestResponse = {
   promptFeedback?: { blockReason?: string };
 };
 
-/** REST API の応答本文 (JSON 文字列) から読み取り結果を取り出す */
-export function parseGeminiRestBody(body: string): OcrExtraction {
+/** 文章と画像を並べた依頼を、REST API (generateContent) にそのまま送れる本文にする (天賦の読み直しなど、サーバーに任せる時用) */
+export function buildGeminiPartsBody(parts: ({ text: string } | { image: string })[], schema: object, maxTokens: number) {
+  return {
+    contents: [
+      {
+        role: "user",
+        parts: parts.map((p) => ("text" in p ? { text: p.text } : { inlineData: { mimeType: "image/jpeg", data: p.image } })),
+      },
+    ],
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseJsonSchema: schema,
+      temperature: 0,
+      maxOutputTokens: maxTokens,
+      ...(thinkingLevelAllowed() ? { thinkingConfig: { thinkingLevel: "LOW" } } : {}),
+    },
+  };
+}
+
+/** REST API の応答本文 (JSON 文字列) から、AI の答えの文字を取り出す */
+export function geminiRestText(body: string): string {
   let res: RestResponse;
   try {
     res = JSON.parse(body) as RestResponse;
@@ -93,7 +112,12 @@ export function parseGeminiRestBody(body: string): OcrExtraction {
     .filter((p) => p.text && !p.thought)
     .map((p) => p.text)
     .join("");
-  return parseExtractionText(text);
+  return text;
+}
+
+/** REST API の応答本文 (JSON 文字列) から読み取り結果を取り出す */
+export function parseGeminiRestBody(body: string): OcrExtraction {
+  return parseExtractionText(geminiRestText(body));
 }
 
 /** Gemini の HTTP エラー (状態コードと本文) を、利用者向けの説明に直す */
