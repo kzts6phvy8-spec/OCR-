@@ -112,7 +112,7 @@ export function DataPanel({
     <div className="grid gap-6 md:grid-cols-2">
       <HealthPanel warlords={warlords} onChanged={onImported} onOpenWarlord={onOpenWarlord} />
       <OniSeasonPanel warlords={warlords} onOpenWarlord={onOpenWarlord} />
-      <MeishoPanel warlords={warlords} onOpenWarlord={onOpenWarlord} />
+      <MeishoPanel warlords={warlords} onOpenWarlord={onOpenWarlord} onChanged={onImported} />
       <section className="panel p-5 md:col-span-2">
         <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
           <FileText className="size-5" /> 全武将をテキストで保存

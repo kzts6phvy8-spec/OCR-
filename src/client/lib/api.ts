@@ -548,6 +548,54 @@ export const api = {
     return { blobs, count: entries.length, missing };
   },
 
+  /**
+   * 名将一覧の名前だけでは決められない武将 (同じ勢力に同じ名前が何人もいる) を、AI に登録画像を見せて見分ける。
+   * 1 人につき AI に 1 回。上限に達したらそこで止める
+   */
+  async checkAmbiguousMeisho(onProgress?: (done: number, total: number, name: string) => void): Promise<{ marked: number; notMeisho: number; unknown: string[]; stopped: string }> {
+    const { matchMeishoRoster } = await import("../../core/meisho.ts");
+    const { checkMeishoWithAi } = await import("./meishoCheck.ts");
+    const targets = matchMeishoRoster(await db.listWarlords())
+      .filter((m) => m.candidates.length > 0 && m.decided.length === 0)
+      .flatMap((m) => m.candidates);
+    let marked = 0;
+    let notMeisho = 0;
+    const unknown: string[] = [];
+    let stopped = "";
+    for (const [i, w] of targets.entries()) {
+      const label = `${w.is_special ? "【特】" : ""}${w.name}`;
+      onProgress?.(i, targets.length, label);
+      let result: boolean | null;
+      try {
+        result = await checkMeishoWithAi(w);
+      } catch (e) {
+        stopped = e instanceof Error ? e.message : String(e);
+        break;
+      }
+      if (result === null) {
+        unknown.push(label);
+        continue;
+      }
+      const fresh = await db.getWarlord(w.id);
+      if (!fresh) continue;
+      if (Boolean(fresh.is_meisho) !== result) await db.updateWarlord(fresh.id, normalizeInput({ ...toInput(fresh), is_meisho: result }));
+      if (result) marked++;
+      else notMeisho++;
+    }
+    onProgress?.(targets.length, targets.length, "");
+    return { marked, notMeisho, unknown, stopped };
+  },
+
+  /** 名将の武将だけを書き出す (テキスト / JSON) */
+  async exportMeisho(format: "txt" | "json"): Promise<{ blob: Blob; count: number }> {
+    const list = (await db.listWarlords())
+      .filter((w) => w.is_meisho)
+      .sort((a, b) => a.faction.localeCompare(b.faction, "ja") || a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
+    if (format === "txt") return { blob: new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" }), count: list.length };
+    const payload: ExportPayload = { app: "sengoku-fubu-warlord-db", version: 2, exported_at: new Date().toISOString(), warlords: list };
+    return { blob: new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), count: list.length };
+  },
+
   async exportText(): Promise<Blob> {
     const list = (await db.listWarlords()).sort((a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
     return new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" });
