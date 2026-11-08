@@ -3,7 +3,7 @@ import { differsByOneChar, ingestExtraction } from "../../core/ingest.ts";
 import { emptyWarlordInput, normalizeInput, warlordLabel } from "../../core/domain.ts";
 import * as db from "./db.ts";
 import { bgActive, loadSettings } from "./settings.ts";
-import { callServer, type RemoteResult, type ServerCounts } from "./remote.ts";
+import { ServerError, callServer, type RemoteResult, type ServerCounts } from "./remote.ts";
 import { buildGeminiBody, geminiHttpError, parseGeminiRestBody } from "./geminiShared.ts";
 import { blobToBase64 } from "./images.ts";
 import { analyzeWithRetry } from "./analyze.ts";
@@ -412,6 +412,12 @@ async function processJob(job: OcrJob) {
       await update(job, { status: "queued", attempts: Math.max(0, job.attempts - 1), extraction });
       return;
     }
+    if (err instanceof ServerError && !extraction && job.attempts < 3) {
+      // サーバーへの送信が時間切れ・つながらなかった: 少し待って送り直す (3 回まで)
+      await sleep(5_000);
+      await update(job, { status: "queued" });
+      return;
+    }
     if (lastHiddenAt >= startedAt) {
       // アプリを離れたせいで止まった分は、失敗にせず (回数にも数えず) やり直す
       await update(job, { status: "queued", attempts: Math.max(0, job.attempts - 1), extraction });
@@ -438,20 +444,30 @@ async function processJob(job: OcrJob) {
   }
 }
 
+/** サーバーへ送るだけのジョブ (この端末の AI を使わない) */
+const isUpload = (j: OcrJob) => !j.local && !j.talents_only && !j.extraction;
+
 async function worker() {
   for (;;) {
     if (typeof document !== "undefined" && document.hidden) return; // 裏にいる間は始めない
-    while (pausedUntil > Date.now()) {
-      await sleep(Math.min(1000, pausedUntil - Date.now()));
-      if (typeof document !== "undefined" && document.hidden) return;
-    }
-    // 次のジョブを取り出して「解析中」にするまでを 1 人ずつ行い、同じジョブを二重に取らないようにする
+    const paused = pausedUntil > Date.now();
+    // 次のジョブを取り出して「解析中」にするまでを 1 人ずつ行い、同じジョブを二重に取らないようにする。
+    // サーバーへ送るだけのジョブは先に取り、上限で休んでいる間も送る (この端末の AI の上限とは関係ないため)。
+    // 天賦の読み直しなど、この端末で AI を使うジョブが前に何百件並んでいても、送信が待たされない
     const job = await claimLock(async () => {
-      const next = await db.nextQueuedJob();
+      const upload = bgActive(loadSettings()) ? await db.nextQueuedJob(isUpload) : null;
+      const next = upload ?? (paused ? null : await db.nextQueuedJob());
       if (!next) return null;
       return update(next, { status: "processing", attempts: next.attempts + 1, started_at: new Date().toISOString() });
     });
-    if (!job) return;
+    if (!job) {
+      // 休んでいる間に待っているジョブがあれば、休みが明けるまで待つ (その間に送るジョブが来れば送る)
+      if (paused && (await db.nextQueuedJob())) {
+        await sleep(Math.max(200, Math.min(1000, pausedUntil - Date.now())));
+        continue;
+      }
+      return;
+    }
     await processJob(job);
   }
 }

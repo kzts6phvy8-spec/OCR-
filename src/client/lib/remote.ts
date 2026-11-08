@@ -27,6 +27,9 @@ export interface RemoteResult {
 
 export class ServerError extends Error {}
 
+/** サーバーの応答を待つ時間 (Apps Script は起動に時間がかかることがあるので長め) */
+const TIMEOUT_MS = 90_000;
+
 export async function callServer<T = Record<string, unknown>>(
   settings: Settings,
   action: "config" | "enqueue" | "results" | "ack" | "cancel" | "status" | "kick",
@@ -34,14 +37,23 @@ export async function callServer<T = Record<string, unknown>>(
 ): Promise<T & { ok: true } & Partial<ServerCounts>> {
   if (!settings.bgUrl) throw new ServerError("サーバーの URL が未設定です");
   let res: Response;
+  // 応答が来ないまま待ち続けて、送信が止まってしまわないように時間を区切る
+  // (kick はサーバーが解析し終えるまで返事をしない合図なので区切らない)
+  const controller = new AbortController();
+  const timer = action === "kick" ? null : setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     res = await fetch(settings.bgUrl, {
       method: "POST",
       body: JSON.stringify({ action, token: settings.bgToken, ...payload }),
       redirect: "follow",
+      signal: controller.signal,
     });
   } catch {
-    throw new ServerError("サーバーに接続できませんでした (URL と電波状況を確認してください)");
+    throw new ServerError(
+      controller.signal.aborted ? "サーバーの応答がありませんでした (時間切れ)" : "サーバーに接続できませんでした (URL と電波状況を確認してください)",
+    );
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   const text = await res.text();
   let json: { ok?: boolean; error?: string };
