@@ -446,17 +446,50 @@ async function processJob(job: OcrJob) {
 
 /** サーバーへ送るだけのジョブ (この端末の AI を使わない) */
 const isUpload = (j: OcrJob) => !j.local && !j.talents_only && !j.extraction;
+/** サーバーの解析待ちを「動いている」とみなす時間 (これより古いものは止まっているかもしれないので、天賦の読み直しを待たせない) */
+const REMOTE_ACTIVE_MS = 30 * 60_000;
+
+/**
+ * 次に取りかかるジョブを、優先順に選ぶ (同じ順位なら登録順):
+ *  0. サーバーへ送るだけのジョブ (この端末の AI を使わないので、上限で休んでいる間も送る)
+ *  1. 読み取り済みで、保存 (立ち絵の確認) だけが残っているジョブ (サーバーの結果など)
+ *  2. この端末で解析するジョブ
+ *  3. 天賦の読み直し (いちばん後回し。同じ API キーの無料枠を使うので、サーバーの解析が動いている間は始めない)
+ */
+async function pickNextJob(paused: boolean): Promise<OcrJob | null> {
+  const jobs = (await db.listJobs()).reverse(); // 登録順
+  const bg = bgActive(loadSettings());
+  const now = Date.now();
+  const serverBusy =
+    bg && jobs.some((j) => (j.status === "remote" && now - Date.parse(j.updated_at) < REMOTE_ACTIVE_MS) || (j.status === "queued" && isUpload(j)));
+  const otherWork = jobs.some((j) => j.status === "queued" && !j.talents_only);
+  const rank = (j: OcrJob): number | null => {
+    if (j.status !== "queued") return null;
+    if (bg && isUpload(j)) return 0;
+    if (paused) return null;
+    if (j.extraction) return 1;
+    if (j.talents_only) return serverBusy || otherWork ? null : 3;
+    return 2;
+  };
+  let best: OcrJob | null = null;
+  let bestRank = Infinity;
+  for (const j of jobs) {
+    const r = rank(j);
+    if (r !== null && r < bestRank) {
+      best = j;
+      bestRank = r;
+    }
+  }
+  return best;
+}
 
 async function worker() {
   for (;;) {
     if (typeof document !== "undefined" && document.hidden) return; // 裏にいる間は始めない
     const paused = pausedUntil > Date.now();
-    // 次のジョブを取り出して「解析中」にするまでを 1 人ずつ行い、同じジョブを二重に取らないようにする。
-    // サーバーへ送るだけのジョブは先に取り、上限で休んでいる間も送る (この端末の AI の上限とは関係ないため)。
-    // 天賦の読み直しなど、この端末で AI を使うジョブが前に何百件並んでいても、送信が待たされない
+    // 次のジョブを取り出して「解析中」にするまでを 1 人ずつ行い、同じジョブを二重に取らないようにする
     const job = await claimLock(async () => {
-      const upload = bgActive(loadSettings()) ? await db.nextQueuedJob(isUpload) : null;
-      const next = upload ?? (paused ? null : await db.nextQueuedJob());
+      const next = await pickNextJob(paused);
       if (!next) return null;
       return update(next, { status: "processing", attempts: next.attempts + 1, started_at: new Date().toISOString() });
     });
@@ -466,6 +499,7 @@ async function worker() {
         await sleep(Math.max(200, Math.min(1000, pausedUntil - Date.now())));
         continue;
       }
+      // 天賦の読み直しだけが、サーバーの解析が終わるのを待っている: サーバーの結果を受け取った後に再開する
       return;
     }
     await processJob(job);
@@ -473,8 +507,8 @@ async function worker() {
 }
 
 export async function runQueue() {
-  const next = await db.nextQueuedJob();
-  const limit = bgActive(loadSettings()) && !next?.local ? UPLOAD_CONCURRENCY : CONCURRENCY;
+  const upload = bgActive(loadSettings()) ? await db.nextQueuedJob(isUpload) : null;
+  const limit = upload ? UPLOAD_CONCURRENCY : CONCURRENCY;
   if (workers >= limit) return;
   if (!(await db.nextQueuedJob())) return;
   await keepAwake();
@@ -557,6 +591,8 @@ export async function pollServer(): Promise<void> {
       }
     }
     if (serverCounts && serverCounts.pending > 0) kickServer();
+    // サーバーの解析が終わるのを待っていた天賦の読み直しなどを再開する
+    void runQueue();
     // 版 2 以前のサーバーは止まっている理由を返さないので、止まっていればアプリから上限を確かめる
     if (!serverCounts?.limit && serverVersion < 3 && isStalled(await db.listJobs(), lastResultAt)) {
       await probeIfNeeded(settings);
