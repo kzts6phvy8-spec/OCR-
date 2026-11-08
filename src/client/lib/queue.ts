@@ -741,6 +741,23 @@ export async function takeOverRemoteJobs() {
 }
 
 /**
+ * この iPhone で直接解析することになっている待機中のジョブを、サーバーに任せ直す (アプリを閉じていても進むように)。
+ * 読み取り済みで保存だけ残っている分は、図鑑がこの iPhone にあるので戻せない
+ */
+export async function sendLocalJobsToServer() {
+  if (!bgActive(loadSettings())) return 0;
+  let moved = 0;
+  for (const job of await db.listJobs()) {
+    if (job.status !== "queued" || !job.local || job.extraction) continue;
+    await update(job, { local: false, attempts: 0 });
+    moved++;
+  }
+  notify();
+  void runQueue();
+  return moved;
+}
+
+/**
  * サーバーで解析待ちの依頼を取り消し、今の設定のモデルで送り直す。
  * 依頼にはモデルが書き込まれているので、モデルを切り替えた後は送り直さないと新しいモデルで解析されない。
  */

@@ -548,6 +548,7 @@ function StatusIcon({ status }: { status: OcrJob["status"] }) {
 
 /** バックグラウンド解析の進み具合を 4 段階で表示する (どこまで終われば閉じてよいかを分かりやすく) */
 function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number | null; qs: QueueState }) {
+  const toast = useToast();
   const total = batch.length;
   const toSend = batch.filter((j) => !j.local && (j.status === "queued" || j.status === "processing")).length;
   // サーバーで止まった分を引き取って、この端末で解析している枚数
@@ -614,6 +615,16 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
                       .join("、")}`
                   : "順番待ち (サーバーへの送信・保存が先に進みます)"}
             </p>
+            {localJobs.some((j) => j.status === "queued" && !j.extraction) && (
+              <button
+                onClick={() =>
+                  void api.sendLocalJobsToServer().then((n) => n && toast("info", `${n} 枚をサーバーに任せます`, "アプリを閉じていても解析が進みます"))
+                }
+                className="mt-2 rounded-md border border-shu-400/60 px-2.5 py-1 text-xs font-bold text-shu-200"
+              >
+                サーバーに任せる (アプリを閉じても進む)
+              </button>
+            )}
           </div>
         </div>
       ) : sending ? (
