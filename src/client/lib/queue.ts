@@ -1,10 +1,10 @@
-import type { Faction, OcrJob, UploadMode } from "../../core/types.ts";
+import type { Faction, OcrJob, Talent, UploadMode } from "../../core/types.ts";
 import { differsByOneChar, ingestExtraction } from "../../core/ingest.ts";
 import { emptyWarlordInput, normalizeInput, warlordLabel } from "../../core/domain.ts";
 import * as db from "./db.ts";
 import { bgActive, loadSettings } from "./settings.ts";
 import { ServerError, callServer, type RemoteResult, type ServerCounts } from "./remote.ts";
-import { buildGeminiBody, geminiHttpError, parseGeminiRestBody } from "./geminiShared.ts";
+import { buildGeminiBody, buildGeminiPartsBody, geminiHttpError, geminiRestText, parseGeminiRestBody } from "./geminiShared.ts";
 import { blobToBase64 } from "./images.ts";
 import { analyzeWithRetry } from "./analyze.ts";
 import { OcrError } from "./ocrCommon.ts";
@@ -356,8 +356,22 @@ function pauseForRateLimit(err: OcrError) {
 async function processTalentReread(job: OcrJob) {
   const w = job.target_id ? await db.getWarlord(job.target_id) : null;
   if (!w) throw new Error("天賦を読み直す武将が見つかりません");
-  const { rereadTalents } = await import("./talentReread.ts");
-  const talents = await rereadTalents(w);
+  const tr = await import("./talentReread.ts");
+  // バックグラウンド解析がオンなら、サーバーに任せる (アプリを閉じていても進む)
+  if (bgActive(loadSettings()) && !job.local) {
+    const settings = loadSettings();
+    const body = buildGeminiPartsBody(await tr.buildTalentRequest(w), tr.TALENT_SCHEMA, tr.TALENT_MAX_TOKENS);
+    await callServer(settings, "enqueue", { id: job.id, model: settings.geminiModel, body });
+    await update(job, { status: "remote" });
+    kickServer();
+    return;
+  }
+  await saveTalents(job, w.id, await tr.rereadTalents(w));
+}
+
+/** 読み直した天賦を武将に保存して、ジョブを終える */
+async function saveTalents(job: OcrJob, warlordId: string, talents: Talent[]) {
+  const w = { id: warlordId };
   const saved = await ingestLock(async () => {
     const fresh = await db.getWarlord(w.id);
     if (!fresh) throw new Error("天賦を読み直す武将が見つかりません");
@@ -449,26 +463,36 @@ const isUpload = (j: OcrJob) => !j.local && !j.talents_only && !j.extraction;
 /** サーバーの解析待ちを「動いている」とみなす時間 (これより古いものは止まっているかもしれないので、天賦の読み直しを待たせない) */
 const REMOTE_ACTIVE_MS = 30 * 60_000;
 
+/** サーバーに一度に預ける天賦の読み直しの数 (新しいスクショの解析が、その後ろで待たされすぎないように) */
+const MAX_REMOTE_TALENTS = 50;
+
 /**
  * 次に取りかかるジョブを、優先順に選ぶ (同じ順位なら登録順):
  *  0. サーバーへ送るだけのジョブ (この端末の AI を使わないので、上限で休んでいる間も送る)
  *  1. 読み取り済みで、保存 (立ち絵の確認) だけが残っているジョブ (サーバーの結果など)
  *  2. この端末で解析するジョブ
- *  3. 天賦の読み直し (いちばん後回し。同じ API キーの無料枠を使うので、サーバーの解析が動いている間は始めない)
+ *  3. 天賦の読み直し (いちばん後回し。同じ API キーの無料枠を使うので、新しいスクショの解析が動いている間は始めない)
+ *     バックグラウンド解析がオンならサーバーに任せる (アプリを閉じていても進む)。預けるのは一度に 50 件まで
  */
 async function pickNextJob(paused: boolean): Promise<OcrJob | null> {
   const jobs = (await db.listJobs()).reverse(); // 登録順
   const bg = bgActive(loadSettings());
   const now = Date.now();
-  const serverBusy =
-    bg && jobs.some((j) => (j.status === "remote" && now - Date.parse(j.updated_at) < REMOTE_ACTIVE_MS) || (j.status === "queued" && isUpload(j)));
+  const remoteActive = (j: OcrJob) => j.status === "remote" && now - Date.parse(j.updated_at) < REMOTE_ACTIVE_MS;
+  // 新しいスクショの解析がサーバーで動いている・送るのを待っている
+  const screenshotsBusy = bg && jobs.some((j) => (remoteActive(j) && !j.talents_only) || (j.status === "queued" && isUpload(j)));
   const otherWork = jobs.some((j) => j.status === "queued" && !j.talents_only);
+  const remoteTalents = jobs.filter((j) => j.talents_only && remoteActive(j)).length;
   const rank = (j: OcrJob): number | null => {
     if (j.status !== "queued") return null;
     if (bg && isUpload(j)) return 0;
     if (paused) return null;
     if (j.extraction) return 1;
-    if (j.talents_only) return serverBusy || otherWork ? null : 3;
+    if (j.talents_only) {
+      if (screenshotsBusy) return null;
+      if (bg && !j.local) return remoteTalents < MAX_REMOTE_TALENTS ? 3 : null;
+      return otherWork ? null : 3;
+    }
     return 2;
   };
   let best: OcrJob | null = null;
@@ -618,6 +642,13 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
         /* そのまま */
       }
       throw geminiHttpError(r.status, message, model);
+    }
+    if (job.talents_only) {
+      // 天賦の読み直しの結果 (サーバーに任せた分)
+      const { parseTalentAnswer } = await import("./talentReread.ts");
+      if (!job.target_id) throw new Error("天賦を読み直す武将が見つかりません");
+      await saveTalents(job, job.target_id, parseTalentAnswer(geminiRestText(r.body ?? "")));
+      return;
     }
     extraction = parseGeminiRestBody(r.body ?? "");
     const result = await ingestJob(job, extraction);

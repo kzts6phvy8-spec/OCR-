@@ -35,11 +35,22 @@ const SCHEMA = {
   required: ["found", "talents"],
 };
 
-/** 武将の天賦を AI に読み直させる (星の番号は位置から決める) */
-export async function rereadTalents(w: Warlord): Promise<Talent[]> {
+/** AI に見せる画像を選ぶ: 読み取り結果に天賦がある画像 (天賦・装備の画面) を先に。分からなければ登録画像を順に (最大 6 枚) */
+async function pickImages(w: Warlord): Promise<string[]> {
+  const ids = [...new Set([...w.gallery_images, w.image_url].filter(Boolean))];
+  const withTalents: string[] = [];
+  for (const id of ids) {
+    const ext = await db.getExtraction(id).catch(() => null);
+    if (ext && (ext.talents.length > 0 || ext.screen_types.some((t) => /天賦|装備/.test(t)))) withTalents.push(id);
+  }
+  return (withTalents.length ? withTalents : ids).slice(0, 6);
+}
+
+/** 天賦を読み直す依頼 (AI に見せる文章と画像) を作る */
+export async function buildTalentRequest(w: Warlord): Promise<Part[]> {
   const parts: Part[] = [];
   let n = 0;
-  for (const id of w.gallery_images.slice(0, 6)) {
+  for (const id of await pickImages(w)) {
     const blob = await db.getImage(id);
     if (!blob) continue;
     n++;
@@ -47,7 +58,15 @@ export async function rereadTalents(w: Warlord): Promise<Talent[]> {
   }
   if (n === 0) throw new OcrError("画像がありません", false);
   parts.unshift({ text: PROMPT(n) });
-  const text = await ask(parts, loadSettings(), SCHEMA, 1500);
+  return parts;
+}
+
+export const TALENT_SCHEMA = SCHEMA;
+/** AI の答えの長さの上限 */
+export const TALENT_MAX_TOKENS = 4096;
+
+/** AI の答えから天賦を取り出す (星の番号は位置から決める) */
+export function parseTalentAnswer(text: string): Talent[] {
   let parsed: { found?: boolean; talents?: { position?: string; effect?: string; unlocked?: boolean }[] };
   try {
     parsed = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
@@ -64,4 +83,10 @@ export async function rereadTalents(w: Warlord): Promise<Talent[]> {
   }
   if (byStar.size === 0) throw new OcrError("天賦の位置を読み取れませんでした", true, 3_000);
   return [...byStar.values()].sort((a, b) => a.star_level - b.star_level);
+}
+
+/** 武将の天賦を、この端末から AI に読み直させる */
+export async function rereadTalents(w: Warlord): Promise<Talent[]> {
+  const parts = await buildTalentRequest(w);
+  return parseTalentAnswer(await ask(parts, loadSettings(), SCHEMA, TALENT_MAX_TOKENS));
 }

@@ -100,12 +100,15 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
   };
 
   // 進捗バー: 最も古い未完了ジョブ以降に追加されたジョブを「現在のバッチ」とする
-  const pending = jobs.filter((j) => isPending(j.status));
+  // 天賦の読み直しは後回しで進む別の仕事なので、スクショの進み具合 (送信中の枚数など) には数えない
+  const pending = jobs.filter((j) => isPending(j.status) && !j.talents_only);
   const batch = useMemo(() => {
     if (pending.length === 0) return [];
     const since = Math.min(...pending.map((j) => Date.parse(j.created_at)));
-    return jobs.filter((j) => Date.parse(j.created_at) >= since);
+    return jobs.filter((j) => Date.parse(j.created_at) >= since && !j.talents_only);
   }, [jobs, pending]);
+  const talentWaiting = jobs.filter((j) => j.talents_only && j.status === "queued").length;
+  const talentAtServer = jobs.filter((j) => j.talents_only && (j.status === "remote" || j.status === "processing")).length;
   const batchDone = batch.filter((j) => j.status === "done" || j.status === "error").length;
   const processing = jobs.filter((j) => j.status === "processing");
   const failedCount = jobs.filter((j) => j.status === "error").length;
@@ -257,6 +260,15 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
             </button>
           )}
         </div>
+
+        {(talentWaiting > 0 || talentAtServer > 0) && (
+          <p className="mb-3 rounded-lg border border-ebony-700 bg-ebony-900 p-2.5 text-xs text-ash">
+            天賦の読み直し: {talentAtServer > 0 && `${bg ? "サーバーで解析中" : "解析中"} ${talentAtServer} 件・`}待ち {talentWaiting} 件
+            <span className="block text-[11px] text-ebony-500">
+              新しいスクショの解析を先に進め、その後で少しずつ進めます{bg ? " (サーバーに預けた分は、アプリを閉じていても進みます)" : ""}
+            </span>
+          </p>
+        )}
 
         {qs.pausedUntil && (
           <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/50 bg-amber-900/20 p-3 text-xs text-amber-200">
