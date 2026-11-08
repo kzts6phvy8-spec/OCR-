@@ -433,6 +433,8 @@ export const api = {
         no_synergy: w.no_synergy,
         is_meisho: w.is_meisho,
         meisho_manual: w.meisho_manual,
+        // 名将修行の画面は登録画像に残さないので、読み取った追加天賦は作り直しで消さない
+        meisho_talents: w.meisho_talents,
         gallery_images: [],
         image_url: "",
       }),

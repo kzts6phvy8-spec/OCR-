@@ -305,6 +305,8 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
             no_synergy: target.no_synergy,
             is_meisho: target.is_meisho,
             meisho_manual: target.meisho_manual,
+            // 名将修行の画面は登録画像に残さないので、読み取った追加天賦は作り直しで消さない
+            meisho_talents: target.meisho_talents,
             gallery_images: target.gallery_images,
             image_url: target.image_url,
             reset_batch: job.reset_batch,
@@ -322,8 +324,14 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
       excludeIds: job.exclude_ids,
       // 名将修行の画面: 登録済みの名将 (名将の印がある武将) の立ち絵と見比べて誰かを決める
       identifyMeisho: async () => {
-        const meisho = (await db.listWarlords()).filter((w) => w.is_meisho && !(job.exclude_ids ?? []).includes(w.id));
-        return identifyMeishoByArt(job.image_id, meisho);
+        // 名将一覧に名前があるのに、同じ名前が何人もいてまだ印を付けられていない武将も候補に入れる (手で「名将ではない」とした武将は除く)
+        const all = (await db.listWarlords()).filter((w) => !(job.exclude_ids ?? []).includes(w.id));
+        const { matchMeishoRoster } = await import("../../core/meisho.ts");
+        const unsure = matchMeishoRoster(all)
+          .filter((m) => m.decided.length === 0)
+          .flatMap((m) => m.candidates)
+          .filter((w) => !w.meisho_manual);
+        return identifyMeishoByArt(job.image_id, [...new Set([...all.filter((w) => w.is_meisho), ...unsure])]);
       },
       similarNames: async (name) => {
         // 名前だけを索引から読む (全武将の中身を毎回読むと遅い)

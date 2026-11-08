@@ -17,6 +17,7 @@ import { isStalled, lastProbe } from "../lib/probe.ts";
 import { LITE_GEMINI_MODEL, bgActive, loadSettings, setGeminiModel } from "../lib/settings.ts";
 import { useToast } from "../lib/toast.tsx";
 import { StoredImage } from "./StoredImage.tsx";
+import { MEISHO_ROSTER } from "../../core/meisho.ts";
 import { WarlordPicker } from "./WarlordPicker.tsx";
 import { normalizeName } from "../../core/domain.ts";
 import { differsByOneChar } from "../../core/ingest.ts";
@@ -474,7 +475,7 @@ function JobRow({
                       ? (w) => w.name === readName || differsByOneChar(w.name, readName)
                       : job.extraction?.meisho_training?.visible
                         ? // 名将修行の画面 (名前が無い): 名将の武将を候補に並べ、立ち絵で選んでもらう
-                          (w) => Boolean(w.is_meisho)
+                          (w) => Boolean(w.is_meisho) || isRosterName(w)
                         : undefined
                   }
                   priority={readName ? (w) => (w.name === readName ? 0 : 1) : undefined}
@@ -766,3 +767,7 @@ function ServerNotice({ qs, jobs }: { qs: QueueState; jobs: OcrJob[] }) {
     </div>
   );
 }
+
+/** 名将一覧に勢力と名前が載っている武将か (名将の印がまだ無くても、名将修行の画面の統合先の候補に出す) */
+const ROSTER_KEYS = new Set(MEISHO_ROSTER.map((e) => `${e.faction}|${e.name}`));
+const isRosterName = (w: { faction: string; name: string }) => ROSTER_KEYS.has(`${w.faction}|${w.name}`);
