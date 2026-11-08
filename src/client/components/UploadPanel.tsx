@@ -589,6 +589,19 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
                 `${localPending - localSaving} 枚は、この iPhone から直接 Gemini に送って読み取っています (サーバーを通さないだけで、Gemini で解析しています)。`}
               終わるまでアプリを開いたままにしてください。
             </p>
+            {/* いま何をしているか (上限で休んでいるのか、処理中なのか) をここでも見せる */}
+            <p className="mt-1 text-xs font-bold text-amber-200">
+              {qs.pausedUntil
+                ? `Gemini の上限で休んでいます (${qs.pauseReason})。${
+                    qs.pausedUntil - Date.now() > 120_000 ? `${formatReset(new Date(qs.pausedUntil))}に` : `${Math.ceil((qs.pausedUntil - Date.now()) / 1000)} 秒後に`
+                  }自動で再開します`
+                : localJobs.some((j) => j.status === "processing")
+                  ? `いま処理中: ${localJobs
+                      .filter((j) => j.status === "processing")
+                      .map((j) => j.file_name)
+                      .join("、")}`
+                  : "順番待ち (サーバーへの送信・保存が先に進みます)"}
+            </p>
           </div>
         </div>
       ) : sending ? (
