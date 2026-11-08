@@ -539,7 +539,10 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
   const total = batch.length;
   const toSend = batch.filter((j) => !j.local && (j.status === "queued" || j.status === "processing")).length;
   // サーバーで止まった分を引き取って、この端末で解析している枚数
-  const localPending = batch.filter((j) => j.local && (j.status === "queued" || j.status === "processing")).length;
+  const localJobs = batch.filter((j) => j.local && (j.status === "queued" || j.status === "processing"));
+  const localPending = localJobs.length;
+  // 読み取りはサーバーで済んでいて、保存 (同じ名前の武将との立ち絵の確認) だけが残っている分
+  const localSaving = localJobs.filter((j) => j.extraction).length;
   const atServer = batch.filter((j) => j.status === "remote").length;
   const finished = batch.filter((j) => j.status === "done" || j.status === "error").length;
   const failed = batch.filter((j) => j.status === "error").length;
@@ -578,8 +581,14 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
         <div className="mb-4 flex items-start gap-3 rounded-xl bg-shu-500/15 p-3">
           <Loader2 className="mt-0.5 size-6 shrink-0 animate-spin text-shu-300" />
           <div>
-            <p className="font-bold text-shu-300">この iPhone で解析中… 残り {localPending} 枚</p>
-            <p className="mt-0.5 text-xs text-washi/80">サーバーで止まっていた分を、この iPhone で直接解析しています。終わるまでアプリを開いたままにしてください。</p>
+            <p className="font-bold text-shu-300">この iPhone で処理中… 残り {localPending} 枚</p>
+            <p className="mt-0.5 text-xs text-washi/80">
+              {localSaving > 0 &&
+                `${localSaving} 枚はサーバーで読み取り済みで、図鑑への保存 (同じ名前の武将と立ち絵が同じかの確認。迷う時だけ Gemini に 1 回尋ねます) だけが残っています。`}
+              {localPending - localSaving > 0 &&
+                `${localPending - localSaving} 枚は、この iPhone から直接 Gemini に送って読み取っています (サーバーを通さないだけで、Gemini で解析しています)。`}
+              終わるまでアプリを開いたままにしてください。
+            </p>
           </div>
         </div>
       ) : sending ? (
