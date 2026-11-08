@@ -177,6 +177,8 @@ export async function ingestExtraction(
     adoptSpecial?: boolean;
     /** 1 文字だけ違う名前の武将 (名前の読み違いの救済用) */
     similarNames?: (name: string) => Promise<Warlord[]>;
+    /** 名将修行の画面 (武将名が書かれていない) の立ち絵から、登録済みの名将の誰かを見分ける */
+    identifyMeisho?: () => Promise<Warlord | null>;
   },
 ): Promise<IngestResult> {
   const readFaction = opts.faction || normalizeFaction(ext.faction);
@@ -209,6 +211,16 @@ export async function ingestExtraction(
     if (opts.mode === "auto" && decision.is_special !== isSpecial && decision.reasons.length > 0) {
       warnings.push(`画像は${decision.is_special ? "特異" : "通常"}武将と判定されましたが、指定された統合先に保存しました`);
     }
+  } else if (!readName && ext.meisho_training?.visible) {
+    // 名将修行の画面には武将名が無いので、立ち絵を登録済みの名将と見比べて誰かを決める
+    const found = opts.identifyMeisho ? await opts.identifyMeisho() : null;
+    if (!found) {
+      throw new IngestError("名将修行の画面の立ち絵から、どの名将か見分けられませんでした。下の「統合先を選んで保存」で武将を選んでください");
+    }
+    existing = found;
+    name = found.name;
+    isSpecial = found.is_special;
+    warnings.push(`名将修行の画面なので、立ち絵から「${found.is_special ? "【特】" : ""}${found.name}」と判断しました`);
   } else {
     if (!readName) {
       throw new IngestError("武将名を読み取れませんでした。下の「統合先を選んで保存」で武将を選んでください");
@@ -249,8 +261,11 @@ export async function ingestExtraction(
   }
 
   const patch = extractionToPatch(ext);
-  patch.gallery_images = [opts.imageId];
-  patch.image_url = opts.imageId;
+  // 名将修行の画面は、追加天賦を読むだけの画面なので登録画像には入れない (立ち絵の見比べ・画像の枚数の数え方を乱さないように)
+  if (!ext.meisho_training?.visible) {
+    patch.gallery_images = [opts.imageId];
+    patch.image_url = opts.imageId;
+  }
 
   const base = existing ? { ...toInput(existing), ...(becomesSpecial ? { is_special: true } : {}) } : { ...emptyWarlordInput(), name, is_special: isSpecial };
   const { merged, warnings: mergeWarnings } = mergeWarlord(base, patch);

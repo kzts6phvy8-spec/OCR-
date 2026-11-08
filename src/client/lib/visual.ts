@@ -344,3 +344,64 @@ export async function groupByArtWithAi(imageIds: string[]): Promise<{ groups: st
   }
   return { groups: groups.sort((a, b) => b.length - a.length), unknown };
 }
+
+// ---- 名将修行の画面の立ち絵から、どの名将かを見分ける ----
+
+/** AI に見せる候補の人数 (端末の指紋で近い順) */
+const MEISHO_AI_CANDIDATES = 6;
+
+const IDENTIFY_PROMPT = (n: number) =>
+  [
+    "スマホゲーム『戦国布武』の「名将修行」の画面 (判定する画像) と、名将の武将の画面 (候補 1 〜 " + n + ") があります。",
+    "判定する画像の左側のカードに描かれた人物のイラストと同じイラストの候補を選んでください。",
+    "画面の種類・枠・文字・色合い (白黒かどうか) の違いは無視し、人物のイラスト (顔・髪型・衣装・持ち物・ポーズ) だけで比べてください。",
+    `JSON で答えてください: {"match": 候補の番号 (同じイラストが無ければ 0), "confidence": 0〜100}`,
+  ].join("\n");
+
+const IDENTIFY_SCHEMA = {
+  type: "object",
+  properties: { match: { type: "integer" }, confidence: { type: "integer" } },
+  required: ["match", "confidence"],
+};
+
+/**
+ * 名将修行の画面 (武将名が書かれていない) の立ち絵が、登録済みの名将の誰かを見分ける。
+ * 端末の指紋で近い候補を絞り、AI に 1 回だけ選ばせる。見分けられなければ null
+ */
+export async function identifyMeishoByArt(imageId: string, candidates: Warlord[]): Promise<Warlord | null> {
+  if (candidates.length === 0) return null;
+  const target = await signatureOf(imageId);
+  const scored: { w: Warlord; score: number }[] = [];
+  for (const w of candidates) {
+    let best = -1;
+    if (target) {
+      for (const id of imagesOf(w).slice(0, LOCAL_SAMPLES)) {
+        const sig = await signatureOf(id);
+        if (sig) best = Math.max(best, signatureSimilarity(target, sig));
+      }
+    }
+    scored.push({ w, score: best });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, MEISHO_AI_CANDIDATES).filter((s) => s.w.image_url || s.w.gallery_images.length);
+  if (top.length === 0) return null;
+
+  const targetBlob = await db.getImage(imageId);
+  if (!targetBlob) return null;
+  const parts: Part[] = [{ text: IDENTIFY_PROMPT(top.length) }, { text: "判定する画像:" }, { image: await blobToBase64(await compressImage(targetBlob, PREVIEW)) }];
+  for (const [i, s] of top.entries()) {
+    const blob = await db.getImage(s.w.image_url || s.w.gallery_images[0]);
+    if (!blob) continue;
+    parts.push({ text: `候補 ${i + 1}:` }, { image: await blobToBase64(await compressImage(blob, PREVIEW)) });
+  }
+  const text = await ask(parts, loadSettings(), IDENTIFY_SCHEMA, 100);
+  let v: { match?: number; confidence?: number } = {};
+  try {
+    v = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+  } catch {
+    return null;
+  }
+  const n = Number(v.match);
+  if (!Number.isInteger(n) || n < 1 || n > top.length || (v.confidence ?? 0) < 70) return null;
+  return top[n - 1].w;
+}

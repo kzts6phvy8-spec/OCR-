@@ -11,7 +11,7 @@ import { OcrError } from "./ocrCommon.ts";
 import { shrinkForGallery } from "./images.ts";
 import { nextDailyReset } from "./quota.ts";
 import { isStalled, probeIfNeeded } from "./probe.ts";
-import { artChecker } from "./visual.ts";
+import { artChecker, identifyMeishoByArt } from "./visual.ts";
 import { logError } from "./errorLog.ts";
 import { dedupeWarlordImages } from "./dedupe.ts";
 import type { OcrExtraction } from "../../core/ocrSchema.ts";
@@ -320,6 +320,11 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
       faction: job.faction ?? "",
       sameArt: artChecker(job.image_id, extraction.screen_types),
       excludeIds: job.exclude_ids,
+      // 名将修行の画面: 登録済みの名将 (名将の印がある武将) の立ち絵と見比べて誰かを決める
+      identifyMeisho: async () => {
+        const meisho = (await db.listWarlords()).filter((w) => w.is_meisho && !(job.exclude_ids ?? []).includes(w.id));
+        return identifyMeishoByArt(job.image_id, meisho);
+      },
       similarNames: async (name) => {
         // 名前だけを索引から読む (全武将の中身を毎回読むと遅い)
         const names = (await db.listNames()).filter((n) => differsByOneChar(n, name));

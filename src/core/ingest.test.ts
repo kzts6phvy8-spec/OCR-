@@ -232,3 +232,20 @@ describe("アップロード時の勢力指定", () => {
     expect(res.warnings).toEqual([]);
   });
 });
+
+describe("名将修行の画面", () => {
+  const training = makeExtraction({
+    name: null,
+    meisho_training: { visible: true, selected_rank: "少納言", selected_slot: "下", effect: "計略防御+8%", trained: true },
+  });
+  it("立ち絵で見分けた名将に追加天賦を足し、登録画像には入れない", async () => {
+    const nanbu = await ingestExtraction(makeExtraction({ name: "南部晴政", meisho_marker_visible: true }), opts("skill.png"));
+    const r = await ingestExtraction(training, { ...opts("train.png"), identifyMeisho: async () => repo.all().find((w) => w.id === nanbu.warlord.id) ?? null });
+    expect(r.warlord.id).toBe(nanbu.warlord.id);
+    expect(r.warlord.meisho_talents).toEqual([{ rank: "少納言", slot: "下", effect: "計略防御+8%", trained: true }]);
+    expect(r.warlord.gallery_images).toEqual(["skill.png"]);
+  });
+  it("見分けられなければ統合先を選んでもらう", async () => {
+    await expect(ingestExtraction(training, { ...opts("train.png"), identifyMeisho: async () => null })).rejects.toThrow("統合先を選んで保存");
+  });
+});
