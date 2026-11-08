@@ -53,11 +53,11 @@ export function MeishoPanel({
     }
   };
 
-  const save = async (format: "txt" | "json") => {
+  const save = async (format: "txt" | "json" | "training") => {
     try {
       const r = await api.exportMeisho(format);
       if (r.count === 0) return toast("info", "名将の印が付いた武将がいません");
-      await saveFile(r.blob, `名将-${today()}.${format}`, "戦国布武 名将の武将");
+      await saveFile(r.blob, format === "training" ? `名将修行-${today()}.txt` : `名将-${today()}.${format}`, "戦国布武 名将の武将");
     } catch (e) {
       toast("error", "保存できませんでした", (e as Error).message);
     }
@@ -88,6 +88,9 @@ export function MeishoPanel({
         )}
         <button onClick={() => void save("txt")} className="inline-flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-sm text-washi">
           <Download className="size-4" /> 名将だけ保存 (.txt・{meishoCount} 人)
+        </button>
+        <button onClick={() => void save("training")} className="inline-flex items-center gap-1.5 rounded-lg border border-shu-500/60 px-3 py-1.5 text-sm text-washi">
+          <Download className="size-4" /> 名将修行の追加天賦だけ保存 (.txt)
         </button>
         <button onClick={() => void save("json")} className="inline-flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-sm text-washi">
           <Download className="size-4" /> 名将だけ保存 (.json)
