@@ -5,6 +5,7 @@ import { useToast } from "../lib/toast.tsx";
 import { saveFile, today } from "../lib/share.ts";
 import { HealthPanel } from "./HealthPanel.tsx";
 import { OniSeasonPanel } from "./OniSeasonPanel.tsx";
+import { MeishoPanel } from "./MeishoPanel.tsx";
 import type { Warlord } from "../../core/types.ts";
 
 export function DataPanel({
@@ -111,6 +112,7 @@ export function DataPanel({
     <div className="grid gap-6 md:grid-cols-2">
       <HealthPanel warlords={warlords} onChanged={onImported} onOpenWarlord={onOpenWarlord} />
       <OniSeasonPanel warlords={warlords} onOpenWarlord={onOpenWarlord} />
+      <MeishoPanel warlords={warlords} onOpenWarlord={onOpenWarlord} />
       <section className="panel p-5 md:col-span-2">
         <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
           <FileText className="size-5" /> 全武将をテキストで保存

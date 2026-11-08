@@ -179,6 +179,15 @@ export const api = {
       await db.updateWarlord(w.id, normalizeInput(next));
       if (is_meisho && !w.is_meisho) marked++;
     }
+    // ゲーム内の「名将一覧」と勢力・名前が合う武将にも付ける (同じ勢力に同じ名前が一覧より多い時は、立ち絵で選んでもらう)
+    const { matchMeishoRoster } = await import("../../core/meisho.ts");
+    for (const m of matchMeishoRoster(await db.listWarlords())) {
+      for (const w of m.decided) {
+        if (w.is_meisho) continue;
+        await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), is_meisho: true }));
+        marked++;
+      }
+    }
     return marked;
   },
 
