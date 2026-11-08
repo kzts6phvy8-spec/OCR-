@@ -5,6 +5,7 @@ import { useToast } from "../lib/toast.tsx";
 import { saveFile, today } from "../lib/share.ts";
 import type { Warlord } from "../../core/types.ts";
 import { matchMeishoRoster } from "../../core/meisho.ts";
+import { StoredImage } from "./StoredImage.tsx";
 
 // 「データ管理」の名将一覧: ゲーム内の「名将一覧」の武将が図鑑のどの武将か、登録されていない名将はいないかを見せる
 
@@ -20,7 +21,9 @@ export function MeishoPanel({
   const toast = useToast();
   const [progress, setProgress] = useState<string | null>(null);
   const matches = useMemo(() => matchMeishoRoster(warlords), [warlords]);
-  const ambiguous = matches.filter((m) => m.candidates.length > 0 && m.decided.length === 0).flatMap((m) => m.candidates);
+  const ambiguous = matches
+    .filter((m) => m.candidates.length > 0 && m.decided.length === 0 && !m.candidates.some((w) => w.meisho_manual))
+    .flatMap((m) => m.candidates);
   const meishoCount = warlords.filter((w) => w.is_meisho).length;
 
   const checkWithAi = async () => {
@@ -41,6 +44,15 @@ export function MeishoPanel({
     }
   };
 
+  const toggle = async (w: Warlord) => {
+    try {
+      await api.setMeisho(w.id, !w.is_meisho);
+      onChanged();
+    } catch (e) {
+      toast("error", "変更できませんでした", (e as Error).message);
+    }
+  };
+
   const save = async (format: "txt" | "json") => {
     try {
       const r = await api.exportMeisho(format);
@@ -52,7 +64,7 @@ export function MeishoPanel({
   };
   const factions = [...new Set(matches.map((m) => m.faction))];
   const missing = matches.filter((m) => m.candidates.length === 0).length;
-  const choose = matches.filter((m) => m.candidates.length > 0 && m.decided.length === 0).length;
+  const choose = matches.filter((m) => m.candidates.length > 0 && m.decided.length === 0 && !m.candidates.some((w) => w.meisho_manual)).length;
   return (
     <section className="panel p-5 md:col-span-2">
       <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
@@ -60,7 +72,8 @@ export function MeishoPanel({
       </h2>
       <p className="mb-3 text-sm text-ash">
         ゲーム内の「名将一覧」に並ぶ武将です。勢力と名前が合う武将には、自動で「名将」の印を付けています。
-        {choose > 0 && ` 同じ勢力に同じ名前の武将が何人もいる ${choose} 件は、立ち絵を見て名将の方を開き、編集で「名将」にチェックを入れてください。`}
+        {" 立ち絵の横のボタンで、手で名将を付け外しできます (手で決めた武将は、自動の判断で変わりません)。"}
+        {choose > 0 && ` 同じ勢力に同じ名前の武将が何人もいる ${choose} 件は、立ち絵を見て名将の方を選ぶか、AI で見分けてください。`}
         {missing > 0 && ` まだ図鑑に登録されていない名将が ${missing} 人います。`}
       </p>
       <div className="mb-4 flex flex-wrap gap-2">
@@ -96,35 +109,52 @@ export function MeishoPanel({
                       </li>
                     );
                   }
-                  if (m.decided.length === 0) {
-                    return (
-                      <li key={m.name + (m.group ?? "")} className="flex flex-wrap items-center gap-1 rounded border border-hi-600/60 px-2 py-0.5 text-xs text-hi-400">
-                        {label}: どれか選んでください
+                  const unsure = m.decided.length === 0 && !m.candidates.some((w) => w.meisho_manual);
+                  return (
+                    <li
+                      key={m.name + (m.group ?? "")}
+                      className={`rounded-lg border p-1.5 text-xs ${unsure ? "border-hi-600/60" : "border-ebony-700"}`}
+                      title={m.group}
+                    >
+                      {unsure && <p className="mb-1 text-hi-400">{label}: 名将の方を選んでください</p>}
+                      <div className="flex flex-wrap gap-1.5">
                         {m.candidates.map((w) => (
-                          <button key={w.id} onClick={() => onOpenWarlord(w.id)} className="rounded bg-ebony-800 px-1.5 text-washi">
-                            {w.is_special ? "【特】" : ""}
-                            {w.name}
-                            {w.title_alias && `(${w.title_alias})`}
-                            {w.is_meisho && " ✓"}
-                          </button>
+                          <MeishoChoice key={w.id} w={w} onOpen={() => onOpenWarlord(w.id)} onToggle={() => void toggle(w)} />
                         ))}
-                      </li>
-                    );
-                  }
-                  return m.decided.map((w) => (
-                    <li key={w.id}>
-                      <button onClick={() => onOpenWarlord(w.id)} className="rounded border border-shu-500/60 px-2 py-0.5 text-xs text-washi" title={m.group}>
-                        {w.is_special ? "【特】" : ""}
-                        {w.name}
-                        {w.is_meisho ? " ✓" : ""}
-                      </button>
+                      </div>
                     </li>
-                  ));
+                  );
                 })}
             </ul>
           </div>
         ))}
       </div>
     </section>
+  );
+}
+
+/** 名将の候補 1 人: 立ち絵 (押すと武将を開く) と、名将の付け外しボタン */
+function MeishoChoice({ w, onOpen, onToggle }: { w: Warlord; onOpen: () => void; onToggle: () => void }) {
+  return (
+    <div className={`flex items-center gap-1.5 rounded border px-1 py-1 ${w.is_meisho ? "border-shu-500/70 bg-shu-700/20" : "border-ebony-700"}`}>
+      <button onClick={onOpen} className="flex items-center gap-1.5 text-left" aria-label={`${w.name} を開く`}>
+        {w.image_url ? (
+          <StoredImage id={w.image_url} alt="" className="h-12 w-9 shrink-0 rounded object-cover object-left" />
+        ) : (
+          <span className="grid h-12 w-9 place-items-center rounded bg-ebony-800 font-serif text-ebony-500">{w.name.slice(0, 1)}</span>
+        )}
+        <span className="max-w-24 truncate text-washi">
+          {w.is_special ? "【特】" : ""}
+          {w.name}
+          {w.title_alias && <span className="block truncate text-[10px] text-ash">{w.title_alias}</span>}
+        </span>
+      </button>
+      <button
+        onClick={onToggle}
+        className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${w.is_meisho ? "bg-shu-600 text-white" : "border border-ebony-600 text-ash"}`}
+      >
+        {w.is_meisho ? "名将 ✓" : "名将にする"}
+      </button>
+    </div>
   );
 }

@@ -304,6 +304,7 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
             oni_season: target.oni_season,
             no_synergy: target.no_synergy,
             is_meisho: target.is_meisho,
+            meisho_manual: target.meisho_manual,
             gallery_images: target.gallery_images,
             image_url: target.image_url,
             reset_batch: job.reset_batch,
