@@ -325,3 +325,14 @@ describe("名将修行の追加天賦", () => {
     expect(extractionToPatch(makeExtraction({ meisho_training: { visible: true, selected_rank: null, selected_slot: null, effect: "攻+5%", trained: true } })).meisho_talents).toBeUndefined();
   });
 });
+
+describe("名将修行のテキスト", async () => {
+  const { meishoTrainingToText } = await import("./text.ts");
+  it("勢力ごとに官職と追加天賦を並べ、未取得も分かる", () => {
+    const a = { ...normalizeInput({ ...emptyWarlordInput(), name: "南部晴政", faction: "奥.関.甲", is_special: true, is_meisho: true, meisho_talents: [{ rank: "少史", slot: "上", effect: "兵数上限+175", trained: false }] }), id: "a" };
+    const b = { ...normalizeInput({ ...emptyWarlordInput(), name: "武田信玄", faction: "奥.関.甲", is_meisho: true }), id: "b" };
+    const text = meishoTrainingToText([a, b] as never);
+    expect(text).toContain("■ 奥.関.甲\n【特】南部晴政\n  少史 上:兵数上限+175 (未修行)");
+    expect(text).toContain("武田信玄\n  未取得");
+  });
+});

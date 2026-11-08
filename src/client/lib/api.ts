@@ -1,6 +1,6 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { ExportPayload, Faction, OcrJob, Talent, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
-import { warlordsToText } from "../../core/text.ts";
+import { meishoTrainingToText, warlordsToText } from "../../core/text.ts";
 import { decideSpecial, detectTalentOrder, emptyWarlordInput, hasMeishoMark, stripMeisho, fixTalentOrder, learnTalentStats, talentRules, mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
@@ -598,10 +598,11 @@ export const api = {
   },
 
   /** 名将の武将だけを書き出す (テキスト / JSON) */
-  async exportMeisho(format: "txt" | "json"): Promise<{ blob: Blob; count: number }> {
+  async exportMeisho(format: "txt" | "json" | "training"): Promise<{ blob: Blob; count: number }> {
     const list = (await db.listWarlords())
       .filter((w) => w.is_meisho)
       .sort((a, b) => a.faction.localeCompare(b.faction, "ja") || a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
+    if (format === "training") return { blob: new Blob([meishoTrainingToText(list)], { type: "text/plain;charset=utf-8" }), count: list.length };
     if (format === "txt") return { blob: new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" }), count: list.length };
     const payload: ExportPayload = { app: "sengoku-fubu-warlord-db", version: 2, exported_at: new Date().toISOString(), warlords: list };
     return { blob: new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), count: list.length };

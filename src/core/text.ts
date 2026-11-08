@@ -57,6 +57,27 @@ export function warlordToText(w: Warlord): string {
   return lines.join("\n");
 }
 
+/**
+ * 名将修行の追加天賦だけのテキスト。勢力ごとに、武将名と官職ごとの追加天賦を並べる
+ * (まだ読み取っていない武将は「未取得」)
+ */
+export function meishoTrainingToText(list: Warlord[]): string {
+  const done = list.filter((w) => w.meisho_talents?.length).length;
+  const lines = [`名将修行 追加天賦 (${list.length} 人・読み取り済み ${done} 人)`, ""];
+  let faction: string | null = null;
+  for (const w of list) {
+    if (w.faction !== faction) {
+      faction = w.faction;
+      lines.push(`■ ${faction || "勢力未入力"}`);
+    }
+    lines.push(`${w.is_special ? "【特】" : ""}${w.name}${w.title_alias ? `（${w.title_alias}）` : ""}`);
+    if (!w.meisho_talents?.length) lines.push("  未取得");
+    for (const t of w.meisho_talents ?? []) lines.push(`  ${t.rank}${t.slot ? ` ${t.slot}` : ""}:${t.effect}${t.trained ? "" : " (未修行)"}`);
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
 export function warlordsToText(list: Warlord[]): string {
   return `開発用データ (${list.length} 件)\n\n` + list.map(warlordToText).join("\n\n" + "─".repeat(24) + "\n\n") + "\n";
 }
