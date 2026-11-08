@@ -164,7 +164,8 @@ export const api = {
         ? null
         : exts.map((e) => stripMeisho(String(e.title_alias ?? "").replace(/【\s*特\s*】/g, ""))).find((a) => a.includes("名将"));
       const evidence = exts.some(hasMeishoMark) || hasMeishoMark({ name: w.name, title_alias: w.title_alias, skill: { name: w.skill_name, desc: w.skill_desc, gauge: null } });
-      const is_meisho = evidence || (w.is_meisho && !lostAlias);
+      // 手で決めた武将は、印を変えない
+      const is_meisho = w.meisho_manual ? Boolean(w.is_meisho) : evidence || Boolean(w.is_meisho && !lostAlias);
       if (is_meisho === Boolean(w.is_meisho) && !lostAlias && !evidence) continue;
       const next = {
         ...toInput(w),
@@ -183,7 +184,7 @@ export const api = {
     const { matchMeishoRoster } = await import("../../core/meisho.ts");
     for (const m of matchMeishoRoster(await db.listWarlords())) {
       for (const w of m.decided) {
-        if (w.is_meisho) continue;
+        if (w.is_meisho || w.meisho_manual) continue;
         await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), is_meisho: true }));
         marked++;
       }
@@ -431,6 +432,7 @@ export const api = {
         oni_season: w.oni_season,
         no_synergy: w.no_synergy,
         is_meisho: w.is_meisho,
+        meisho_manual: w.meisho_manual,
         gallery_images: [],
         image_url: "",
       }),
@@ -557,6 +559,8 @@ export const api = {
     const { checkMeishoWithAi } = await import("./meishoCheck.ts");
     const targets = matchMeishoRoster(await db.listWarlords())
       .filter((m) => m.candidates.length > 0 && m.decided.length === 0)
+      // 手で決めた名前の組は AI に聞かない
+      .filter((m) => !m.candidates.some((w) => w.meisho_manual))
       .flatMap((m) => m.candidates);
     let marked = 0;
     let notMeisho = 0;
@@ -584,6 +588,13 @@ export const api = {
     }
     onProgress?.(targets.length, targets.length, "");
     return { marked, notMeisho, unknown, stopped };
+  },
+
+  /** 名将かどうかを手で決める (自動の判断で変えなくなる) */
+  async setMeisho(id: string, value: boolean): Promise<Warlord> {
+    const w = await db.getWarlord(id);
+    if (!w) throw new Error("武将が見つかりません");
+    return db.updateWarlord(id, normalizeInput({ ...toInput(w), is_meisho: value, meisho_manual: true }));
   },
 
   /** 名将の武将だけを書き出す (テキスト / JSON) */

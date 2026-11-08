@@ -192,7 +192,7 @@ export function hasMeishoMark(ext: Partial<Pick<OcrExtraction, "name" | "title_a
 }
 
 /** 「名将一覧」の文字を取り除く */
-export const stripMeisho = (text: string) => text.normalize("NFKC").replace(MEISHO_RE, "").trim();
+export const stripMeisho = (text: string) => text.replace(MEISHO_RE, "").trim();
 
 export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
   const patch: Partial<WarlordInput> = {};
@@ -549,7 +549,7 @@ export function mergeWarlord(
     if (next && next.length > merged[key].length) merged[key] = next;
   }
 
-  if (patch.is_meisho) merged.is_meisho = true;
+  if (patch.is_meisho && !merged.meisho_manual) merged.is_meisho = true;
   const prevLevel = merged.level;
   if (patch.level && patch.level > merged.level) merged.level = patch.level;
   if (patch.stars != null && patch.stars > merged.stars) merged.stars = patch.stars;
@@ -647,6 +647,7 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
       .filter((s) => s.partner),
     no_synergy: Boolean(v.no_synergy),
     is_meisho: Boolean(v.is_meisho),
+    meisho_manual: Boolean(v.meisho_manual),
     oni_season: normalizeSeason(v.oni_season),
     talent_order_v2: Boolean(v.talent_order_v2),
     talent_reorder_undone: Boolean(v.talent_reorder_undone),

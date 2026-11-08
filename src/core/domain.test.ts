@@ -293,6 +293,10 @@ describe("名将", () => {
     expect(patch.is_meisho).toBeUndefined();
     expect(patch.title_alias).toBe("越後の名将");
   });
+  it("手で「名将ではない」と決めた武将には、読み取りで印を付けない", () => {
+    const base = normalizeInput({ ...emptyWarlordInput(), name: "織田信長", is_meisho: false, meisho_manual: true });
+    expect(mergeWarlord(base, extractionToPatch(makeExtraction({ meisho_marker_visible: true }))).merged.is_meisho).toBe(false);
+  });
   it("一度付いた印は、写っていない画像で外さない", () => {
     const base = normalizeInput({ ...emptyWarlordInput(), name: "日野富子", is_meisho: true });
     expect(mergeWarlord(base, extractionToPatch(makeExtraction({ name: "日野富子" }))).merged.is_meisho).toBe(true);

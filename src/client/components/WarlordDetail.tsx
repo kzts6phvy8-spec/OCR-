@@ -1069,7 +1069,7 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
           <input
             type="checkbox"
             checked={Boolean(draft.is_meisho)}
-            onChange={(e) => setDraft((d) => ({ ...d, is_meisho: e.target.checked }))}
+            onChange={(e) => setDraft((d) => ({ ...d, is_meisho: e.target.checked, meisho_manual: true }))}
             className="accent-shu-500"
           />
           名将 (奥義スキルの欄の右上に「名将一覧」がある武将)
