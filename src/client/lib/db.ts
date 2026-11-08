@@ -210,9 +210,9 @@ export const getJob = retrying(async function getJob(id: string): Promise<OcrJob
   return rest;
 });
 
-export const nextQueuedJob = retrying(async function nextQueuedJob(): Promise<OcrJob | null> {
+export const nextQueuedJob = retrying(async function nextQueuedJob(match?: (job: OcrJob) => boolean): Promise<OcrJob | null> {
   const rows = await (await db()).getAllFromIndex("jobs", "by_seq");
-  const j = rows.find((r) => r.status === "queued");
+  const j = rows.find((r) => r.status === "queued" && (!match || match(r)));
   if (!j) return null;
   const { seq: _s, ...rest } = j;
   return rest;
