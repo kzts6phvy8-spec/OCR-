@@ -302,3 +302,26 @@ describe("名将", () => {
     expect(mergeWarlord(base, extractionToPatch(makeExtraction({ name: "日野富子" }))).merged.is_meisho).toBe(true);
   });
 });
+
+describe("名将修行の追加天賦", () => {
+  it("選ばれている丸の追加天賦を読み、名将の印も付ける", () => {
+    const patch = extractionToPatch(
+      makeExtraction({ meisho_training: { visible: true, selected_rank: "少史", selected_slot: "上", effect: "兵数上限+175.(未修行)", trained: false } }),
+    );
+    expect(patch.is_meisho).toBe(true);
+    expect(patch.meisho_talents).toEqual([{ rank: "少史", slot: "上", effect: "兵数上限+175", trained: false }]);
+  });
+  it("丸ごとのスクショを足すと増え、段階の順に並ぶ。修行済みになったら更新する", () => {
+    const base = normalizeInput({ ...emptyWarlordInput(), name: "南部晴政" });
+    const read = (rank: string, slot: string | null, effect: string, trained: boolean) =>
+      extractionToPatch(makeExtraction({ meisho_training: { visible: true, selected_rank: rank, selected_slot: slot, effect, trained } }));
+    let w = mergeWarlord(base, read("大史", null, "計略攻撃+5%", false)).merged;
+    w = mergeWarlord(w, read("少史", "下", "物理防御+3%", false)).merged;
+    w = mergeWarlord(w, read("少史", "上", "兵数上限+175", false)).merged;
+    w = mergeWarlord(w, read("少史", "上", "兵数上限+175", true)).merged;
+    expect(w.meisho_talents?.map((t) => `${t.rank}${t.slot}:${t.trained}`)).toEqual(["少史上:true", "少史下:false", "大史:false"]);
+  });
+  it("段階が分からない読み取りは入れない", () => {
+    expect(extractionToPatch(makeExtraction({ meisho_training: { visible: true, selected_rank: null, selected_slot: null, effect: "攻+5%", trained: true } })).meisho_talents).toBeUndefined();
+  });
+});

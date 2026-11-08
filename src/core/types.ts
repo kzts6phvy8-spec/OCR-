@@ -35,6 +35,24 @@ export interface Talent {
   unlocked: boolean;
 }
 
+/** 名将修行の段階 (左から順に進む) */
+export const MEISHO_RANKS = ["少史", "大史", "少納言", "大輔", "中納言"] as const;
+
+/**
+ * 名将修行の追加天賦 1 つ。修行の画面は 少史 >> 大史 >> 少納言 >> 大輔 >> 中納言 と並び、
+ * 少史・少納言・中納言は上下 2 つ、大史・大輔は 1 つの丸がある。丸を選ぶと下の「追加天賦」に効果が出る
+ */
+export interface MeishoTalent {
+  /** 段階 (少史 / 大史 / 少納言 / 大輔 / 中納言) */
+  rank: string;
+  /** 段階の中の位置 (上 / 下。1 つだけの段階は空) */
+  slot: string;
+  /** 効果と数値 (例: 兵数上限+175) */
+  effect: string;
+  /** 修行済みか (「(未修行)」と書かれていなければ修行済み) */
+  trained: boolean;
+}
+
 export interface SynergySkill {
   partner: string;
   effect: string;
@@ -83,6 +101,8 @@ export interface Warlord {
   is_meisho?: boolean;
   /** 名将かどうかを手で決めた (自動の判断で付けたり外したりしない) */
   meisho_manual?: boolean;
+  /** 名将修行の追加天賦 (名将修行の画面から読み取る) */
+  meisho_talents?: MeishoTalent[];
   /** 鬼憑武将のシーズン (4 人の組。例: 徳川四天王)。連携スキルから自動で入るほか、手でも選べる */
   oni_season?: string;
   /** 天賦の星の番号を、画面の並び (①② / ③④ / ⑤) に合わせて直し済みか */

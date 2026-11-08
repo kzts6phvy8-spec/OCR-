@@ -825,6 +825,24 @@ function DetailView({
         )}
       </Section>
 
+      {(w.meisho_talents?.length ?? 0) > 0 && (
+        <Section title="名将修行 (追加天賦)">
+          <ul className="space-y-1.5">
+            {w.meisho_talents!.map((t, i) => (
+              <li key={i} className={`flex flex-wrap items-center gap-2 rounded-lg border p-2.5 text-sm ${t.trained ? "border-shu-600/60 bg-ebony-900" : "border-ebony-800 bg-ebony-900/50 opacity-70"}`}>
+                <span className="font-bold text-gold-300">
+                  {t.rank}
+                  {t.slot && ` ${t.slot}`}
+                </span>
+                <span className="font-bold">{t.effect}</span>
+                <span className={`ml-auto text-[11px] ${t.trained ? "text-shu-300" : "text-ebony-500"}`}>{t.trained ? "修行済み" : "未修行"}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11px] text-ebony-500">名将修行の画面で丸を選ぶと、その丸の追加天賦が出ます。丸ごとにスクショを足すと、ここに増えます。</p>
+        </Section>
+      )}
+
       <Section title="連携スキル" icon={<Users className="size-4" />}>
         {w.synergy_skills.length ? (
           <div className="grid gap-2 md:grid-cols-2">
