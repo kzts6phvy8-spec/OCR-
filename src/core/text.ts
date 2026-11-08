@@ -28,6 +28,11 @@ export function warlordToText(w: Warlord): string {
     lines.push("天賦");
     for (const t of [...w.talents].sort((a, b) => a.star_level - b.star_level)) lines.push(`星${t.star_level}:${talentText(t)}`);
   }
+  if (w.meisho_talents?.length) {
+    // 「少史 上:兵数上限+175 (未修行)」の形
+    lines.push("名将修行");
+    for (const t of w.meisho_talents) lines.push(`${t.rank}${t.slot ? ` ${t.slot}` : ""}:${t.effect}${t.trained ? "" : " (未修行)"}`);
+  }
   if (w.troop_variants.length) lines.push(`兵種:${w.troop_variants.join("、")}`);
   if (w.rarity) lines.push(`レア度:${w.rarity}`);
   if (w.faction) lines.push(`勢力:${w.faction}`);

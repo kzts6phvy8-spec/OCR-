@@ -32,6 +32,16 @@ export const OcrExtractionSchema = z.object({
 
   special_marker_visible: z.boolean().describe("画面に【特】の表記が実際に写っている場合のみ true"),
   // 前の版で送った解析 (サーバーで待っている分) の結果には無いので、無くても通す
+  // 名将修行の画面。前の版で送った解析 (サーバーで待っている分) の結果には無いので、無くても通す
+  meisho_training: z
+    .object({
+      visible: z.boolean().describe("「名将修行」の画面が写っている場合のみ true"),
+      selected_rank: nullableString("光って選ばれている丸の段階: 少史 / 大史 / 少納言 / 大輔 / 中納言 のどれか"),
+      selected_slot: nullableString("選ばれている丸がその段階の 上 か 下 か (丸が 1 つだけの段階なら null)"),
+      effect: nullableString("「追加天賦」の欄の効果と数値 (例: 兵数上限+175)。「(未修行)」は含めない"),
+      trained: z.boolean().describe("「追加天賦」の欄に「(未修行)」と書かれていなければ true"),
+    })
+    .optional(),
   meisho_marker_visible: z.boolean().optional().describe("奥義スキル名の行の右端に青い「名将一覧」のボタンが写っている、または「名将修行」の画面の場合のみ true"),
 
   growth_total: nullableString('成長値合計 (例: "9" や "8.5")'),

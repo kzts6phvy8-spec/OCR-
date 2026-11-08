@@ -18,6 +18,7 @@ import {
 import { inferPriorityFromCondition } from "./priorityRules.ts";
 import { detectSeason, normalizeSeason } from "./seasons.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
+import { MEISHO_RANKS, type MeishoTalent } from "./types.ts";
 
 const SPECIAL_MARKER_RE = /【\s*特\s*】/g;
 /**
@@ -252,6 +253,14 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
     .filter((t) => t.effect);
   set("talents", talents);
 
+  // 名将修行の追加天賦 (選ばれている丸 1 つ分)
+  const mt = ext.meisho_training;
+  if (mt?.visible) {
+    patch.is_meisho = true;
+    const one = normalizeMeishoTalent({ rank: mt.selected_rank, slot: mt.selected_slot, effect: mt.effect, trained: mt.trained });
+    if (one) patch.meisho_talents = [one];
+  }
+
   // 兵種は選べる兵種の一覧だけを持つ (「現在の兵種」は持たない)
   set("troop_variants", uniqueStrings([...ext.troop_variants, ...(ext.troop_type ? [str(ext.troop_type)] : [])]));
   set(
@@ -448,6 +457,34 @@ export const fixTalentOrder = (talents: Talent[], order: TalentOrder): Talent[] 
 export const undoTalentReorder = (talents: Talent[]): Talent[] =>
   talents.map((t) => ({ ...t, star_level: UNDO_REORDER[t.star_level] ?? t.star_level })).sort((a, b) => a.star_level - b.star_level);
 
+/** 名将修行の追加天賦を整える (段階が分からない・効果が無いものは null) */
+export function normalizeMeishoTalent(t: { rank?: unknown; slot?: unknown; effect?: unknown; trained?: unknown } | null | undefined): MeishoTalent | null {
+  const rank = String(t?.rank ?? "").normalize("NFKC").replace(/\s/g, "");
+  if (!(MEISHO_RANKS as readonly string[]).includes(rank)) return null;
+  const effect = String(t?.effect ?? "")
+    .replace(/[(（]\s*未修行\s*[)）]/g, "")
+    .replace(/[.。\s]+$/, "")
+    .trim();
+  if (!effect) return null;
+  const s = String(t?.slot ?? "");
+  // 丸が 1 つだけの段階 (大史・大輔) は位置を持たない
+  const single = rank === "大史" || rank === "大輔";
+  const slot = single ? "" : /下/.test(s) ? "下" : /上/.test(s) ? "上" : "";
+  return { rank, slot, effect, trained: t?.trained !== false && !/未修行/.test(String(t?.effect ?? "")) };
+}
+
+/** 名将修行の追加天賦をまとめる (同じ段階・位置は新しい方の効果、修行済みは一度でも修行済みなら修行済み)。段階の順に並べる */
+export function mergeMeishoTalents(base: MeishoTalent[], incoming: MeishoTalent[]): MeishoTalent[] {
+  const map = new Map<string, MeishoTalent>();
+  for (const t of [...base, ...incoming]) {
+    const key = `${t.rank}|${t.slot}`;
+    const cur = map.get(key);
+    map.set(key, cur ? { ...t, trained: cur.trained || t.trained } : { ...t });
+  }
+  const order = (t: MeishoTalent) => MEISHO_RANKS.indexOf(t.rank as (typeof MEISHO_RANKS)[number]) * 3 + (t.slot === "下" ? 2 : t.slot === "上" ? 0 : 1);
+  return [...map.values()].sort((a, b) => order(a) - order(b));
+}
+
 export function mergeTalents(base: Talent[], incoming: Talent[]): Talent[] {
   const result = base.map((t) => ({ ...t }));
   for (const t of incoming) {
@@ -564,6 +601,7 @@ export function mergeWarlord(
   if (patch.has_weapon_awakening) merged.has_weapon_awakening = true;
 
   if (patch.talents) merged.talents = mergeTalents(merged.talents, patch.talents);
+  if (patch.meisho_talents?.length) merged.meisho_talents = mergeMeishoTalents(merged.meisho_talents ?? [], patch.meisho_talents);
   if (patch.synergy_skills) merged.synergy_skills = mergeSynergies(merged.synergy_skills, patch.synergy_skills);
   if (patch.troop_variants) merged.troop_variants = uniqueStrings([...merged.troop_variants, ...patch.troop_variants]);
 
@@ -648,6 +686,7 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     no_synergy: Boolean(v.no_synergy),
     is_meisho: Boolean(v.is_meisho),
     meisho_manual: Boolean(v.meisho_manual),
+    meisho_talents: mergeMeishoTalents([], (Array.isArray(v.meisho_talents) ? v.meisho_talents : []).map(normalizeMeishoTalent).filter((t): t is MeishoTalent => t !== null)),
     oni_season: normalizeSeason(v.oni_season),
     talent_order_v2: Boolean(v.talent_order_v2),
     talent_reorder_undone: Boolean(v.talent_reorder_undone),
