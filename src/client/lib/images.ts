@@ -148,3 +148,69 @@ export function signatureSimilarity(a: Float32Array, b: Float32Array): number {
   }
   return da && db ? num / Math.sqrt(da * db) : 0;
 }
+
+/** 画面の中の立ち絵の辺り (横長のゲーム画面の左寄り。上下左右の黒い余白を避ける) */
+const ART_BOX = { x: 0.12, y: 0.1, w: 0.3, h: 0.8 };
+
+/** 画面から立ち絵の辺りだけを切り出す (大きさ: 横 width px) */
+export async function cropArt(blob: Blob, width = 450): Promise<Blob> {
+  const src = await decode(blob);
+  const w = "naturalWidth" in src ? src.naturalWidth : src.width;
+  const h = "naturalHeight" in src ? src.naturalHeight : src.height;
+  if (!w || !h) throw new Error("画像を読み込めませんでした");
+  const sw = w * ART_BOX.w;
+  const sh = h * ART_BOX.h;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = Math.round((width * sh) / sw);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("画像を処理できませんでした");
+  ctx.drawImage(src, w * ART_BOX.x, h * ART_BOX.y, sw, sh, 0, 0, canvas.width, canvas.height);
+  if ("close" in src) src.close();
+  const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  canvas.width = canvas.height = 0;
+  if (!out) throw new Error("画像を変換できませんでした");
+  return out;
+}
+
+/**
+ * 立ち絵の一覧表 (番号付き) を 1 枚の画像にする。AI に「この中のどれと同じ絵か」を 1 回で尋ねるため。
+ * 番号は firstNumber から順に振る
+ */
+export async function artContactSheet(blobs: Blob[], firstNumber: number, cols = 6): Promise<Blob> {
+  const CW = 150;
+  const CH = 200;
+  const rows = Math.ceil(blobs.length / cols);
+  const canvas = document.createElement("canvas");
+  canvas.width = CW * cols;
+  canvas.height = CH * rows;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("画像を処理できませんでした");
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (const [i, blob] of blobs.entries()) {
+    const x = (i % cols) * CW;
+    const y = Math.floor(i / cols) * CH;
+    try {
+      const src = await decode(blob);
+      const w = "naturalWidth" in src ? src.naturalWidth : src.width;
+      const h = "naturalHeight" in src ? src.naturalHeight : src.height;
+      ctx.drawImage(src, w * ART_BOX.x, h * ART_BOX.y, w * ART_BOX.w, h * ART_BOX.h, x + 2, y + 2, CW - 4, CH - 4);
+      if ("close" in src) src.close();
+    } catch {
+      /* 読めない画像は黒いまま */
+    }
+    // 番号 (読みやすいように白地に黒)
+    const label = String(firstNumber + i);
+    ctx.font = "bold 28px sans-serif";
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x + 4, y + 4, tw + 12, 34);
+    ctx.fillStyle = "#000";
+    ctx.fillText(label, x + 10, y + 32);
+  }
+  const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  canvas.width = canvas.height = 0;
+  if (!out) throw new Error("画像を変換できませんでした");
+  return out;
+}

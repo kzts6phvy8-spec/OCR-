@@ -469,7 +469,14 @@ function JobRow({
                   onChange={(id) => void saveTo(id)}
                   placeholder="統合先の武将を検索"
                   // 読み取った名前と同じ・1 文字違いの武将は、検索しなくても候補に出す
-                  suggest={readName ? (w) => w.name === readName || differsByOneChar(w.name, readName) : undefined}
+                  suggest={
+                    readName
+                      ? (w) => w.name === readName || differsByOneChar(w.name, readName)
+                      : job.extraction?.meisho_training?.visible
+                        ? // 名将修行の画面 (名前が無い): 名将の武将を候補に並べ、立ち絵で選んでもらう
+                          (w) => Boolean(w.is_meisho)
+                        : undefined
+                  }
                   priority={readName ? (w) => (w.name === readName ? 0 : 1) : undefined}
                 />
                 <button onClick={() => void saveAsNew()} className="w-full rounded-md border border-dashed border-gold-600/60 px-2 py-1.5 text-[11px] text-gold-300">

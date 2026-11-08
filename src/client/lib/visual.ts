@@ -347,15 +347,17 @@ export async function groupByArtWithAi(imageIds: string[]): Promise<{ groups: st
 
 // ---- 名将修行の画面の立ち絵から、どの名将かを見分ける ----
 
-/** AI に見せる候補の人数 (端末の指紋で近い順) */
-const MEISHO_AI_CANDIDATES = 6;
+/** 一覧表 1 枚に並べる人数 */
+const SHEET_SIZE = 36;
 
 const IDENTIFY_PROMPT = (n: number) =>
   [
-    "スマホゲーム『戦国布武』の「名将修行」の画面 (判定する画像) と、名将の武将の画面 (候補 1 〜 " + n + ") があります。",
-    "判定する画像の左側のカードに描かれた人物のイラストと同じイラストの候補を選んでください。",
-    "画面の種類・枠・文字・色合い (白黒かどうか) の違いは無視し、人物のイラスト (顔・髪型・衣装・持ち物・ポーズ) だけで比べてください。",
-    `JSON で答えてください: {"match": 候補の番号 (同じイラストが無ければ 0), "confidence": 0〜100}`,
+    "スマホゲーム『戦国布武』の武将のイラストを見比べてください。",
+    "最初の画像 (判定するイラスト) は「名将修行」の画面のカードの絵です。",
+    `続く一覧表には、名将の武将のイラストが番号 1 〜 ${n} の付いたマスに並んでいます。`,
+    "判定するイラストと同じ人物のイラストのマスの番号を選んでください。",
+    "白黒かカラーか・明るさ・切り抜き方・枠や文字の違いは無視し、顔・髪型・衣装・持ち物・ポーズで比べてください。",
+    `JSON で答えてください: {"match": マスの番号 (同じイラストが無ければ 0), "confidence": 0〜100}`,
   ].join("\n");
 
 const IDENTIFY_SCHEMA = {
@@ -366,33 +368,26 @@ const IDENTIFY_SCHEMA = {
 
 /**
  * 名将修行の画面 (武将名が書かれていない) の立ち絵が、登録済みの名将の誰かを見分ける。
- * 端末の指紋で近い候補を絞り、AI に 1 回だけ選ばせる。見分けられなければ null
+ * 名将全員の立ち絵を番号付きの一覧表にまとめ、AI に 1 回だけ選ばせる。見分けられなければ null
  */
 export async function identifyMeishoByArt(imageId: string, candidates: Warlord[]): Promise<Warlord | null> {
-  if (candidates.length === 0) return null;
-  const target = await signatureOf(imageId);
-  const scored: { w: Warlord; score: number }[] = [];
+  const list: { w: Warlord; blob: Blob }[] = [];
   for (const w of candidates) {
-    let best = -1;
-    if (target) {
-      for (const id of imagesOf(w).slice(0, LOCAL_SAMPLES)) {
-        const sig = await signatureOf(id);
-        if (sig) best = Math.max(best, signatureSimilarity(target, sig));
-      }
-    }
-    scored.push({ w, score: best });
+    const id = w.image_url || w.gallery_images[0];
+    const blob = id ? await db.getImage(id).catch(() => null) : null;
+    if (blob) list.push({ w, blob });
   }
-  scored.sort((a, b) => b.score - a.score);
-  const top = scored.slice(0, MEISHO_AI_CANDIDATES).filter((s) => s.w.image_url || s.w.gallery_images.length);
-  if (top.length === 0) return null;
-
+  if (list.length === 0) return null;
   const targetBlob = await db.getImage(imageId);
   if (!targetBlob) return null;
-  const parts: Part[] = [{ text: IDENTIFY_PROMPT(top.length) }, { text: "判定する画像:" }, { image: await blobToBase64(await compressImage(targetBlob, PREVIEW)) }];
-  for (const [i, s] of top.entries()) {
-    const blob = await db.getImage(s.w.image_url || s.w.gallery_images[0]);
-    if (!blob) continue;
-    parts.push({ text: `候補 ${i + 1}:` }, { image: await blobToBase64(await compressImage(blob, PREVIEW)) });
+  const { artContactSheet, cropArt } = await import("./images.ts");
+  const parts: Part[] = [{ text: IDENTIFY_PROMPT(list.length) }, { text: "判定するイラスト:" }, { image: await blobToBase64(await cropArt(targetBlob)) }];
+  for (let i = 0; i < list.length; i += SHEET_SIZE) {
+    const sheet = await artContactSheet(
+      list.slice(i, i + SHEET_SIZE).map((x) => x.blob),
+      i + 1,
+    );
+    parts.push({ text: `一覧表 (番号 ${i + 1} 〜 ${Math.min(i + SHEET_SIZE, list.length)}):` }, { image: await blobToBase64(sheet) });
   }
   const text = await ask(parts, loadSettings(), IDENTIFY_SCHEMA, 100);
   let v: { match?: number; confidence?: number } = {};
@@ -402,6 +397,6 @@ export async function identifyMeishoByArt(imageId: string, candidates: Warlord[]
     return null;
   }
   const n = Number(v.match);
-  if (!Number.isInteger(n) || n < 1 || n > top.length || (v.confidence ?? 0) < 70) return null;
-  return top[n - 1].w;
+  if (!Number.isInteger(n) || n < 1 || n > list.length || (v.confidence ?? 0) < 60) return null;
+  return list[n - 1].w;
 }
