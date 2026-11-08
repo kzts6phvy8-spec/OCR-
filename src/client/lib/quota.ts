@@ -1,7 +1,10 @@
 // Gemini 無料枠の上限に関する表示用の補助
 
 /** 429 の本文から「1 日の上限」かどうかを判定する */
-export const isDailyLimit = (message: string) => /per.?day|PerDay|daily/i.test(message);
+export const isDailyLimit = (message: string) =>
+  // 1 分あたりの上限も一緒に書かれている時は、1 分の上限とみなす (1 日の上限と取り違えると、翌日まで止まってしまうため。
+  // 本当に 1 日の上限なら、再開してもすぐまた上限になり、その時に 1 日の上限として休み直す)
+  /per.?day|PerDay|daily/i.test(message) && !/per.?minute|PerMinute/i.test(message);
 
 /**
  * Gemini API の 1 日の上限が戻る時刻 (太平洋時間の 0 時 = 日本時間の 16 時か 17 時)。
