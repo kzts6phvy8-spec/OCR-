@@ -1,3 +1,4 @@
+import { meishoTalentGaps } from "./missing.ts";
 import type { Talent, Warlord } from "./types.ts";
 
 // 武将データを読みやすいテキストにする (コピー・.txt 書き出し用)。
@@ -73,6 +74,8 @@ export function meishoTrainingToText(list: Warlord[]): string {
     lines.push(`${w.is_special ? "【特】" : ""}${w.name}${w.title_alias ? `（${w.title_alias}）` : ""}`);
     if (!w.meisho_talents?.length) lines.push("  未取得");
     for (const t of w.meisho_talents ?? []) lines.push(`  ${t.rank}${t.slot ? ` ${t.slot}` : ""}:${t.effect}${t.trained ? "" : " (未修行)"}`);
+    const gaps = w.meisho_talents?.length ? meishoTalentGaps(w) : [];
+    if (gaps.length) lines.push(`  (足りない: ${gaps.join("、")})`);
     lines.push("");
   }
   return lines.join("\n");

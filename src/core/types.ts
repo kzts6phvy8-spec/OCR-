@@ -37,6 +37,17 @@ export interface Talent {
 
 /** 名将修行の段階 (左から順に進む) */
 export const MEISHO_RANKS = ["少史", "大史", "少納言", "大輔", "中納言"] as const;
+/** 名将修行の丸 8 つ (少史・少納言・中納言は上下 2 つ、大史・大輔は 1 つ) */
+export const MEISHO_SLOTS: { rank: string; slot: string }[] = [
+  { rank: "少史", slot: "上" },
+  { rank: "少史", slot: "下" },
+  { rank: "大史", slot: "" },
+  { rank: "少納言", slot: "上" },
+  { rank: "少納言", slot: "下" },
+  { rank: "大輔", slot: "" },
+  { rank: "中納言", slot: "上" },
+  { rank: "中納言", slot: "下" },
+];
 
 /**
  * 名将修行の追加天賦 1 つ。修行の画面は 少史 >> 大史 >> 少納言 >> 大輔 >> 中納言 と並び、

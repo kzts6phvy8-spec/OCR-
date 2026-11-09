@@ -5,6 +5,7 @@ import { useToast } from "../lib/toast.tsx";
 import { saveFile, today } from "../lib/share.ts";
 import type { Warlord } from "../../core/types.ts";
 import { matchMeishoRoster } from "../../core/meisho.ts";
+import { meishoTalentGaps } from "../../core/missing.ts";
 import { StoredImage } from "./StoredImage.tsx";
 
 // 「データ管理」の名将一覧: ゲーム内の「名将一覧」の武将が図鑑のどの武将か、登録されていない名将はいないかを見せる
@@ -25,6 +26,12 @@ export function MeishoPanel({
     .filter((m) => m.candidates.length > 0 && m.decided.length === 0 && !m.candidates.some((w) => w.meisho_manual))
     .flatMap((m) => m.candidates);
   const meishoCount = warlords.filter((w) => w.is_meisho).length;
+  // 名将修行の追加天賦 (丸 8 つ) がそろっているか
+  const gaps = warlords
+    .filter((w) => w.is_meisho)
+    .map((w) => ({ w, gaps: meishoTalentGaps(w) }))
+    .filter((g) => g.gaps.length > 0)
+    .sort((a, b) => a.w.faction.localeCompare(b.w.faction, "ja") || a.w.name.localeCompare(b.w.name, "ja"));
 
   const checkWithAi = async () => {
     if (!confirm(`同じ名前の武将がいて名将か決められない ${ambiguous.length} 人を、AI に登録画像を見せて見分けますか？\nAI に最大 ${ambiguous.length} 回問い合わせます。この iPhone で調べるので、終わるまでアプリを開いたままにしてください。`)) return;
@@ -95,6 +102,25 @@ export function MeishoPanel({
         <button onClick={() => void save("json")} className="inline-flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-sm text-washi">
           <Download className="size-4" /> 名将だけ保存 (.json)
         </button>
+      </div>
+      <div className={`mb-4 rounded-lg border p-3 text-xs ${gaps.length ? "border-hi-600/60" : "border-emerald-700/60"}`}>
+        <p className={`font-bold ${gaps.length ? "text-hi-400" : "text-emerald-300"}`}>
+          名将修行の追加天賦: 8 つそろっている {meishoCount - gaps.length} 人 / 足りない {gaps.length} 人
+        </p>
+        {gaps.length > 0 && (
+          <ul className="mt-1.5 space-y-1">
+            {gaps.map(({ w, gaps: g }) => (
+              <li key={w.id}>
+                <button onClick={() => onOpenWarlord(w.id)} className="text-left text-washi underline-offset-2 hover:underline">
+                  {w.is_special ? "【特】" : ""}
+                  {w.name}
+                  <span className="text-ash">（{w.faction || "勢力未入力"}）</span>
+                </button>
+                <span className="ml-1 text-ash">{g.length === 8 ? "まだ 1 つも読み取れていません" : `足りない: ${g.join("、")}`}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <div className="space-y-3">
         {factions.map((f) => (
