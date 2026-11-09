@@ -432,47 +432,92 @@ const parseJson = <T>(text: string): T | null => {
   }
 };
 
-/**
- * 名将修行の画面 (武将名が書かれていない) の立ち絵が、登録済みの名将の誰かを AI で見分ける。
- * 1 回目: 名将全員の立ち絵の一覧表から、似ている候補を 3 人まで選ばせる。
- * 2 回目: その 3 人の立ち絵を大きく見せて、同じ絵を 1 人選ばせる (確信度 80 未満なら決めない)
- */
-export async function identifyMeishoByArt(imageId: string, candidates: Warlord[]): Promise<Warlord | null> {
+/** 名将の候補 (立ち絵の画像が読める武将だけ) */
+async function candidateBlobs(candidates: Warlord[]): Promise<{ w: Warlord; blob: Blob }[]> {
   const list: { w: Warlord; blob: Blob }[] = [];
   for (const w of candidates) {
     const id = w.image_url || w.gallery_images[0];
     const blob = id ? await db.getImage(id).catch(() => null) : null;
     if (blob) list.push({ w, blob });
   }
+  return list;
+}
+
+async function targetArt(imageId: string): Promise<string | null> {
+  const blob = await db.getImage(imageId);
+  if (!blob) return null;
+  const { cropArt } = await import("./images.ts");
+  return blobToBase64(await cropArt(blob));
+}
+
+export const MEISHO_SHORTLIST_SCHEMA = SHORTLIST_SCHEMA;
+export const MEISHO_CONFIRM_SCHEMA = CONFIRM_SCHEMA;
+
+/**
+ * 1 回目の依頼: 名将全員の立ち絵の一覧表から、似ている候補を 3 人まで選ばせる。
+ * 候補が 3 人以下なら 1 回目は要らない (shortlist にそのまま入れて返す)
+ */
+export async function buildMeishoShortlistRequest(
+  imageId: string,
+  candidates: Warlord[],
+): Promise<{ parts: Part[] | null; ids: string[] } | null> {
+  const list = await candidateBlobs(candidates);
   if (list.length === 0) return null;
-  const targetBlob = await db.getImage(imageId);
-  if (!targetBlob) return null;
-  const { artContactSheet, cropArt } = await import("./images.ts");
-  const target = await blobToBase64(await cropArt(targetBlob));
-  const settings = loadSettings();
-
-  // 1 回目: 一覧表から候補を絞る
-  let shortlist = list;
-  if (list.length > 3) {
-    const parts: Part[] = [{ text: SHORTLIST_PROMPT(list.length) }, { text: "判定するイラスト:" }, { image: target }];
-    for (let i = 0; i < list.length; i += SHEET_SIZE) {
-      const sheet = await artContactSheet(
-        list.slice(i, i + SHEET_SIZE).map((x) => x.blob),
-        i + 1,
-      );
-      parts.push({ text: `一覧表 (番号 ${i + 1} 〜 ${Math.min(i + SHEET_SIZE, list.length)}):` }, { image: await blobToBase64(sheet) });
-    }
-    const v = parseJson<{ candidates?: number[] }>(await ask(parts, settings, SHORTLIST_SCHEMA, 100));
-    const picked = [...new Set((v?.candidates ?? []).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= list.length))].slice(0, 3);
-    if (picked.length === 0) return null;
-    shortlist = picked.map((n) => list[n - 1]);
+  if (list.length <= 3) return { parts: null, ids: list.map((x) => x.w.id) };
+  const target = await targetArt(imageId);
+  if (!target) return null;
+  const { artContactSheet } = await import("./images.ts");
+  const parts: Part[] = [{ text: SHORTLIST_PROMPT(list.length) }, { text: "判定するイラスト:" }, { image: target }];
+  for (let i = 0; i < list.length; i += SHEET_SIZE) {
+    const sheet = await artContactSheet(
+      list.slice(i, i + SHEET_SIZE).map((x) => x.blob),
+      i + 1,
+    );
+    parts.push({ text: `一覧表 (番号 ${i + 1} 〜 ${Math.min(i + SHEET_SIZE, list.length)}):` }, { image: await blobToBase64(sheet) });
   }
+  return { parts, ids: list.map((x) => x.w.id) };
+}
 
-  // 2 回目: 候補の立ち絵を大きく見せて確かめる
-  const parts: Part[] = [{ text: CONFIRM_PROMPT(shortlist.length) }, { text: "判定するイラスト:" }, { image: target }];
-  for (const [i, c] of shortlist.entries()) parts.push({ text: `候補 ${i + 1}:` }, { image: await blobToBase64(await cropArt(c.blob)) });
-  const v = parseJson<{ match?: number; confidence?: number }>(await ask(parts, settings, CONFIRM_SCHEMA, 100));
+/** 1 回目の答えから、候補の武将 ID を取り出す (ids は依頼の番号順) */
+export function parseMeishoShortlist(text: string, ids: string[]): string[] {
+  const v = parseJson<{ candidates?: number[] }>(text);
+  return [...new Set((v?.candidates ?? []).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= ids.length))].slice(0, 3).map((n) => ids[n - 1]);
+}
+
+/** 2 回目の依頼: 候補の立ち絵を大きく見せて、同じ絵を 1 人選ばせる */
+export async function buildMeishoConfirmRequest(imageId: string, shortlist: Warlord[]): Promise<{ parts: Part[]; ids: string[] } | null> {
+  const list = await candidateBlobs(shortlist);
+  if (list.length === 0) return null;
+  const target = await targetArt(imageId);
+  if (!target) return null;
+  const { cropArt } = await import("./images.ts");
+  const parts: Part[] = [{ text: CONFIRM_PROMPT(list.length) }, { text: "判定するイラスト:" }, { image: target }];
+  for (const [i, c] of list.entries()) parts.push({ text: `候補 ${i + 1}:` }, { image: await blobToBase64(await cropArt(c.blob)) });
+  return { parts, ids: list.map((x) => x.w.id) };
+}
+
+/** 2 回目の答えから、決まった武将 ID を取り出す (確信度 80 未満なら null) */
+export function parseMeishoConfirm(text: string, ids: string[]): string | null {
+  const v = parseJson<{ match?: number; confidence?: number }>(text);
   const n = Number(v?.match);
-  if (!Number.isInteger(n) || n < 1 || n > shortlist.length || (v?.confidence ?? 0) < 80) return null;
-  return shortlist[n - 1].w;
+  if (!Number.isInteger(n) || n < 1 || n > ids.length || (v?.confidence ?? 0) < 80) return null;
+  return ids[n - 1];
+}
+
+/**
+ * 名将修行の画面 (武将名が書かれていない) の立ち絵が、登録済みの名将の誰かを、この端末から AI に尋ねて見分ける。
+ * 1 回目: 名将全員の立ち絵の一覧表から、似ている候補を 3 人まで選ばせる。
+ * 2 回目: その 3 人の立ち絵を大きく見せて、同じ絵を 1 人選ばせる (確信度 80 未満なら決めない)
+ */
+export async function identifyMeishoByArt(imageId: string, candidates: Warlord[]): Promise<Warlord | null> {
+  const settings = loadSettings();
+  const first = await buildMeishoShortlistRequest(imageId, candidates);
+  if (!first) return null;
+  const shortIds = first.parts ? parseMeishoShortlist(await ask(first.parts, settings, SHORTLIST_SCHEMA, 100), first.ids) : first.ids;
+  const shortlist = shortIds.map((id) => candidates.find((w) => w.id === id)).filter((w): w is Warlord => Boolean(w));
+  if (shortlist.length === 0) return null;
+  const second = await buildMeishoConfirmRequest(imageId, shortlist);
+  if (!second) return null;
+  const id = parseMeishoConfirm(await ask(second.parts, settings, CONFIRM_SCHEMA, 100), second.ids);
+  return id ? (candidates.find((w) => w.id === id) ?? null) : null;
 }

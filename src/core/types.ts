@@ -182,6 +182,10 @@ export interface OcrJob {
   adopt_special?: boolean;
   /** 天賦だけを読み直す (統合先の天賦を置き換える) */
   talents_only?: boolean;
+  /** 名将修行の画面の見分けをサーバーに任せている段階 (1: 一覧表から候補を選ぶ / 2: 候補から 1 人に決める) */
+  meisho_stage?: number | null;
+  /** 見分けの依頼に並べた武将の ID (答えの番号を武将に戻すため) */
+  meisho_ids?: string[] | null;
   /** 「再解析」の回。この回の最初の保存の前に、統合先の読み取った内容を空にする */
   reset_batch?: string;
   created_at: string;
