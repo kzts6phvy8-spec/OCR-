@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   decideSpecial,
+  meishoSlotFromEffect,
   detectTalentOrder,
   fixTalentOrder,
   learnTalentStats,
@@ -334,5 +335,23 @@ describe("名将修行のテキスト", async () => {
     const text = meishoTrainingToText([a, b] as never);
     expect(text).toContain("■ 奥.関.甲\n【特】南部晴政\n  少史 上:兵数上限+175 (未修行)");
     expect(text).toContain("武田信玄\n  図鑑には無し");
+  });
+});
+
+describe("名将修行の丸の位置を効果から決める", () => {
+  it("効果の種類で位置が決まるものは、AI の読んだ位置より優先する", () => {
+    expect(meishoSlotFromEffect("兵数上限+175")).toEqual({ rank: "少史", slot: "上" });
+    expect(meishoSlotFromEffect("物理計略防御+20%")).toEqual({ rank: "少納言", slot: "下" });
+    expect(meishoSlotFromEffect("覚醒スキルでの被ダメージ軽減+20%")).toEqual({ rank: "中納言", slot: "下" });
+    expect(meishoSlotFromEffect("自身の覚醒スキル初回発動後、奥義ゲージ+2、スキル会心+40%")).toEqual({ rank: "大輔", slot: "" });
+    expect(meishoSlotFromEffect("戦闘進入時、自身に頓悟を付与")).toEqual({ rank: "大史", slot: "" });
+    const patch = extractionToPatch(
+      makeExtraction({ meisho_training: { visible: true, selected_rank: "大史", selected_slot: null, effect: "兵数上限+175", trained: true } }),
+    );
+    expect(patch.meisho_talents?.[0]).toMatchObject({ rank: "少史", slot: "上" });
+  });
+  it("どちらの丸にもある効果は決めない", () => {
+    expect(meishoSlotFromEffect("最終ダメージ軽減+15%")).toBeNull();
+    expect(meishoSlotFromEffect("自身の兵力が50%未満の場合、攻撃回復+15%")).toBeNull();
   });
 });

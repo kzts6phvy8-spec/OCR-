@@ -528,11 +528,11 @@ export async function buildMeishoConfirmRequest(imageId: string, shortlist: Warl
   return { parts, ids: list.map((x) => x.w.id) };
 }
 
-/** 2 回目の答えから、決まった武将 ID を取り出す (確信度 80 未満なら null) */
+/** 2 回目の答えから、決まった武将 ID を取り出す (確信度 65 未満なら null) */
 export function parseMeishoConfirm(text: string, ids: string[]): string | null {
   const v = parseJson<{ match?: number; confidence?: number }>(text);
   const n = Number(v?.match);
-  if (!Number.isInteger(n) || n < 1 || n > ids.length || (v?.confidence ?? 0) < 80) return null;
+  if (!Number.isInteger(n) || n < 1 || n > ids.length || (v?.confidence ?? 0) < 65) return null;
   return ids[n - 1];
 }
 

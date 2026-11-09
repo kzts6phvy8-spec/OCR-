@@ -154,6 +154,12 @@ export const api = {
   async markMeisho(): Promise<number> {
     let marked = 0;
     for (const w of await db.listWarlords()) {
+      // 名将修行の丸の位置を、効果から決まる位置に直す (前の読み取りで位置を読み違えていた分)
+      const fixed = normalizeInput(toInput(w)).meisho_talents ?? [];
+      if (JSON.stringify(fixed) !== JSON.stringify(w.meisho_talents ?? [])) {
+        await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), meisho_talents: fixed }));
+        w.meisho_talents = fixed;
+      }
       const exts = [];
       for (const id of w.gallery_images) {
         const ext = await db.getExtraction(id).catch(() => null);
