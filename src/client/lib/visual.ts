@@ -230,11 +230,43 @@ async function looksLikeAnother(candidate: Warlord, ids: string[], screens: stri
   return false;
 }
 
+/** 立ち絵の確認の AI への問い合わせを、サーバーに任せる合図 (保存の途中で投げ、ジョブをサーバーに預け直す) */
+export class NeedServerArtCheck extends Error {
+  constructor(
+    readonly candidate: Warlord,
+    readonly strict: boolean,
+  ) {
+    super("立ち絵の確認をサーバーに任せます");
+  }
+}
+
+/** 立ち絵の確認を AI に尋ねる依頼 (見本の画像と判定する画像)。画像が無ければ null */
+export async function buildArtCheckRequest(imageId: string, candidate: Warlord): Promise<Part[] | null> {
+  const ids = imagesOf(candidate).filter((id) => id !== imageId);
+  const targetBlob = await db.getImage(imageId);
+  if (!targetBlob || ids.length === 0) return null;
+  // 画面ごとの立ち絵の見え方の違いに惑わされないよう、切り抜かずに画面全体を見せる
+  const parts: Part[] = [{ text: PROMPT }, { text: "見本:" }];
+  for (const id of ids.slice(0, AI_SAMPLES)) {
+    const blob = await db.getImage(id);
+    if (blob) parts.push({ image: await blobToBase64(await compressImage(blob, PREVIEW)) });
+  }
+  parts.push({ text: "判定する画像:" }, { image: await blobToBase64(await compressImage(targetBlob, PREVIEW)) });
+  return parts;
+}
+
+export const ART_CHECK_SCHEMA = RESPONSE_SCHEMA;
+
 /**
  * 判定する画像 (端末内の画像 ID) が、登録済みの武将と同じ立ち絵かを確かめる関数を作る。
  * screens: 判定する画像に写っている画面の種類 (読み取り結果から)。
+ * server: AI に尋ねる時はサーバーに任せる (answers にサーバーの答えがあればそれを使い、無ければ NeedServerArtCheck を投げる)
  */
-export function artChecker(imageId: string, screens: string[] = []): ArtCheck {
+export function artChecker(
+  imageId: string,
+  screens: string[] = [],
+  server?: { answers: Record<string, "same" | "different" | "unknown"> },
+): ArtCheck {
   return async (candidate, opts = {}) => {
     const ids = imagesOf(candidate).filter((id) => id !== imageId);
     if (ids.length === 0) return "unknown";
@@ -254,17 +286,17 @@ export function artChecker(imageId: string, screens: string[] = []): ArtCheck {
     }
     if (opts.localOnly) return "unknown";
 
-    // 迷う時は AI に尋ねる。画面ごとの立ち絵の見え方の違いに惑わされないよう、切り抜かずに画面全体を見せる
-    const targetBlob = await db.getImage(imageId);
-    if (!targetBlob) return "unknown";
-    const parts: Part[] = [{ text: PROMPT }, { text: "見本:" }];
-    for (const id of ids.slice(0, AI_SAMPLES)) {
-      const blob = await db.getImage(id);
-      if (blob) parts.push({ image: await blobToBase64(await compressImage(blob, PREVIEW)) });
-    }
-    parts.push({ text: "判定する画像:" }, { image: await blobToBase64(await compressImage(targetBlob, PREVIEW)) });
     // 別の武将らしい手がかりがあれば、AI が迷った時 (確信の無い「違う」) も別の武将とする
     const strict = opts.strict || (await looksLikeAnother(candidate, ids, screens));
+    // サーバーに任せる時: 答えが届いていればそれを使う。まだなら預け直す
+    if (server) {
+      const answer = server.answers[`${candidate.id}${strict ? "!" : ""}`];
+      if (answer) return answer;
+      throw new NeedServerArtCheck(candidate, strict);
+    }
+    // 迷う時は AI に尋ねる
+    const parts = await buildArtCheckRequest(imageId, candidate);
+    if (!parts) return "unknown";
     return interpretAnswer(await ask(parts, loadSettings()), strict);
   };
 }

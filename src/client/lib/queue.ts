@@ -12,9 +12,13 @@ import { shrinkForGallery } from "./images.ts";
 import { nextDailyReset } from "./quota.ts";
 import { isStalled, probeIfNeeded } from "./probe.ts";
 import {
+  ART_CHECK_SCHEMA,
   MEISHO_CONFIRM_SCHEMA,
   MEISHO_SHORTLIST_SCHEMA,
+  NeedServerArtCheck,
   artChecker,
+  buildArtCheckRequest,
+  interpretAnswer,
   buildMeishoConfirmRequest,
   buildMeishoShortlistRequest,
   identifyMeishoByArt,
@@ -332,7 +336,8 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
       adoptSpecial: job.adopt_special,
       imageId: job.image_id,
       faction: job.faction ?? "",
-      sameArt: artChecker(job.image_id, extraction.screen_types),
+      // バックグラウンド解析がオンなら、立ち絵の確認で AI に尋ねる時もサーバーに任せる
+      sameArt: artChecker(job.image_id, extraction.screen_types, bgActive(loadSettings()) ? { answers: job.art_answers ?? {} } : undefined),
       excludeIds: job.exclude_ids,
       // 名将修行の画面: 登録済みの名将 (名将の印がある武将) の立ち絵と見比べて誰かを決める
       identifyMeisho: async () => {
@@ -445,6 +450,35 @@ async function applyMeishoAnswer(job: OcrJob, text: string) {
   });
 }
 
+// ---------------- 立ち絵の確認 (サーバーに任せる) ----------------
+
+/** 立ち絵の確認を AI に尋ねる依頼をサーバーに預ける。答えが届いたら、この端末で保存をやり直す */
+async function startServerArtCheck(job: OcrJob, extraction: OcrExtraction, need: NeedServerArtCheck) {
+  const key = `${need.candidate.id}${need.strict ? "!" : ""}`;
+  const answers = { ...(job.art_answers ?? {}) };
+  const parts = await buildArtCheckRequest(job.image_id, need.candidate);
+  if (!parts) {
+    // 見比べる画像が無い: 分からないとして保存をやり直す
+    answers[key] = "unknown";
+    await update(job, { status: "queued", extraction, local: true, art_answers: answers, art_pending: null });
+    void runQueue();
+    return;
+  }
+  const settings = loadSettings();
+  const n = Object.keys(answers).length + 1;
+  await callServer(settings, "enqueue", { id: `${job.id}~a${n}`, model: settings.geminiModel, body: buildGeminiPartsBody(parts, ART_CHECK_SCHEMA, 256) });
+  await update(job, { status: "remote", extraction, local: true, art_answers: answers, art_pending: key });
+  kickServer();
+}
+
+/** サーバーから立ち絵の確認の答えが届いた: 答えを覚えて、保存をやり直す (この端末で。AI は使わない) */
+async function applyArtAnswer(job: OcrJob, text: string) {
+  const key = job.art_pending ?? "";
+  const answers = { ...(job.art_answers ?? {}), [key]: interpretAnswer(text, key.endsWith("!")) };
+  await update(job, { status: "queued", local: true, art_answers: answers, art_pending: null });
+  void runQueue();
+}
+
 /** 天賦だけを読み直すジョブ: 武将の画像をまとめて AI に見せ、天賦を位置から決め直して置き換える */
 async function processTalentReread(job: OcrJob) {
   const w = job.target_id ? await db.getWarlord(job.target_id) : null;
@@ -513,6 +547,15 @@ async function processJob(job: OcrJob) {
     });
   } catch (err) {
     if (err instanceof JobCancelled) return;
+    if (err instanceof NeedServerArtCheck && extraction) {
+      // 立ち絵の確認で AI に尋ねるところだけ、サーバーに任せる
+      try {
+        return await startServerArtCheck(job, extraction, err);
+      } catch {
+        await update(job, { status: "queued", extraction, local: true });
+        return;
+      }
+    }
     if (err instanceof NeedServerIdentify && extraction) {
       // 名将修行の画面: 誰の画面かの見分けをサーバーに任せる
       try {
@@ -745,6 +788,12 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
       }
       throw geminiHttpError(r.status, message, model);
     }
+    if (job.art_pending) {
+      // 立ち絵の確認の答え (サーバーに任せた分)
+      extraction = job.extraction ?? null;
+      await applyArtAnswer(job, geminiRestText(r.body ?? ""));
+      return;
+    }
     if (job.meisho_stage) {
       // 名将修行の画面の見分けの答え (サーバーに任せた分)。失敗した時に読み取り結果を残すよう、先に入れておく
       extraction = job.extraction ?? null;
@@ -778,6 +827,22 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
     });
   } catch (err) {
     if (err instanceof JobCancelled) return;
+    // サーバーの結果を保存する途中で、AI に尋ねる所 (立ち絵の確認・名将修行の画面の見分け) に来た: そこもサーバーに任せる
+    if (err instanceof NeedServerArtCheck && extraction) {
+      try {
+        return await startServerArtCheck(job, extraction, err);
+      } catch {
+        await update(job, { status: "queued", extraction, local: true });
+        return;
+      }
+    }
+    if (err instanceof NeedServerIdentify && extraction) {
+      try {
+        return await startServerIdentify(job, extraction);
+      } catch (e) {
+        return meishoFail(job, extraction, `見分けの依頼をサーバーに送れませんでした (${e instanceof Error ? e.message : String(e)})。「再試行」を押してください`);
+      }
+    }
     if (extraction && err instanceof OcrError && (err.rateLimited || err.retryable)) {
       // 読み取りは済んで、立ち絵の確認だけが失敗した: 読み取り結果を残し、この端末で保存だけやり直す
       if (err.rateLimited) pauseForRateLimit(err);
