@@ -379,7 +379,7 @@ async function meishoCandidates(job: OcrJob): Promise<Warlord[]> {
   return [...new Set([...all.filter((w) => w.is_meisho), ...unsure])];
 }
 
-const MEISHO_FAIL = "名将修行の画面の立ち絵から、どの名将か見分けられませんでした。下の「統合先を選んで保存」で武将を選んでください";
+const MEISHO_FAIL = "名将修行の画面の立ち絵から、どの名将か見分けられませんでした。下の「どの名将か選ぶ」で選んでください (その名将の名将修行に入れるだけで、武将をまとめるわけではありません)";
 
 async function meishoFail(job: OcrJob, extraction: OcrExtraction, message = MEISHO_FAIL) {
   await update(job, { status: "error", error: message, extraction, local: true, meisho_stage: null, meisho_ids: null });
@@ -428,7 +428,7 @@ async function applyMeishoAnswer(job: OcrJob, text: string) {
     return meishoFail(
       job,
       extraction,
-      `「${found.name}」の${clash.rank}${clash.slot ? ` ${clash.slot}` : ""}にはもう「${clash.effect}」が入っています。立ち絵の見分けを間違えたかもしれないので、下の「統合先を選んで保存」で武将を選んでください`,
+      `「${found.name}」の${clash.rank}${clash.slot ? ` ${clash.slot}` : ""}にはもう「${clash.effect}」が入っています。立ち絵の見分けを間違えたかもしれないので、下の「どの名将か選ぶ」で選んでください (その名将の名将修行に入れるだけで、武将をまとめるわけではありません)`,
     );
   }
   // 見分けた武将を統合先にして保存する

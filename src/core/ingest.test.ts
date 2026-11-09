@@ -253,12 +253,12 @@ describe("名将修行の画面", () => {
       name: null,
       meisho_training: { visible: true, selected_rank: "少納言", selected_slot: "下", effect: "物理攻撃+10%", trained: true },
     });
-    await expect(ingestExtraction(other, { ...opts("train-2.png"), identifyMeisho: find })).rejects.toThrow("統合先を選んで保存");
+    await expect(ingestExtraction(other, { ...opts("train-2.png"), identifyMeisho: find })).rejects.toThrow("どの名将か選ぶ");
     const after = await find();
     expect(after?.meisho_talents).toHaveLength(1);
     expect(after?.meisho_images).toEqual(["train-1.png"]);
   });
   it("見分けられなければ統合先を選んでもらう", async () => {
-    await expect(ingestExtraction(training, { ...opts("train.png"), identifyMeisho: async () => null })).rejects.toThrow("統合先を選んで保存");
+    await expect(ingestExtraction(training, { ...opts("train.png"), identifyMeisho: async () => null })).rejects.toThrow("どの名将か選ぶ");
   });
 });
