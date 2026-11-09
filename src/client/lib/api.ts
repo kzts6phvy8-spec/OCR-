@@ -292,12 +292,21 @@ export const api = {
    * 失敗したジョブを、新しい武将として保存し直す (統合先に合う武将がいない時)。
    * 名前と通常/特異だけの武将を作り、そこへ統合する形で保存する (読み取り済みなら AI は使わない)。
    */
-  async retryJobAsNewWarlord(id: string, name: string): Promise<Warlord> {
+  async retryJobAsNewWarlord(id: string, name: string, opts: { faction?: Faction; meisho?: boolean } = {}): Promise<Warlord> {
     const job = await db.getJob(id);
     if (!job) throw new Error("解析の記録が見つかりません");
     if (job.status !== "error") throw new Error("この解析は、すでにやり直し中か完了しています");
     const isSpecial = job.extraction ? decideSpecial(job.extraction, job.mode).is_special : job.mode === "force_special";
-    const created = await db.insertWarlord(normalizeInput({ ...emptyWarlordInput(), name, is_special: isSpecial }));
+    const created = await db.insertWarlord(
+      normalizeInput({
+        ...emptyWarlordInput(),
+        name,
+        is_special: isSpecial,
+        ...(opts.faction ? { faction: opts.faction } : {}),
+        // 名将一覧から作った武将は名将 (手で決めた扱い)
+        ...(opts.meisho ? { is_meisho: true, meisho_manual: true } : {}),
+      }),
+    );
     // 読み取りがまだの (送信や解析で失敗した) 画像は、読み取った【特】表記で通常/特異を決め直す
     await queue.retryJobs([id], created.id, true);
     return created;

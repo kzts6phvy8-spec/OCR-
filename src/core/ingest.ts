@@ -216,7 +216,7 @@ export async function ingestExtraction(
     // 名将修行の画面には武将名が無いので、立ち絵を登録済みの名将と見比べて誰かを決める
     const found = opts.identifyMeisho ? await opts.identifyMeisho() : null;
     if (!found) {
-      throw new IngestError("名将修行の画面の立ち絵から、どの名将か見分けられませんでした。下の「統合先を選んで保存」で武将を選んでください");
+      throw new IngestError("名将修行の画面の立ち絵から、どの名将か見分けられませんでした。下の「どの名将か選ぶ」で選んでください (その名将の名将修行に入れるだけで、武将をまとめるわけではありません)");
     }
     existing = found;
     name = found.name;
@@ -227,7 +227,7 @@ export async function ingestExtraction(
     const clash = read && (found.meisho_talents ?? []).find((t) => t.rank === read.rank && t.slot === read.slot && normText(t.effect) !== normText(read.effect));
     if (clash) {
       throw new IngestError(
-        `「${found.name}」の${clash.rank}${clash.slot ? ` ${clash.slot}` : ""}にはもう「${clash.effect}」が入っています。立ち絵の見分けを間違えたかもしれないので、下の「統合先を選んで保存」で武将を選んでください`,
+        `「${found.name}」の${clash.rank}${clash.slot ? ` ${clash.slot}` : ""}にはもう「${clash.effect}」が入っています。立ち絵の見分けを間違えたかもしれないので、下の「どの名将か選ぶ」で選んでください (その名将の名将修行に入れるだけで、武将をまとめるわけではありません)`,
       );
     }
   } else {

@@ -404,12 +404,19 @@ function JobRow({
   const [picking, setPicking] = useState(false);
   const [zoom, setZoom] = useState(false);
   const readName = job.extraction?.name ? normalizeName(job.extraction.name).name : "";
+  // 名将修行の画面: 選んだ名将の名将修行 (追加天賦) に入れるだけ (武将をまとめるわけではない)
+  const training = Boolean(job.extraction?.meisho_training?.visible);
+  const unregisteredMeisho = useMemo(() => {
+    if (!training) return [];
+    const have = new Set(warlords.map((w) => `${w.faction}|${w.name}`));
+    return [...new Map(MEISHO_ROSTER.filter((e) => !have.has(`${e.faction}|${e.name}`)).map((e) => [`${e.faction}|${e.name}`, e])).values()];
+  }, [training, warlords]);
   const saveTo = async (targetId: string) => {
     if (!targetId) return;
     try {
       await api.retryJobWithTarget(job.id, targetId);
       setPicking(false);
-      toast("info", "選んだ武将に統合します", job.extraction ? "読み取り済みの内容で保存します (AI の回数は使いません)" : "もう一度解析してから保存します");
+      toast("info", training ? "選んだ名将の名将修行に入れます" : "選んだ武将に統合します", job.extraction ? "読み取り済みの内容で保存します (AI の回数は使いません)" : "もう一度解析してから保存します");
     } catch (e) {
       toast("error", "保存できませんでした", (e as Error).message);
     }
@@ -447,7 +454,9 @@ function JobRow({
           {job.status === "remote" && <span className="text-sky-300">サーバーで解析待ち (アプリを閉じても進みます)</span>}
           {job.status === "done" && (
             <button onClick={() => job.warlord_id && onOpen(job.warlord_id)} className="text-gold-300 underline-offset-2 hover:underline">
-              {job.warlord_label} を{job.merged ? "統合更新" : "新規登録"}
+              {job.extraction?.meisho_training?.visible || job.warnings.some((w) => w.startsWith("名将修行の画面"))
+                ? `${job.warlord_label} の名将修行に追加`
+                : `${job.warlord_label} を${job.merged ? "統合更新" : "新規登録"}`}
             </button>
           )}
           {job.status === "error" && <span className="text-hi-400">{job.error}</span>}
@@ -465,7 +474,9 @@ function JobRow({
                 <button onClick={() => setZoom(true)} className="flex items-center gap-2 text-left" aria-label="失敗した画像を大きく見る">
                   <StoredImage id={job.image_id} alt="" className="h-28 w-24 shrink-0 rounded border border-hi-600/60 object-cover object-left" />
                   <span className="text-[11px] text-ash">
-                    この画像の立ち絵と同じ武将を選んでください
+                    {training
+                      ? "この名将修行の画面が、どの名将のものか選んでください。選んだ名将の名将修行 (追加天賦) に入れるだけで、武将をまとめたり画像を足したりはしません"
+                      : "この画像の立ち絵と同じ武将を選んでください"}
                     {readName && (
                       <>
                         <br />
@@ -480,7 +491,7 @@ function JobRow({
                   warlords={warlords}
                   value=""
                   onChange={(id) => void saveTo(id)}
-                  placeholder="統合先の武将を検索"
+                  placeholder={training ? "名将を検索" : "統合先の武将を検索"}
                   // 読み取った名前と同じ・1 文字違いの武将は、検索しなくても候補に出す
                   suggest={
                     readName
@@ -492,13 +503,44 @@ function JobRow({
                   }
                   priority={readName ? (w) => (w.name === readName ? 0 : 1) : undefined}
                 />
-                <button onClick={() => void saveAsNew()} className="w-full rounded-md border border-dashed border-gold-600/60 px-2 py-1.5 text-[11px] text-gold-300">
-                  どれにも当てはまらない: 新しい武将として保存
-                </button>
+                {training ? (
+                  unregisteredMeisho.length > 0 && (
+                    <label className="block text-[11px] text-ash">
+                      図鑑にまだいない名将なら、ここから選ぶと作って入れます:
+                      <select
+                        className="field mt-1 text-xs"
+                        value=""
+                        onChange={(e) => {
+                          const entry = unregisteredMeisho.find((x) => `${x.faction}|${x.name}` === e.target.value);
+                          if (!entry) return;
+                          void api
+                            .retryJobAsNewWarlord(job.id, entry.name, { faction: entry.faction as Faction, meisho: true })
+                            .then(() => {
+                              setPicking(false);
+                              toast("info", `名将「${entry.name}」(${entry.faction}) を作って、名将修行に入れます`);
+                            })
+                            .catch((err: Error) => toast("error", "保存できませんでした", err.message));
+                        }}
+                      >
+                        <option value="">名将一覧の未登録の武将 ({unregisteredMeisho.length} 人)</option>
+                        {unregisteredMeisho.map((x) => (
+                          <option key={`${x.faction}|${x.name}`} value={`${x.faction}|${x.name}`}>
+                            {x.name} ({x.faction}
+                            {x.group ? `・${x.group}` : ""})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )
+                ) : (
+                  <button onClick={() => void saveAsNew()} className="w-full rounded-md border border-dashed border-gold-600/60 px-2 py-1.5 text-[11px] text-gold-300">
+                    どれにも当てはまらない: 新しい武将として保存
+                  </button>
+                )}
               </div>
             ) : (
               <button onClick={() => setPicking(true)} className="rounded-md border border-ebony-600 px-2 py-1 text-[11px] text-gold-300">
-                統合先を選んで保存
+                {training ? "どの名将か選ぶ" : "統合先を選んで保存"}
               </button>
             )}
           </div>
