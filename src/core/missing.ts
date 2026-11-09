@@ -77,7 +77,8 @@ export const MISSING_FIELDS: MissingField[] = [
     missing: (w) =>
       !w.no_synergy && (w.synergy_skills.length === 0 || (w.faction === "鬼憑武将" && w.synergy_skills.length < 2)),
   },
-  { id: "meisho_talents", label: "名将修行の追加天賦 (名将のみ)", missing: (w) => meishoTalentGaps(w).length > 0 },
+  // 1 つも無い名将は、シミュレーターの方に直接渡してあるので未入力に数えない (途中まで入っているのに足りない名将だけ)
+  { id: "meisho_talents", label: "名将修行の追加天賦 (途中まで入っている名将)", missing: (w) => (w.meisho_talents?.length ?? 0) > 0 && meishoTalentGaps(w).length > 0 },
 ];
 
 /** どれか 1 つでも未入力の項目があるか */

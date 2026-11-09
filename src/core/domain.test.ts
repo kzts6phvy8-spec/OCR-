@@ -333,6 +333,6 @@ describe("名将修行のテキスト", async () => {
     const b = { ...normalizeInput({ ...emptyWarlordInput(), name: "武田信玄", faction: "奥.関.甲", is_meisho: true }), id: "b" };
     const text = meishoTrainingToText([a, b] as never);
     expect(text).toContain("■ 奥.関.甲\n【特】南部晴政\n  少史 上:兵数上限+175 (未修行)");
-    expect(text).toContain("武田信玄\n  未取得");
+    expect(text).toContain("武田信玄\n  図鑑には無し");
   });
 });
