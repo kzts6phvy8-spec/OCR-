@@ -186,6 +186,10 @@ export interface OcrJob {
   meisho_stage?: number | null;
   /** 見分けの依頼に並べた武将の ID (答えの番号を武将に戻すため) */
   meisho_ids?: string[] | null;
+  /** サーバーに尋ねた立ち絵の確認の答え (武将 ID → 同じ/違う/分からない。厳しめに判定したものは ID の後ろに !) */
+  art_answers?: Record<string, "same" | "different" | "unknown"> | null;
+  /** サーバーに立ち絵の確認を尋ねて、答えを待っている武将 (art_answers と同じ書き方) */
+  art_pending?: string | null;
   /** 「再解析」の回。この回の最初の保存の前に、統合先の読み取った内容を空にする */
   reset_batch?: string;
   created_at: string;
