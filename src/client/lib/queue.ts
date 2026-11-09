@@ -11,7 +11,7 @@ import { OcrError } from "./ocrCommon.ts";
 import { shrinkForGallery } from "./images.ts";
 import { nextDailyReset } from "./quota.ts";
 import { isStalled, probeIfNeeded } from "./probe.ts";
-import { artChecker, identifyMeishoByArt } from "./visual.ts";
+import { artChecker, identifyMeishoByArt, matchKnownTraining } from "./visual.ts";
 import { logError } from "./errorLog.ts";
 import { dedupeWarlordImages } from "./dedupe.ts";
 import type { OcrExtraction } from "../../core/ocrSchema.ts";
@@ -307,6 +307,7 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
             meisho_manual: target.meisho_manual,
             // 名将修行の画面は登録画像に残さないので、読み取った追加天賦は作り直しで消さない
             meisho_talents: target.meisho_talents,
+            meisho_images: target.meisho_images,
             gallery_images: target.gallery_images,
             image_url: target.image_url,
             reset_batch: job.reset_batch,
@@ -331,6 +332,9 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
           .filter((m) => m.decided.length === 0)
           .flatMap((m) => m.candidates)
           .filter((w) => !w.meisho_manual);
+        // まず、すでに名将に振り分けた名将修行の画面と見比べる (同じ武将ならカードの絵がほぼ同じ。AI を使わない)
+        const known = await matchKnownTraining(job.image_id, all.filter((w) => w.meisho_images?.length));
+        if (known) return known;
         return identifyMeishoByArt(job.image_id, [...new Set([...all.filter((w) => w.is_meisho), ...unsure])]);
       },
       similarNames: async (name) => {

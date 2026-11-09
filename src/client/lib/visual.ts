@@ -349,26 +349,93 @@ export async function groupByArtWithAi(imageIds: string[]): Promise<{ groups: st
 
 /** 一覧表 1 枚に並べる人数 */
 const SHEET_SIZE = 36;
+/** 名将修行の画面どうしのカードの絵が、これ以上似ていれば同じ武将 */
+const TRAINING_SAME = 0.97;
+/** 2 番目に似ている武将とこれだけ差があれば、取り違えではない */
+const TRAINING_MARGIN = 0.03;
 
-const IDENTIFY_PROMPT = (n: number) =>
+const trainingSigs = new Map<string, Promise<Float32Array | null>>();
+function trainingSigOf(imageId: string) {
+  let p = trainingSigs.get(imageId);
+  if (!p) {
+    p = (async () => {
+      const blob = await db.getImage(imageId);
+      if (!blob) return null;
+      const { trainingCardSignature } = await import("./images.ts");
+      return trainingCardSignature(blob);
+    })().catch(() => null);
+    trainingSigs.set(imageId, p);
+  }
+  return p;
+}
+
+/**
+ * 名将修行の画面を、すでに名将に振り分けた名将修行の画面と見比べる (AI なし)。
+ * 名将修行の画面は配置が同じなので、同じ武将ならカードの絵がほぼ同じになる
+ */
+export async function matchKnownTraining(imageId: string, warlords: Warlord[]): Promise<Warlord | null> {
+  const target = await trainingSigOf(imageId);
+  if (!target) return null;
+  const scores: { w: Warlord; score: number }[] = [];
+  for (const w of warlords) {
+    let best = -1;
+    for (const id of (w.meisho_images ?? []).filter((x) => x !== imageId)) {
+      const sig = await trainingSigOf(id);
+      if (sig) best = Math.max(best, signatureSimilarity(target, sig));
+    }
+    if (best > -1) scores.push({ w, score: best });
+  }
+  scores.sort((a, b) => b.score - a.score);
+  const [first, second] = scores;
+  if (!first || first.score < TRAINING_SAME) return null;
+  if (second && first.score - second.score < TRAINING_MARGIN) return null;
+  return first.w;
+}
+
+const SHORTLIST_PROMPT = (n: number) =>
   [
     "スマホゲーム『戦国布武』の武将のイラストを見比べてください。",
     "最初の画像 (判定するイラスト) は「名将修行」の画面のカードの絵です。",
     `続く一覧表には、名将の武将のイラストが番号 1 〜 ${n} の付いたマスに並んでいます。`,
-    "判定するイラストと同じ人物のイラストのマスの番号を選んでください。",
+    "判定するイラストと同じ人物のイラストの可能性が高いマスを、可能性の高い順に 3 つまで選んでください。",
     "白黒かカラーか・明るさ・切り抜き方・枠や文字の違いは無視し、顔・髪型・衣装・持ち物・ポーズで比べてください。",
-    `JSON で答えてください: {"match": マスの番号 (同じイラストが無ければ 0), "confidence": 0〜100}`,
+    `JSON で答えてください: {"candidates": [マスの番号, …]}`,
   ].join("\n");
 
-const IDENTIFY_SCHEMA = {
+const SHORTLIST_SCHEMA = {
+  type: "object",
+  properties: { candidates: { type: "array", items: { type: "integer" } } },
+  required: ["candidates"],
+};
+
+const CONFIRM_PROMPT = (n: number) =>
+  [
+    "スマホゲーム『戦国布武』の武将のイラストを見比べてください。",
+    "最初の画像 (判定するイラスト) は「名将修行」の画面のカードの絵です。",
+    `続く候補 1 〜 ${n} は、名将の武将の画面のイラストです。`,
+    "判定するイラストと同じイラスト (同じ絵) の候補を選んでください。同じ名前でも衣装・髪型・持ち物・ポーズが違えば別の絵です。",
+    "白黒かカラーか・明るさ・切り抜き方の違いは無視してください。",
+    `JSON で答えてください: {"match": 候補の番号 (同じ絵が無ければ 0), "confidence": 0〜100}`,
+  ].join("\n");
+
+const CONFIRM_SCHEMA = {
   type: "object",
   properties: { match: { type: "integer" }, confidence: { type: "integer" } },
   required: ["match", "confidence"],
 };
 
+const parseJson = <T>(text: string): T | null => {
+  try {
+    return JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as T;
+  } catch {
+    return null;
+  }
+};
+
 /**
- * 名将修行の画面 (武将名が書かれていない) の立ち絵が、登録済みの名将の誰かを見分ける。
- * 名将全員の立ち絵を番号付きの一覧表にまとめ、AI に 1 回だけ選ばせる。見分けられなければ null
+ * 名将修行の画面 (武将名が書かれていない) の立ち絵が、登録済みの名将の誰かを AI で見分ける。
+ * 1 回目: 名将全員の立ち絵の一覧表から、似ている候補を 3 人まで選ばせる。
+ * 2 回目: その 3 人の立ち絵を大きく見せて、同じ絵を 1 人選ばせる (確信度 80 未満なら決めない)
  */
 export async function identifyMeishoByArt(imageId: string, candidates: Warlord[]): Promise<Warlord | null> {
   const list: { w: Warlord; blob: Blob }[] = [];
@@ -381,22 +448,31 @@ export async function identifyMeishoByArt(imageId: string, candidates: Warlord[]
   const targetBlob = await db.getImage(imageId);
   if (!targetBlob) return null;
   const { artContactSheet, cropArt } = await import("./images.ts");
-  const parts: Part[] = [{ text: IDENTIFY_PROMPT(list.length) }, { text: "判定するイラスト:" }, { image: await blobToBase64(await cropArt(targetBlob)) }];
-  for (let i = 0; i < list.length; i += SHEET_SIZE) {
-    const sheet = await artContactSheet(
-      list.slice(i, i + SHEET_SIZE).map((x) => x.blob),
-      i + 1,
-    );
-    parts.push({ text: `一覧表 (番号 ${i + 1} 〜 ${Math.min(i + SHEET_SIZE, list.length)}):` }, { image: await blobToBase64(sheet) });
+  const target = await blobToBase64(await cropArt(targetBlob));
+  const settings = loadSettings();
+
+  // 1 回目: 一覧表から候補を絞る
+  let shortlist = list;
+  if (list.length > 3) {
+    const parts: Part[] = [{ text: SHORTLIST_PROMPT(list.length) }, { text: "判定するイラスト:" }, { image: target }];
+    for (let i = 0; i < list.length; i += SHEET_SIZE) {
+      const sheet = await artContactSheet(
+        list.slice(i, i + SHEET_SIZE).map((x) => x.blob),
+        i + 1,
+      );
+      parts.push({ text: `一覧表 (番号 ${i + 1} 〜 ${Math.min(i + SHEET_SIZE, list.length)}):` }, { image: await blobToBase64(sheet) });
+    }
+    const v = parseJson<{ candidates?: number[] }>(await ask(parts, settings, SHORTLIST_SCHEMA, 100));
+    const picked = [...new Set((v?.candidates ?? []).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= list.length))].slice(0, 3);
+    if (picked.length === 0) return null;
+    shortlist = picked.map((n) => list[n - 1]);
   }
-  const text = await ask(parts, loadSettings(), IDENTIFY_SCHEMA, 100);
-  let v: { match?: number; confidence?: number } = {};
-  try {
-    v = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
-  } catch {
-    return null;
-  }
-  const n = Number(v.match);
-  if (!Number.isInteger(n) || n < 1 || n > list.length || (v.confidence ?? 0) < 60) return null;
-  return list[n - 1].w;
+
+  // 2 回目: 候補の立ち絵を大きく見せて確かめる
+  const parts: Part[] = [{ text: CONFIRM_PROMPT(shortlist.length) }, { text: "判定するイラスト:" }, { image: target }];
+  for (const [i, c] of shortlist.entries()) parts.push({ text: `候補 ${i + 1}:` }, { image: await blobToBase64(await cropArt(c.blob)) });
+  const v = parseJson<{ match?: number; confidence?: number }>(await ask(parts, settings, CONFIRM_SCHEMA, 100));
+  const n = Number(v?.match);
+  if (!Number.isInteger(n) || n < 1 || n > shortlist.length || (v?.confidence ?? 0) < 80) return null;
+  return shortlist[n - 1].w;
 }

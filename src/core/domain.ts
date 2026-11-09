@@ -602,6 +602,7 @@ export function mergeWarlord(
 
   if (patch.talents) merged.talents = mergeTalents(merged.talents, patch.talents);
   if (patch.meisho_talents?.length) merged.meisho_talents = mergeMeishoTalents(merged.meisho_talents ?? [], patch.meisho_talents);
+  if (patch.meisho_images?.length) merged.meisho_images = uniqueStrings([...(merged.meisho_images ?? []), ...patch.meisho_images]);
   if (patch.synergy_skills) merged.synergy_skills = mergeSynergies(merged.synergy_skills, patch.synergy_skills);
   if (patch.troop_variants) merged.troop_variants = uniqueStrings([...merged.troop_variants, ...patch.troop_variants]);
 
@@ -686,6 +687,7 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     no_synergy: Boolean(v.no_synergy),
     is_meisho: Boolean(v.is_meisho),
     meisho_manual: Boolean(v.meisho_manual),
+    meisho_images: uniqueStrings(Array.isArray(v.meisho_images) ? v.meisho_images.map(String) : []),
     meisho_talents: mergeMeishoTalents([], (Array.isArray(v.meisho_talents) ? v.meisho_talents : []).map(normalizeMeishoTalent).filter((t): t is MeishoTalent => t !== null)),
     oni_season: normalizeSeason(v.oni_season),
     talent_order_v2: Boolean(v.talent_order_v2),

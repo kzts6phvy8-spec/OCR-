@@ -114,6 +114,8 @@ export interface Warlord {
   meisho_manual?: boolean;
   /** 名将修行の追加天賦 (名将修行の画面から読み取る) */
   meisho_talents?: MeishoTalent[];
+  /** 名将修行の画面の画像 (登録画像とは別に持つ。同じ武将の名将修行の画面を見分ける手がかり・見分け直しに使う) */
+  meisho_images?: string[];
   /** 鬼憑武将のシーズン (4 人の組。例: 徳川四天王)。連携スキルから自動で入るほか、手でも選べる */
   oni_season?: string;
   /** 天賦の星の番号を、画面の並び (①② / ③④ / ⑤) に合わせて直し済みか */

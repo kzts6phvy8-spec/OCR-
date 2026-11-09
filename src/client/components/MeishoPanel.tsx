@@ -96,6 +96,25 @@ export function MeishoPanel({
         <button onClick={() => void save("txt")} className="inline-flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-sm text-washi">
           <Download className="size-4" /> 名将だけ保存 (.txt・{meishoCount} 人)
         </button>
+        <button
+          onClick={() =>
+            void (async () => {
+              if (
+                !confirm(
+                  "名将修行の画面を、保存してある画像から見分け直しますか？\n全員の名将修行の追加天賦をいったん空にして、画像ごとに誰の画面かを決め直します (文字の読み取りはやり直しません)。\n同じ武将の 2 枚目からは、1 枚目と見比べるだけなので AI を使いません (1 人につき AI 2 回ほど)。",
+                )
+              )
+                return;
+              const n = await api.reidentifyMeishoTraining();
+              if (n === 0) toast("info", "保存してある名将修行の画面がありません", "名将修行のスクショを取り込み直してください");
+              else toast("info", `${n} 枚の名将修行の画面を見分け直します`, "進み具合は「スクショ解析」タブで見られます");
+              onChanged();
+            })()
+          }
+          className="inline-flex items-center gap-1.5 rounded-lg border border-hi-600/60 px-3 py-1.5 text-sm text-hi-400"
+        >
+          <Sparkles className="size-4" /> 名将修行を見分け直す (保存済みの画像から)
+        </button>
         <button onClick={() => void save("training")} className="inline-flex items-center gap-1.5 rounded-lg border border-shu-500/60 px-3 py-1.5 text-sm text-washi">
           <Download className="size-4" /> 名将修行の追加天賦だけ保存 (.txt)
         </button>

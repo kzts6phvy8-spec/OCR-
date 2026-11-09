@@ -273,7 +273,7 @@ export const api = {
       const current = await db.getWarlord(id);
       if (!current) continue;
       await db.deleteWarlord(id);
-      images.push(...current.gallery_images);
+      images.push(...current.gallery_images, ...(current.meisho_images ?? []));
     }
     await db.removeUnreferencedImages(images);
   },
@@ -436,6 +436,7 @@ export const api = {
         meisho_manual: w.meisho_manual,
         // 名将修行の画面は登録画像に残さないので、読み取った追加天賦は作り直しで消さない
         meisho_talents: w.meisho_talents,
+        meisho_images: w.meisho_images,
         gallery_images: [],
         image_url: "",
       }),
@@ -591,6 +592,37 @@ export const api = {
     }
     onProgress?.(targets.length, targets.length, "");
     return { marked, notMeisho, unknown, stopped };
+  },
+
+  /**
+   * 名将修行の画面を、保存してある画像と読み取り結果から見分け直す (読み取りはやり直さない)。
+   * 全員の名将修行の追加天賦をいったん空にし、画像ごとに誰の画面かを決め直して入れ直す。見分け直す画像の枚数を返す
+   */
+  async reidentifyMeishoTraining(): Promise<number> {
+    const images = await db.listTrainingImages();
+    if (images.length === 0) return 0;
+    for (const w of await db.listWarlords()) {
+      if (!w.meisho_talents?.length && !w.meisho_images?.length) continue;
+      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), meisho_talents: [], meisho_images: [] }));
+    }
+    await queue.enqueue(
+      images.map((id, i) => ({ fileName: `名将修行の画面 ${i + 1} (見分け直し)`, imageId: id })),
+      "auto",
+      null,
+      "",
+      true,
+      { reuse: true },
+    );
+    return images.length;
+  },
+
+  /** 1 人の武将の名将修行の追加天賦を消す (取り違えて入った時に) */
+  async clearMeishoTraining(id: string): Promise<Warlord> {
+    const w = await db.getWarlord(id);
+    if (!w) throw new Error("武将が見つかりません");
+    const saved = await db.updateWarlord(id, normalizeInput({ ...toInput(w), meisho_talents: [], meisho_images: [] }));
+    await db.removeUnreferencedImages(w.meisho_images ?? []);
+    return saved;
   },
 
   /** 名将かどうかを手で決める (自動の判断で変えなくなる) */

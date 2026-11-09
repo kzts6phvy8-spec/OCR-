@@ -4,6 +4,7 @@ import {
   emptyWarlordInput,
   extractionToPatch,
   mergeWarlord,
+  normText,
   normalizeFaction,
   normalizeInput,
   normalizeName,
@@ -221,6 +222,14 @@ export async function ingestExtraction(
     name = found.name;
     isSpecial = found.is_special;
     warnings.push(`名将修行の画面なので、立ち絵から「${found.is_special ? "【特】" : ""}${found.name}」と判断しました`);
+    // 同じ官職の丸に、違う追加天賦がもう入っていたら、別の武将と取り違えている: 保存せず選び直してもらう
+    const read = extractionToPatch(ext).meisho_talents?.[0];
+    const clash = read && (found.meisho_talents ?? []).find((t) => t.rank === read.rank && t.slot === read.slot && normText(t.effect) !== normText(read.effect));
+    if (clash) {
+      throw new IngestError(
+        `「${found.name}」の${clash.rank}${clash.slot ? ` ${clash.slot}` : ""}にはもう「${clash.effect}」が入っています。立ち絵の見分けを間違えたかもしれないので、下の「統合先を選んで保存」で武将を選んでください`,
+      );
+    }
   } else {
     if (!readName) {
       throw new IngestError("武将名を読み取れませんでした。下の「統合先を選んで保存」で武将を選んでください");
@@ -265,6 +274,8 @@ export async function ingestExtraction(
   if (!ext.meisho_training?.visible) {
     patch.gallery_images = [opts.imageId];
     patch.image_url = opts.imageId;
+  } else {
+    patch.meisho_images = [opts.imageId];
   }
 
   const base = existing ? { ...toInput(existing), ...(becomesSpecial ? { is_special: true } : {}) } : { ...emptyWarlordInput(), name, is_special: isSpecial };

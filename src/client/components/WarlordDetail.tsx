@@ -508,7 +508,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
 
         <div className="scroll-thin flex-1 overflow-y-auto p-5">
           {view ? (
-            <DetailView w={view} counterpart={counterpart} allWarlords={allWarlords} onOpenOther={onOpenOther} />
+            <DetailView w={view} counterpart={counterpart} allWarlords={allWarlords} onOpenOther={onOpenOther} onSaved={onSaved} />
           ) : (
             <>
               {updatedWhileEditing && (
@@ -703,11 +703,13 @@ function DetailView({
   counterpart,
   allWarlords,
   onOpenOther,
+  onSaved,
 }: {
   w: Warlord;
   counterpart?: Warlord;
   allWarlords: Warlord[];
   onOpenOther: (id: string) => void;
+  onSaved: (w: Warlord) => void;
 }) {
   return (
     <>
@@ -839,6 +841,15 @@ function DetailView({
               </li>
             ))}
           </ul>
+          <button
+            onClick={() => {
+              if (!confirm(`「${w.name}」の名将修行の追加天賦 (${w.meisho_talents!.length} つ) を消しますか？\n別の武将の画面が取り違えて入っていた時に使います。正しい名将修行の画面を取り込み直してください。`)) return;
+              void api.clearMeishoTraining(w.id).then(onSaved);
+            }}
+            className="mt-2 rounded-md border border-hi-600/60 px-2.5 py-1 text-xs text-hi-400"
+          >
+            名将修行の追加天賦を消す (取り違えて入った時)
+          </button>
           <p className="mt-1.5 text-[11px] text-ebony-500">名将修行の画面で官職の丸を選ぶと、その丸の追加天賦が出ます。丸ごとにスクショを取り込むと、ここに増えます (画面に名前が無くても、立ち絵から誰か見分けます)。</p>
         </Section>
       )}
