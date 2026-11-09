@@ -190,6 +190,8 @@ export interface OcrJob {
   art_answers?: Record<string, "same" | "different" | "unknown"> | null;
   /** サーバーに立ち絵の確認を尋ねて、答えを待っている武将 (art_answers と同じ書き方) */
   art_pending?: string | null;
+  /** サーバーに預けた見分け・立ち絵の確認の依頼の名前 (古い依頼の答えを取り違えないように、これと合う答えだけ使う) */
+  server_req?: string | null;
   /** 「再解析」の回。この回の最初の保存の前に、統合先の読み取った内容を空にする */
   reset_batch?: string;
   created_at: string;

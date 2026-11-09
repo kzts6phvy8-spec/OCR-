@@ -263,7 +263,7 @@ async function sendToServer(job: OcrJob, image: Blob) {
     model: settings.geminiModel,
     body: buildGeminiBody(await blobToBase64(image), job.mode),
   });
-  await update(job, { status: "remote" });
+  await update(job, { status: "remote", server_req: null, meisho_stage: null, art_pending: null });
   kickServer();
 }
 
@@ -387,15 +387,16 @@ async function meishoCandidates(job: OcrJob): Promise<Warlord[]> {
 const MEISHO_FAIL = "名将修行の画面の立ち絵から、どの名将か見分けられませんでした。下の「どの名将か選ぶ」で選んでください (その名将の名将修行に入れるだけで、武将をまとめるわけではありません)";
 
 async function meishoFail(job: OcrJob, extraction: OcrExtraction, message = MEISHO_FAIL) {
-  await update(job, { status: "error", error: message, extraction, local: true, meisho_stage: null, meisho_ids: null });
+  await update(job, { status: "error", error: message, extraction, local: true, meisho_stage: null, meisho_ids: null, server_req: null });
 }
 
 /** 見分けの依頼をサーバーに預ける (サーバー側の名前は、段階ごとに別にして取り違えないようにする) */
 async function sendMeishoRequest(job: OcrJob, extraction: OcrExtraction, stage: 1 | 2, parts: Part[], ids: string[]) {
   const settings = loadSettings();
   const schema = stage === 1 ? MEISHO_SHORTLIST_SCHEMA : MEISHO_CONFIRM_SCHEMA;
-  await callServer(settings, "enqueue", { id: `${job.id}~m${stage}`, model: settings.geminiModel, body: buildGeminiPartsBody(parts, schema, 1024) });
-  await update(job, { status: "remote", extraction, local: true, meisho_stage: stage, meisho_ids: ids });
+  const req = `${job.id}~m${stage}-${Date.now().toString(36)}`;
+  await callServer(settings, "enqueue", { id: req, model: settings.geminiModel, body: buildGeminiPartsBody(parts, schema, 1024) });
+  await update(job, { status: "remote", extraction, local: true, meisho_stage: stage, meisho_ids: ids, server_req: req, art_pending: null });
   kickServer();
 }
 
@@ -437,6 +438,7 @@ async function applyMeishoAnswer(job: OcrJob, text: string) {
     warnings: [`名将修行の画面なので、立ち絵から「${found.is_special ? "【特】" : ""}${found.name}」と判断しました`, ...result.warnings],
     meisho_stage: null,
     meisho_ids: null,
+    server_req: null,
   });
 }
 
@@ -455,9 +457,9 @@ async function startServerArtCheck(job: OcrJob, extraction: OcrExtraction, need:
     return;
   }
   const settings = loadSettings();
-  const n = Object.keys(answers).length + 1;
-  await callServer(settings, "enqueue", { id: `${job.id}~a${n}`, model: settings.geminiModel, body: buildGeminiPartsBody(parts, ART_CHECK_SCHEMA, 256) });
-  await update(job, { status: "remote", extraction, local: true, art_answers: answers, art_pending: key });
+  const req = `${job.id}~a-${Date.now().toString(36)}`;
+  await callServer(settings, "enqueue", { id: req, model: settings.geminiModel, body: buildGeminiPartsBody(parts, ART_CHECK_SCHEMA, 256) });
+  await update(job, { status: "remote", extraction, local: true, art_answers: answers, art_pending: key, server_req: req, meisho_stage: null });
   kickServer();
 }
 
@@ -465,7 +467,7 @@ async function startServerArtCheck(job: OcrJob, extraction: OcrExtraction, need:
 async function applyArtAnswer(job: OcrJob, text: string) {
   const key = job.art_pending ?? "";
   const answers = { ...(job.art_answers ?? {}), [key]: interpretAnswer(text, key.endsWith("!")) };
-  await update(job, { status: "queued", local: true, art_answers: answers, art_pending: null });
+  await update(job, { status: "queued", local: true, art_answers: answers, art_pending: null, server_req: null });
   void runQueue();
 }
 
@@ -479,7 +481,7 @@ async function processTalentReread(job: OcrJob) {
     const settings = loadSettings();
     const body = buildGeminiPartsBody(await tr.buildTalentRequest(w), tr.TALENT_SCHEMA, tr.TALENT_MAX_TOKENS);
     await callServer(settings, "enqueue", { id: job.id, model: settings.geminiModel, body });
-    await update(job, { status: "remote" });
+    await update(job, { status: "remote", server_req: null, meisho_stage: null, art_pending: null });
     kickServer();
     return;
   }
@@ -736,7 +738,9 @@ export async function pollServer(): Promise<void> {
         unacked.push(r.id);
         // 名将修行の見分けの依頼は「ジョブ ID~m1」のような名前で預けている
         const job = await db.getJob(r.id.split("~")[0]);
-        if (job && job.status === "remote") await applyServerResult(job, r, settings.geminiModel); // 取り消し済みなどは飛ばす
+        // 今待っている依頼の答えだけ使う (取り消し・送り直しの前の古い依頼の答えは捨てる)
+        const expected = job?.server_req ?? job?.id;
+        if (job && job.status === "remote" && r.id === expected) await applyServerResult(job, r, settings.geminiModel); // 取り消し済みなどは飛ばす
         receiving = { done: (receiving?.done ?? 0) + 1, total: Math.max(receiving?.total ?? 0, (receiving?.done ?? 0) + 1) };
         notify();
         if (unacked.length >= 10) await flushAck();
@@ -886,7 +890,7 @@ export async function takeOverRemoteJobs() {
   const remote = (await db.listJobs()).filter((j) => j.status === "remote");
   if (remote.length === 0) return 0;
   try {
-    await callServer(settings, "cancel", { ids: remote.map((j) => j.id) });
+    await callServer(settings, "cancel", { ids: remote.map((j) => j.server_req ?? j.id) });
   } catch {
     /* サーバーに届かなくても続ける */
   }
@@ -928,7 +932,7 @@ export async function resendRemoteJobs() {
   const settings = loadSettings();
   const remote = (await db.listJobs()).filter((j) => j.status === "remote");
   if (remote.length === 0 || !bgActive(settings)) return 0;
-  await callServer(settings, "cancel", { ids: remote.map((j) => j.id) });
+  await callServer(settings, "cancel", { ids: remote.map((j) => j.server_req ?? j.id) });
   let moved = 0;
   for (const job of remote) {
     const fresh = await db.getJob(job.id);
@@ -951,7 +955,7 @@ export async function removeJobs(ids: string[]) {
   const remoteIds = removable.filter((j) => j.status === "remote").map((j) => j.id);
   if (remoteIds.length && bgActive(settings)) {
     try {
-      await callServer(settings, "cancel", { ids: remoteIds });
+      await callServer(settings, "cancel", { ids: removable.filter((j) => j.status === "remote").map((j) => j.server_req ?? j.id) });
     } catch {
       /* サーバーに届かなくても、結果が来た時に取り消し済みとして捨てる */
     }
