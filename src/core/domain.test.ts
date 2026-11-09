@@ -334,7 +334,7 @@ describe("名将修行のテキスト", async () => {
     const b = { ...normalizeInput({ ...emptyWarlordInput(), name: "武田信玄", faction: "奥.関.甲", is_meisho: true }), id: "b" };
     const text = meishoTrainingToText([a, b] as never);
     expect(text).toContain("■ 奥.関.甲\n【特】南部晴政\n  少史 上:兵数上限+175 (未修行)");
-    expect(text).toContain("武田信玄\n  図鑑には無し");
+    expect(text).toContain("武田信玄\n  未取得");
   });
 });
 
@@ -353,5 +353,22 @@ describe("名将修行の丸の位置を効果から決める", () => {
   it("どちらの丸にもある効果は決めない", () => {
     expect(meishoSlotFromEffect("最終ダメージ軽減+15%")).toBeNull();
     expect(meishoSlotFromEffect("自身の兵力が50%未満の場合、攻撃回復+15%")).toBeNull();
+  });
+});
+
+describe("シミュレーターに直接渡した名将修行", async () => {
+  const { simMeishoTalents, simMeishoNotIn, SIM_MEISHO } = await import("./meishoSimData.ts");
+  it("46 人分あり、どれも丸 8 つ", () => {
+    expect(SIM_MEISHO).toHaveLength(46);
+    expect(SIM_MEISHO.every((m) => m.effects.length === 8)).toBe(true);
+  });
+  it("勢力と名前で合わせる (同じ名前が 2 人いる名将は通常/特異でも)", () => {
+    expect(simMeishoTalents({ faction: "旧時代", name: "日野富子", is_special: false })?.[0]).toMatchObject({ rank: "少史", slot: "上", effect: "兵数上限+175" });
+    expect(simMeishoTalents({ faction: "東海", name: "江姫", is_special: true })?.[1].effect).toBe("奥義ダメージUP+25%");
+    expect(simMeishoTalents({ faction: "東海", name: "江姫", is_special: false })?.[1].effect).toBe("通常攻撃ダメージ軽減+20%");
+    expect(simMeishoTalents({ faction: "コラボ武将", name: "伊達政宗", is_special: false })).toBeNull();
+  });
+  it("図鑑にいない名将も分かる", () => {
+    expect(simMeishoNotIn([{ faction: "旧時代", name: "日野富子", is_special: false }])).toHaveLength(45);
   });
 });
