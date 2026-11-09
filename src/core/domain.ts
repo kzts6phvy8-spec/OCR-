@@ -458,19 +458,44 @@ export const undoTalentReorder = (talents: Talent[]): Talent[] =>
   talents.map((t) => ({ ...t, star_level: UNDO_REORDER[t.star_level] ?? t.star_level })).sort((a, b) => a.star_level - b.star_level);
 
 /** 名将修行の追加天賦を整える (段階が分からない・効果が無いものは null) */
+/**
+ * 名将修行の丸の位置は、効果の種類でほぼ決まっている (名将 46 人分の実データで確かめた法則)。
+ * AI は「どの丸が選ばれているか」を読み違えやすいので、効果から位置が決まる時はそちらを使う。
+ * 「最終ダメージ軽減+15%」や兵力の条件付きの効果など、どちらの丸にもあるものは決めない (null)
+ */
+export function meishoSlotFromEffect(effect: string): { rank: string; slot: string } | null {
+  const e = effect.normalize("NFKC").replace(/[\s、,.。]/g, "");
+  const at = (rank: string, slot = "") => ({ rank, slot });
+  if (/^兵数上限\+175$/.test(e)) return at("少史", "上");
+  if (/^(奥義ダメージUP|通常攻撃ダメージ|奥義スキルでの被ダメージ軽減|通常攻撃ダメージ軽減)\+\d+%$/.test(e)) return at("少史", "下");
+  if (/^(兵数上限\+20%|奥義ゲージ\+1)$/.test(e)) return at("少納言", "上");
+  if (/^物理計略防御\+\d+%$/.test(e)) return at("少納言", "下");
+  if (/^(最終ダメージ\+15%|受止め\+25%)$/.test(e)) return at("中納言", "上");
+  if (/^(覚醒スキルでの被ダメージ軽減\+\d+%|物理計略攻撃\+\d+%|覚醒スキルダメージUP\+\d+%)$/.test(e)) return at("中納言", "下");
+  if (/頓悟/.test(e)) return at("大史");
+  if (/覚醒スキル初回発動|味方が通常攻撃をする/.test(e)) return at("大輔");
+  if (/奥義スキル初回発動後|初めて回避した後|通常攻撃をする(度|たび)/.test(e)) return at("大史");
+  if (/^戦(闘|場)進入時/.test(e)) return at("大輔");
+  return null;
+}
+
 export function normalizeMeishoTalent(t: { rank?: unknown; slot?: unknown; effect?: unknown; trained?: unknown } | null | undefined): MeishoTalent | null {
-  const rank = String(t?.rank ?? "").normalize("NFKC").replace(/\s/g, "");
-  if (!(MEISHO_RANKS as readonly string[]).includes(rank)) return null;
   const effect = String(t?.effect ?? "")
     .replace(/[(（]\s*未修行\s*[)）]/g, "")
     .replace(/[.。\s]+$/, "")
     .trim();
   if (!effect) return null;
+  const trained = t?.trained !== false && !/未修行/.test(String(t?.effect ?? ""));
+  // 効果から位置が決まる時は、AI の読んだ位置より優先する
+  const known = meishoSlotFromEffect(effect);
+  if (known) return { ...known, effect, trained };
+  const rank = String(t?.rank ?? "").normalize("NFKC").replace(/\s/g, "");
+  if (!(MEISHO_RANKS as readonly string[]).includes(rank)) return null;
   const s = String(t?.slot ?? "");
   // 丸が 1 つだけの段階 (大史・大輔) は位置を持たない
   const single = rank === "大史" || rank === "大輔";
   const slot = single ? "" : /下/.test(s) ? "下" : /上/.test(s) ? "上" : "";
-  return { rank, slot, effect, trained: t?.trained !== false && !/未修行/.test(String(t?.effect ?? "")) };
+  return { rank, slot, effect, trained };
 }
 
 /** 名将修行の追加天賦をまとめる (同じ段階・位置は新しい方の効果、修行済みは一度でも修行済みなら修行済み)。段階の順に並べる */

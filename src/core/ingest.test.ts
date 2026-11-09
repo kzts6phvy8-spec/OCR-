@@ -245,7 +245,7 @@ describe("名将修行の画面", () => {
     expect(r.warlord.meisho_talents).toEqual([{ rank: "少納言", slot: "下", effect: "計略防御+8%", trained: true }]);
     expect(r.warlord.gallery_images).toEqual(["skill.png"]);
   });
-  it("同じ官職の丸に違う追加天賦が入っている武将には入れない (取り違え)", async () => {
+  it("同じ官職の丸に違う追加天賦が入っていたら、新しく読んだ方で置き換えて知らせる", async () => {
     const nanbu = await ingestExtraction(makeExtraction({ name: "南部晴政", meisho_marker_visible: true }), opts("skill.png"));
     const find = async () => repo.all().find((w) => w.id === nanbu.warlord.id) ?? null;
     await ingestExtraction(training, { ...opts("train-1.png"), identifyMeisho: find });
@@ -253,10 +253,9 @@ describe("名将修行の画面", () => {
       name: null,
       meisho_training: { visible: true, selected_rank: "少納言", selected_slot: "下", effect: "物理攻撃+10%", trained: true },
     });
-    await expect(ingestExtraction(other, { ...opts("train-2.png"), identifyMeisho: find })).rejects.toThrow("どの名将か選ぶ");
-    const after = await find();
-    expect(after?.meisho_talents).toHaveLength(1);
-    expect(after?.meisho_images).toEqual(["train-1.png"]);
+    const r = await ingestExtraction(other, { ...opts("train-2.png"), identifyMeisho: find });
+    expect(r.warnings.some((w) => w.includes("置き換えました"))).toBe(true);
+    expect(r.warlord.meisho_talents).toEqual([{ rank: "少納言", slot: "下", effect: "物理攻撃+10%", trained: true }]);
   });
   it("見分けられなければ統合先を選んでもらう", async () => {
     await expect(ingestExtraction(training, { ...opts("train.png"), identifyMeisho: async () => null })).rejects.toThrow("どの名将か選ぶ");

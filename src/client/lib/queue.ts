@@ -1,6 +1,6 @@
 import type { Faction, OcrJob, Talent, UploadMode, Warlord } from "../../core/types.ts";
 import { differsByOneChar, ingestExtraction } from "../../core/ingest.ts";
-import { emptyWarlordInput, extractionToPatch, normText, normalizeInput, warlordLabel } from "../../core/domain.ts";
+import { emptyWarlordInput, normalizeInput, warlordLabel } from "../../core/domain.ts";
 import * as db from "./db.ts";
 import { bgActive, loadSettings } from "./settings.ts";
 import { ServerError, callServer, type RemoteResult, type ServerCounts } from "./remote.ts";
@@ -426,16 +426,6 @@ async function applyMeishoAnswer(job: OcrJob, text: string) {
   const id = parseMeishoConfirm(text, ids);
   const found = id ? await db.getWarlord(id) : null;
   if (!found) return meishoFail(job, extraction);
-  // 同じ官職の丸に、違う追加天賦がもう入っていたら、取り違えている
-  const read = extractionToPatch(extraction).meisho_talents?.[0];
-  const clash = read && (found.meisho_talents ?? []).find((t) => t.rank === read.rank && t.slot === read.slot && normText(t.effect) !== normText(read.effect));
-  if (clash) {
-    return meishoFail(
-      job,
-      extraction,
-      `「${found.name}」の${clash.rank}${clash.slot ? ` ${clash.slot}` : ""}にはもう「${clash.effect}」が入っています。立ち絵の見分けを間違えたかもしれないので、下の「どの名将か選ぶ」で選んでください (その名将の名将修行に入れるだけで、武将をまとめるわけではありません)`,
-    );
-  }
   // 見分けた武将を統合先にして保存する
   const fresh = await update(job, { target_id: found.id });
   const result = await ingestJob(fresh, extraction);
