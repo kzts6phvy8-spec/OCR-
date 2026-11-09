@@ -649,9 +649,31 @@ export const api = {
 
   /** 名将の武将だけを書き出す (テキスト / JSON) */
   async exportMeisho(format: "txt" | "json" | "training"): Promise<{ blob: Blob; count: number }> {
-    const list = (await db.listWarlords())
-      .filter((w) => w.is_meisho)
-      .sort((a, b) => a.faction.localeCompare(b.faction, "ja") || a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
+    const { simMeishoTalents, simMeishoNotIn } = await import("../../core/meishoSimData.ts");
+    const all = await db.listWarlords();
+    // 図鑑に名将修行のデータが無い名将は、シミュレーターに直接渡したデータで埋める
+    const meisho = all
+      .filter((w) => w.is_meisho || simMeishoTalents(w))
+      .map((w): Warlord => {
+        if (w.meisho_talents?.length) return w;
+        const sim = simMeishoTalents(w);
+        return sim ? { ...w, is_meisho: true, meisho_talents: sim, meisho_source: "simulator" } : w;
+      });
+    // シミュレーターにはあるが、図鑑にまだいない名将も入れる
+    const now = new Date().toISOString();
+    for (const m of simMeishoNotIn(all)) {
+      meisho.push({
+        ...normalizeInput({ ...emptyWarlordInput(), name: m.name, faction: m.faction as Faction, is_special: m.special, is_meisho: true, meisho_talents: m.talents }),
+        id: `sim-${m.faction}-${m.name}-${m.special ? "s" : "n"}`,
+        created_at: now,
+        updated_at: now,
+        screenshot_count: 0,
+        meisho_source: "simulator",
+      });
+    }
+    const list = meisho.sort(
+      (a, b) => a.faction.localeCompare(b.faction, "ja") || a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special),
+    );
     if (format === "training") return { blob: new Blob([meishoTrainingToText(list)], { type: "text/plain;charset=utf-8" }), count: list.length };
     if (format === "txt") return { blob: new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" }), count: list.length };
     const payload: ExportPayload = { app: "sengoku-fubu-warlord-db", version: 2, exported_at: new Date().toISOString(), warlords: list };

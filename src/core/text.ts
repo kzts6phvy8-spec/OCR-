@@ -72,7 +72,8 @@ export function meishoTrainingToText(list: Warlord[]): string {
       lines.push(`■ ${faction || "勢力未入力"}`);
     }
     lines.push(`${w.is_special ? "【特】" : ""}${w.name}${w.title_alias ? `（${w.title_alias}）` : ""}`);
-    if (!w.meisho_talents?.length) lines.push("  図鑑には無し (シミュレーターの方に直接渡してあります)");
+    if (!w.meisho_talents?.length) lines.push("  未取得");
+    else if (w.meisho_source === "simulator") lines.push("  (シミュレーターに直接渡したデータ)");
     for (const t of w.meisho_talents ?? []) lines.push(`  ${t.rank}${t.slot ? ` ${t.slot}` : ""}:${t.effect}${t.trained ? "" : " (未修行)"}`);
     const gaps = w.meisho_talents?.length ? meishoTalentGaps(w) : [];
     if (gaps.length) lines.push(`  (足りない: ${gaps.join("、")})`);

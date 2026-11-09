@@ -131,7 +131,7 @@ export function MeishoPanel({
             <p className={`font-bold ${partial.length ? "text-hi-400" : "text-emerald-300"}`}>
               名将修行の追加天賦: 8 つそろっている {meishoCount - gaps.length} 人 / 途中まで {partial.length} 人 / 図鑑には無し {none} 人
             </p>
-            {none > 0 && <p className="mt-0.5 text-ash">「図鑑には無し」の名将は、シミュレーターの方に直接渡してあります。</p>}
+            {none > 0 && <p className="mt-0.5 text-ash">「図鑑には無し」の名将は、シミュレーターの方に直接渡してあります。書き出すファイルには、そのデータも入ります。</p>}
             {partial.length > 0 && (
               <ul className="mt-1.5 space-y-1">
                 {partial.map(({ w, gaps: g }) => (
