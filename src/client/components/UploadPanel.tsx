@@ -263,7 +263,7 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
 
         {(talentWaiting > 0 || talentAtServer > 0) && (
           <p className="mb-3 rounded-lg border border-ebony-700 bg-ebony-900 p-2.5 text-xs text-ash">
-            天賦の読み直し: {talentAtServer > 0 && `${bg ? "サーバーで解析中" : "解析中"} ${talentAtServer} 件・`}待ち {talentWaiting} 件
+            天賦の読み直し: {talentAtServer > 0 && `${bg ? "サーバーに預け中" : "解析中"} ${talentAtServer} 件・`}待ち {talentWaiting} 件
             <span className="block text-[11px] text-ebony-500">
               新しいスクショの解析を先に進め、その後で少しずつ進めます{bg ? " (サーバーに預けた分は、アプリを閉じていても進みます)" : ""}
             </span>
@@ -592,9 +592,13 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
     <section className={`panel p-4 ${sending ? "border-shu-600/60" : stage === 3 ? "border-emerald-600/60" : "border-ebony-700"}`}>
       {localPending > 0 && !sending ? (
         <div className="mb-4 flex items-start gap-3 rounded-xl bg-shu-500/15 p-3">
-          <Loader2 className="mt-0.5 size-6 shrink-0 animate-spin text-shu-300" />
+          {qs.pausedUntil ? <Clock className="mt-0.5 size-6 shrink-0 text-amber-300" /> : <Loader2 className="mt-0.5 size-6 shrink-0 animate-spin text-shu-300" />}
           <div>
-            <p className="font-bold text-shu-300">この iPhone で処理中… 残り {localPending} 枚</p>
+            <p className="font-bold text-shu-300">
+              {qs.pausedUntil
+                ? `この iPhone の分: 残り ${localPending} 枚 (Gemini の上限で止まっています)`
+                : `この iPhone で処理中… 残り ${localPending} 枚`}
+            </p>
             <p className="mt-0.5 text-xs text-washi/80">
               {localSaving > 0 &&
                 `${localSaving} 枚はサーバーで読み取り済みで、図鑑への保存 (同じ名前の武将と立ち絵が同じかの確認。迷う時だけ Gemini に 1 回尋ねます) だけが残っています。`}
