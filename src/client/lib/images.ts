@@ -214,3 +214,33 @@ export async function artContactSheet(blobs: Blob[], firstNumber: number, cols =
   if (!out) throw new Error("画像を変換できませんでした");
   return out;
 }
+
+/** 名将修行の画面のカードの絵 (左のカードの内側。枠・題字・下の欄を避ける) */
+const TRAINING_CARD = { x: 0.17, y: 0.22, w: 0.19, h: 0.48 };
+
+/**
+ * 名将修行の画面のカードの絵の「指紋」。名将修行の画面どうしは配置が同じなので、
+ * 同じ武将の画面ならほぼ同じ並びになる (どの丸を選んでいるかには左右されない)
+ */
+export async function trainingCardSignature(blob: Blob): Promise<Float32Array> {
+  const W = 16;
+  const H = 24;
+  const src = await decode(blob);
+  const w = "naturalWidth" in src ? src.naturalWidth : src.width;
+  const h = "naturalHeight" in src ? src.naturalHeight : src.height;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx || !w || !h) throw new Error("画像を処理できませんでした");
+  ctx.drawImage(src, w * TRAINING_CARD.x, h * TRAINING_CARD.y, w * TRAINING_CARD.w, h * TRAINING_CARD.h, 0, 0, W, H);
+  if ("close" in src) src.close();
+  const data = ctx.getImageData(0, 0, W, H).data;
+  const out = new Float32Array(W * H * 3);
+  for (let i = 0, j = 0; i < data.length; i += 4) {
+    out[j++] = data[i];
+    out[j++] = data[i + 1];
+    out[j++] = data[i + 2];
+  }
+  return out;
+}
