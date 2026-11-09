@@ -1,6 +1,12 @@
 // 図鑑の「未入力の項目で絞り込み」に使う項目の一覧。各項目は「まだ入っていない」ことを判定する。
 
-import { AWAKENING_PRIORITIES, type Warlord } from "./types.ts";
+import { AWAKENING_PRIORITIES, MEISHO_SLOTS, type Warlord } from "./types.ts";
+
+/** 名将の武将で、名将修行の追加天賦がまだ読み取れていない丸 (例: 「少史 下」「大輔」) */
+export const meishoTalentGaps = (w: Warlord): string[] =>
+  w.is_meisho
+    ? MEISHO_SLOTS.filter((s) => !(w.meisho_talents ?? []).some((t) => t.rank === s.rank && t.slot === s.slot)).map((s) => `${s.rank}${s.slot ? ` ${s.slot}` : ""}`)
+    : [];
 
 export interface MissingField {
   id: string;
@@ -71,6 +77,7 @@ export const MISSING_FIELDS: MissingField[] = [
     missing: (w) =>
       !w.no_synergy && (w.synergy_skills.length === 0 || (w.faction === "鬼憑武将" && w.synergy_skills.length < 2)),
   },
+  { id: "meisho_talents", label: "名将修行の追加天賦 (名将のみ)", missing: (w) => meishoTalentGaps(w).length > 0 },
 ];
 
 /** どれか 1 つでも未入力の項目があるか */
