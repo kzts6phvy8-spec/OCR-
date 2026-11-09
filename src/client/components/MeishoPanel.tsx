@@ -122,25 +122,33 @@ export function MeishoPanel({
           <Download className="size-4" /> 名将だけ保存 (.json)
         </button>
       </div>
-      <div className={`mb-4 rounded-lg border p-3 text-xs ${gaps.length ? "border-hi-600/60" : "border-emerald-700/60"}`}>
-        <p className={`font-bold ${gaps.length ? "text-hi-400" : "text-emerald-300"}`}>
-          名将修行の追加天賦: 8 つそろっている {meishoCount - gaps.length} 人 / 足りない {gaps.length} 人
-        </p>
-        {gaps.length > 0 && (
-          <ul className="mt-1.5 space-y-1">
-            {gaps.map(({ w, gaps: g }) => (
-              <li key={w.id}>
-                <button onClick={() => onOpenWarlord(w.id)} className="text-left text-washi underline-offset-2 hover:underline">
-                  {w.is_special ? "【特】" : ""}
-                  {w.name}
-                  <span className="text-ash">（{w.faction || "勢力未入力"}）</span>
-                </button>
-                <span className="ml-1 text-ash">{g.length === 8 ? "まだ 1 つも読み取れていません" : `足りない: ${g.join("、")}`}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {(() => {
+        // 1 つも無い名将は、シミュレーターの方に直接渡してあるので問題にしない。途中まで入っていて足りない名将だけ知らせる
+        const partial = gaps.filter((g) => g.gaps.length < 8);
+        const none = gaps.length - partial.length;
+        return (
+          <div className={`mb-4 rounded-lg border p-3 text-xs ${partial.length ? "border-hi-600/60" : "border-emerald-700/60"}`}>
+            <p className={`font-bold ${partial.length ? "text-hi-400" : "text-emerald-300"}`}>
+              名将修行の追加天賦: 8 つそろっている {meishoCount - gaps.length} 人 / 途中まで {partial.length} 人 / 図鑑には無し {none} 人
+            </p>
+            {none > 0 && <p className="mt-0.5 text-ash">「図鑑には無し」の名将は、シミュレーターの方に直接渡してあります。</p>}
+            {partial.length > 0 && (
+              <ul className="mt-1.5 space-y-1">
+                {partial.map(({ w, gaps: g }) => (
+                  <li key={w.id}>
+                    <button onClick={() => onOpenWarlord(w.id)} className="text-left text-washi underline-offset-2 hover:underline">
+                      {w.is_special ? "【特】" : ""}
+                      {w.name}
+                      <span className="text-ash">（{w.faction || "勢力未入力"}）</span>
+                    </button>
+                    <span className="ml-1 text-ash">足りない: {g.join("、")}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })()}
       <div className="space-y-3">
         {factions.map((f) => (
           <div key={f}>
