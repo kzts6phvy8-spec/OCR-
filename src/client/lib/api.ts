@@ -613,6 +613,35 @@ export const api = {
    * 名将修行の画面を、保存してある画像と読み取り結果から見分け直す (読み取りはやり直さない)。
    * 全員の名将修行の追加天賦をいったん空にし、画像ごとに誰の画面かを決め直して入れ直す。見分け直す画像の枚数を返す
    */
+  /**
+   * どの名将にも入っていない名将修行の画面 (見分けに失敗した・取り違えて消した等) の画像。
+   * 解析待ち・サーバーに預け中のものは除く
+   */
+  async unassignedTrainingImages(): Promise<string[]> {
+    const images = await db.listTrainingImages();
+    const assigned = new Set((await db.listWarlords()).flatMap((w) => w.meisho_images ?? []));
+    const busy = new Set((await db.listJobs()).filter((j) => j.status === "queued" || j.status === "processing" || j.status === "remote").map((j) => j.image_id));
+    return images.filter((id) => !assigned.has(id) && !busy.has(id));
+  },
+
+  /** どの名将にも入っていない名将修行の画面だけを、もう一度見分ける (読み取りはやり直さない)。枚数を返す */
+  async reidentifyUnassignedTraining(): Promise<number> {
+    const ids = await api.unassignedTrainingImages();
+    if (ids.length === 0) return 0;
+    // 失敗のまま残っている同じ画像の記録は、二重にならないよう取り除く
+    const failed = (await db.listJobs()).filter((j) => j.status === "error" && ids.includes(j.image_id)).map((j) => j.id);
+    if (failed.length) await db.deleteJobs(failed);
+    await queue.enqueue(
+      ids.map((id, i) => ({ fileName: `名将修行の画面 ${i + 1} (見分け直し)`, imageId: id })),
+      "auto",
+      null,
+      "",
+      true,
+      { reuse: true },
+    );
+    return ids.length;
+  },
+
   async reidentifyMeishoTraining(): Promise<number> {
     const images = await db.listTrainingImages();
     if (images.length === 0) return 0;

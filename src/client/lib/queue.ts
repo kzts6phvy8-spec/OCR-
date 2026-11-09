@@ -381,7 +381,10 @@ async function meishoCandidates(job: OcrJob): Promise<Warlord[]> {
     .filter((m) => m.decided.length === 0)
     .flatMap((m) => m.candidates)
     .filter((w) => !w.meisho_manual);
-  return [...new Set([...all.filter((w) => w.is_meisho), ...unsure])];
+  // 名将一覧に名前が載っている武将も、勢力を問わず候補に入れる (勢力の登録が違って突き合わせから漏れた名将も見分けられるように)
+  const { ROSTER_NAMES } = await import("../../core/meisho.ts");
+  const byName = all.filter((w) => ROSTER_NAMES.has(w.name) && !(w.meisho_manual && !w.is_meisho));
+  return [...new Set([...all.filter((w) => w.is_meisho), ...unsure, ...byName])];
 }
 
 const MEISHO_FAIL = "名将修行の画面の立ち絵から、どの名将か見分けられませんでした。下の「どの名将か選ぶ」で選んでください (その名将の名将修行に入れるだけで、武将をまとめるわけではありません)";
