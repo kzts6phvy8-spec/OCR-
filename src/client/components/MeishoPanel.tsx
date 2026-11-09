@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Crown, Download, Sparkles } from "lucide-react";
 import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
@@ -21,6 +21,11 @@ export function MeishoPanel({
 }) {
   const toast = useToast();
   const [progress, setProgress] = useState<string | null>(null);
+  // どの名将にも入っていない名将修行の画面の枚数 (見分けに失敗したままの分)
+  const [unassigned, setUnassigned] = useState(0);
+  useEffect(() => {
+    void api.unassignedTrainingImages().then((ids) => setUnassigned(ids.length)).catch(() => setUnassigned(0));
+  }, [warlords]);
   const matches = useMemo(() => matchMeishoRoster(warlords), [warlords]);
   const ambiguous = matches
     .filter((m) => m.candidates.length > 0 && m.decided.length === 0 && !m.candidates.some((w) => w.meisho_manual))
@@ -96,6 +101,19 @@ export function MeishoPanel({
         <button onClick={() => void save("txt")} className="inline-flex items-center gap-1.5 rounded-lg border border-ebony-600 px-3 py-1.5 text-sm text-washi">
           <Download className="size-4" /> 名将だけ保存 (.txt・{meishoCount} 人)
         </button>
+        {unassigned > 0 && (
+          <button
+            onClick={() =>
+              void api.reidentifyUnassignedTraining().then((n) => {
+                toast("info", `どの名将にも入っていない名将修行の画面 ${n} 枚を見分け直します`, "読み取りはやり直しません。進み具合は「スクショ解析」タブで見られます");
+                onChanged();
+              })
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-hi-500 bg-hi-800/30 px-3 py-1.5 text-sm font-bold text-hi-300"
+          >
+            <Sparkles className="size-4" /> どの名将にも入っていない名将修行の画面を見分け直す ({unassigned} 枚)
+          </button>
+        )}
         <button
           onClick={() =>
             void (async () => {
@@ -202,6 +220,7 @@ function MeishoChoice({ w, onOpen, onToggle }: { w: Warlord; onOpen: () => void;
         <span className="max-w-24 truncate text-washi">
           {w.is_special ? "【特】" : ""}
           {w.name}
+          <span className="ml-1 text-[10px] text-ash">修行 {w.meisho_talents?.length ?? 0}/8</span>
           {w.title_alias && <span className="block truncate text-[10px] text-ash">{w.title_alias}</span>}
         </span>
       </button>

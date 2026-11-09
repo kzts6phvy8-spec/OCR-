@@ -23,4 +23,8 @@ describe("名将の一覧との突き合わせ", () => {
     const m = matchMeishoRoster([w("a", "江姫", "東海"), w("b", "江姫", "東海", true)]);
     expect(m.find((x) => x.name === "江姫")?.decided).toHaveLength(2);
   });
+  it("限定武将として登録されたコラボ武将も名将にする (コラボ武将は限定武将の仲間)", () => {
+    const m = matchMeishoRoster([w("a", "片倉小十郎", "限定武将"), w("b", "伊達政宗", "コラボ武将")]);
+    expect(m.flatMap((x) => x.decided).map((x) => x.id).sort()).toEqual(["a", "b"]);
+  });
 });
