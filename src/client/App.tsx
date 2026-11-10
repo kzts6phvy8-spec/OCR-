@@ -136,6 +136,8 @@ export default function App() {
       });
       // 名将の印を、すでにあるデータから付ける (AI なし)
       await step("名将", async () => {
+        const wrong = await api.fixMisassignedTraining();
+        if (wrong > 0) toast("info", `取り違えて入っていた名将修行の画面 ${wrong} 枚を見分け直します`, "読んだ追加天賦が、その名将のものと食い違っていました");
         const n = await api.markMeisho();
         if (n === 0) return;
         toast("success", `${n} 人に「名将」の印を付けました`, "図鑑の「名将のみ」で絞り込めます");

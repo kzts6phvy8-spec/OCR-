@@ -83,3 +83,39 @@ export function simMeishoNotIn(warlords: Pick<Warlord, "faction" | "name" | "is_
     return twins && !same.some((w) => w.is_special === m.special);
   }).map((m) => ({ faction: m.faction, name: m.name, special: m.special, talents: toTalents(m) }));
 }
+
+/** 効果の文を比べやすくする (書き方の揺れ: 戦場/戦闘・状態・記号・空白) */
+const loose = (s: string) =>
+  s
+    .normalize("NFKC")
+    .replace(/戦場/g, "戦闘")
+    .replace(/状態/g, "")
+    .replace(/自身の自身の/g, "自身の")
+    .replace(/[\s、,.。()（）「」【】・:：を]/g, "");
+const numbersOf = (s: string) => (s.normalize("NFKC").match(/\d+/g) ?? []).sort().join(",");
+const bigrams = (s: string) => {
+  const out = new Set<string>();
+  for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
+  return out;
+};
+
+/** 2 つの効果の文が、はっきり別の効果か (数値が違う、または文がほとんど似ていない) */
+export function clearlyDifferentEffect(a: string, b: string): boolean {
+  if (numbersOf(a) !== numbersOf(b)) return true;
+  const x = bigrams(loose(a));
+  const y = bigrams(loose(b));
+  if (x.size === 0 || y.size === 0) return false;
+  let same = 0;
+  for (const g of x) if (y.has(g)) same++;
+  return (2 * same) / (x.size + y.size) < 0.4;
+}
+
+/**
+ * 名将修行の画面で読んだ追加天賦 (丸と効果) が、この武将のものではありえないか。
+ * シミュレーターに直接渡したデータがある名将で、同じ丸の効果がはっきり違えば、別の名将の画面
+ */
+export function contradictsSimMeisho(w: Pick<Warlord, "faction" | "name" | "is_special">, read: MeishoTalent | null | undefined): boolean {
+  if (!read) return false;
+  const sim = simMeishoTalents(w)?.find((t) => t.rank === read.rank && t.slot === read.slot);
+  return Boolean(sim && clearlyDifferentEffect(sim.effect, read.effect));
+}

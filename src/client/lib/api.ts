@@ -614,6 +614,43 @@ export const api = {
    * 全員の名将修行の追加天賦をいったん空にし、画像ごとに誰の画面かを決め直して入れ直す。見分け直す画像の枚数を返す
    */
   /**
+   * 取り違えて入った名将修行の画面を外して、見分け直す (起動時に呼ぶ)。
+   * シミュレーターに直接渡したデータがある名将で、同じ丸の効果がはっきり違う画面は、別の名将の画面なので外す。外した枚数を返す
+   */
+  async fixMisassignedTraining(): Promise<number> {
+    const { contradictsSimMeisho } = await import("../../core/meishoSimData.ts");
+    const { extractionToPatch, normText } = await import("../../core/domain.ts");
+    const moved: string[] = [];
+    for (const w of await db.listWarlords()) {
+      if (!w.meisho_images?.length) continue;
+      const wrong: { id: string; effect: string; rank: string; slot: string }[] = [];
+      for (const id of w.meisho_images) {
+        const ext = await db.getExtraction(id).catch(() => null);
+        const read = ext ? extractionToPatch(ext).meisho_talents?.[0] : undefined;
+        if (read && contradictsSimMeisho(w, read)) wrong.push({ id, ...read });
+      }
+      if (wrong.length === 0) continue;
+      const wrongIds = new Set(wrong.map((x) => x.id));
+      const talents = (w.meisho_talents ?? []).filter(
+        (t) => !wrong.some((x) => x.rank === t.rank && x.slot === t.slot && normText(x.effect) === normText(t.effect)),
+      );
+      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), meisho_images: w.meisho_images.filter((id) => !wrongIds.has(id)), meisho_talents: talents }));
+      moved.push(...wrongIds);
+    }
+    if (moved.length) {
+      await queue.enqueue(
+        moved.map((id, i) => ({ fileName: `名将修行の画面 ${i + 1} (取り違えの見分け直し)`, imageId: id })),
+        "auto",
+        null,
+        "",
+        true,
+        { reuse: true },
+      );
+    }
+    return moved.length;
+  },
+
+  /**
    * どの名将にも入っていない名将修行の画面 (見分けに失敗した・取り違えて消した等) の画像。
    * 解析待ち・サーバーに預け中のものは除く
    */
@@ -770,7 +807,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["autoFixTalentOrder", "markMeisho", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["autoFixTalentOrder", "markMeisho", "fixMisassignedTraining", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }

@@ -372,3 +372,15 @@ describe("シミュレーターに直接渡した名将修行", async () => {
     expect(simMeishoNotIn([{ faction: "旧時代", name: "日野富子", is_special: false }])).toHaveLength(45);
   });
 });
+
+describe("名将修行の取り違えを、シミュレーターのデータで見抜く", async () => {
+  const { contradictsSimMeisho, clearlyDifferentEffect } = await import("./meishoSimData.ts");
+  it("春日局の画面 (大輔: 受止め+50%・鉄壁) は建礼門院のものではない", () => {
+    const read = { rank: "大輔", slot: "", effect: "戦闘進入時、受止め+50%、自身に鉄壁(3ターン)を付与", trained: false };
+    expect(contradictsSimMeisho({ faction: "旧時代", name: "建礼門院", is_special: false }, read)).toBe(true);
+  });
+  it("書き方が少し違うだけなら同じ効果とみなす", () => {
+    expect(clearlyDifferentEffect("戦場進入時、自身に迅速(3ターン)を付与、回避+55%", "戦闘進入時、自身に迅速状態(3ターン)を付与、回避+55%")).toBe(false);
+    expect(contradictsSimMeisho({ faction: "旧時代", name: "建礼門院", is_special: false }, { rank: "少史", slot: "上", effect: "兵数上限+175", trained: true })).toBe(false);
+  });
+});
