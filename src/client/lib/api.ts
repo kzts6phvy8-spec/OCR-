@@ -706,6 +706,25 @@ export const api = {
     return saved;
   },
 
+  /** 名将修行の追加天賦と画面を、別の武将に移す (同じ名前の別の勢力の武将に入れてしまった時など) */
+  async moveMeishoTraining(fromId: string, toId: string): Promise<{ from: Warlord; to: Warlord }> {
+    const from = await db.getWarlord(fromId);
+    const to = await db.getWarlord(toId);
+    if (!from || !to) throw new Error("武将が見つかりません");
+    const { mergeMeishoTalents } = await import("../../core/domain.ts");
+    const movedTo = await db.updateWarlord(
+      to.id,
+      normalizeInput({
+        ...toInput(to),
+        is_meisho: true,
+        meisho_talents: mergeMeishoTalents(to.meisho_talents ?? [], from.meisho_talents ?? []),
+        meisho_images: [...(to.meisho_images ?? []), ...(from.meisho_images ?? [])],
+      }),
+    );
+    const movedFrom = await db.updateWarlord(from.id, normalizeInput({ ...toInput(from), meisho_talents: [], meisho_images: [] }));
+    return { from: movedFrom, to: movedTo };
+  },
+
   /** 名将かどうかを手で決める (自動の判断で変えなくなる) */
   async setMeisho(id: string, value: boolean): Promise<Warlord> {
     const w = await db.getWarlord(id);

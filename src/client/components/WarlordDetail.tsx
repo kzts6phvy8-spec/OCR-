@@ -850,6 +850,7 @@ function DetailView({
           >
             名将修行の追加天賦を消す (取り違えて入った時)
           </button>
+          <MoveMeisho w={w} allWarlords={allWarlords} onSaved={onSaved} />
           <p className="mt-1.5 text-[11px] text-ebony-500">名将修行の画面で官職の丸を選ぶと、その丸の追加天賦が出ます。丸ごとにスクショを取り込むと、ここに増えます (画面に名前が無くても、立ち絵から誰か見分けます)。</p>
         </Section>
       )}
@@ -1227,6 +1228,37 @@ function Lightbox({ images, index, onChange, onClose }: { images: string[]; inde
           </span>
         </>
       )}
+    </div>
+  );
+}
+
+/** 名将修行の追加天賦を、別の武将 (同じ名前の別の勢力の武将など) に移す */
+function MoveMeisho({ w, allWarlords, onSaved }: { w: Warlord; allWarlords: Warlord[]; onSaved: (w: Warlord) => void }) {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="mt-2 ml-2 rounded-md border border-ebony-600 px-2.5 py-1 text-xs text-gold-300">
+        名将修行を別の武将に移す
+      </button>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-1.5">
+      <p className="text-[11px] text-ash">移す先の武将を選んでください (同じ名前の別の勢力の武将に入れてしまった時など)</p>
+      <WarlordPicker
+        warlords={allWarlords.filter((x) => x.id !== w.id)}
+        value=""
+        placeholder="移す先の武将を検索"
+        suggest={(x) => x.name === w.name}
+        onChange={(id) => {
+          const to = allWarlords.find((x) => x.id === id);
+          if (!to || !confirm(`名将修行の追加天賦 (${w.meisho_talents?.length ?? 0} つ) を「${to.name}」(${to.faction || "勢力未入力"}) に移しますか？`)) return;
+          void api.moveMeishoTraining(w.id, id).then((r) => {
+            setOpen(false);
+            onSaved(r.from);
+          });
+        }}
+      />
     </div>
   );
 }
