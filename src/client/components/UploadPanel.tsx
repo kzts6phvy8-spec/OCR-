@@ -501,7 +501,14 @@ function JobRow({
                           (w) => Boolean(w.is_meisho) || isRosterName(w)
                         : undefined
                   }
-                  priority={readName ? (w) => (w.name === readName ? 0 : 1) : undefined}
+                  priority={
+                    readName
+                      ? (w) => (w.name === readName ? 0 : 1)
+                      : training
+                        ? // 名将一覧に勢力ごと載っている武将を先に (同じ名前の別の勢力の武将と取り違えないように)
+                          (w) => (MEISHO_ROSTER.some((e) => e.faction === w.faction && e.name === w.name) ? 0 : w.is_meisho ? 1 : 2)
+                        : undefined
+                  }
                 />
                 {training ? (
                   unregisteredMeisho.length > 0 && (
