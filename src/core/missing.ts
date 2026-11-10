@@ -22,7 +22,7 @@ const AWAKENING_FACTIONS: readonly string[] = ["鬼憑武将", "限定武将", "
 
 /**
  * 覚醒スキルを持つ武将。SR・R・N には覚醒スキルが無い (勢力に関係なく)。
- * SSR は持つ。レア度が未入力などの時は、鬼憑武将・限定武将・コラボ武将 (限定武将の仲間) なら持つとみなす。
+ * SSR は持つ。レア度が未入力などの時は、鬼憑武将・限定武将・コラボ武将なら持つとみなす。
  */
 export const hasAwakeningSlot = (w: Warlord) => {
   if (NO_AWAKENING_RARITIES.includes(w.rarity)) return false;

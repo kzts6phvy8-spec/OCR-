@@ -31,11 +31,8 @@ export const MEISHO_ROSTER: MeishoEntry[] = [
   ...list("コラボ武将", ["片倉小十郎", "徳川家康", "石田三成", "伊達政宗", "真田幸村"]),
 ];
 
-/**
- * 突き合わせに使う勢力: コラボ武将は限定武将の仲間で、前の版で「限定武将」として登録されたコラボ武将もいるので、同じ組として扱う
- */
-export const rosterFaction = (faction: string) => (faction === "コラボ武将" ? "限定武将" : faction);
-const key = (faction: string, name: string) => `${rosterFaction(faction)}|${normalizeName(name).name}`;
+// コラボ武将と限定武将は別の勢力 (同じ組として扱わない)
+const key = (faction: string, name: string) => `${faction}|${normalizeName(name).name}`;
 
 /** 名将一覧に名前が載っている (勢力は問わない) */
 export const ROSTER_NAMES = new Set(MEISHO_ROSTER.map((e) => e.name));
