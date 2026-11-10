@@ -29,6 +29,16 @@ export function lastHealthReport(): HealthReport | null {
 
 // 画面から使う操作。サーバーは無く、すべて端末内で完結する。
 
+/**
+ * 名将修行を外した武将の名将の印: 名将一覧に勢力ごと載っている・手で決めた武将はそのまま、それ以外は外す
+ * (取り違えて名将修行の画面を入れた武将に、名将の印だけが残らないように)
+ */
+async function keepMeishoMark(w: Warlord): Promise<{ is_meisho: boolean }> {
+  if (w.meisho_manual) return { is_meisho: Boolean(w.is_meisho) };
+  const { MEISHO_ROSTER } = await import("../../core/meisho.ts");
+  return { is_meisho: MEISHO_ROSTER.some((e) => e.faction === w.faction && e.name === w.name) };
+}
+
 export const api = {
   warlords: () => db.listWarlords(),
 
@@ -634,7 +644,11 @@ export const api = {
       const talents = (w.meisho_talents ?? []).filter(
         (t) => !wrong.some((x) => x.rank === t.rank && x.slot === t.slot && normText(x.effect) === normText(t.effect)),
       );
-      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), meisho_images: w.meisho_images.filter((id) => !wrongIds.has(id)), meisho_talents: talents }));
+      const rest = w.meisho_images.filter((id) => !wrongIds.has(id));
+      await db.updateWarlord(
+        w.id,
+        normalizeInput({ ...toInput(w), meisho_images: rest, meisho_talents: talents, ...(rest.length === 0 && talents.length === 0 ? await keepMeishoMark(w) : {}) }),
+      );
       moved.push(...wrongIds);
     }
     if (moved.length) {
@@ -701,7 +715,7 @@ export const api = {
   async clearMeishoTraining(id: string): Promise<Warlord> {
     const w = await db.getWarlord(id);
     if (!w) throw new Error("武将が見つかりません");
-    const saved = await db.updateWarlord(id, normalizeInput({ ...toInput(w), meisho_talents: [], meisho_images: [] }));
+    const saved = await db.updateWarlord(id, normalizeInput({ ...toInput(w), meisho_talents: [], meisho_images: [], ...(await keepMeishoMark(w)) }));
     await db.removeUnreferencedImages(w.meisho_images ?? []);
     return saved;
   },
@@ -721,7 +735,11 @@ export const api = {
         meisho_images: [...(to.meisho_images ?? []), ...(from.meisho_images ?? [])],
       }),
     );
-    const movedFrom = await db.updateWarlord(from.id, normalizeInput({ ...toInput(from), meisho_talents: [], meisho_images: [] }));
+    // 名将修行の画面を入れた時に付いた名将の印も、名将一覧に載っていない武将なら外す (手で決めた印はそのまま)
+    const movedFrom = await db.updateWarlord(
+      from.id,
+      normalizeInput({ ...toInput(from), meisho_talents: [], meisho_images: [], ...(await keepMeishoMark(from)) }),
+    );
     return { from: movedFrom, to: movedTo };
   },
 
