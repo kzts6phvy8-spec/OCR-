@@ -6,6 +6,7 @@ import { saveFile, today } from "../lib/share.ts";
 import type { Warlord } from "../../core/types.ts";
 import { matchMeishoRoster } from "../../core/meisho.ts";
 import { meishoTalentGaps } from "../../core/missing.ts";
+import { SIM_MEISHO } from "../../core/meishoSimData.ts";
 import { StoredImage } from "./StoredImage.tsx";
 
 // 「データ管理」の名将一覧: ゲーム内の「名将一覧」の武将が図鑑のどの武将か、登録されていない名将はいないかを見せる
@@ -141,25 +142,46 @@ export function MeishoPanel({
         </button>
       </div>
       {(() => {
-        // 1 つも無い名将は、シミュレーターの方に直接渡してあるので問題にしない。途中まで入っていて足りない名将だけ知らせる
-        const partial = gaps.filter((g) => g.gaps.length < 8);
-        const none = gaps.length - partial.length;
+        // シミュレーターに名将修行のデータが無い名将 (図鑑で読み取る分) について、誰の何が足りないか
+        const rows = matches
+          .filter((m) => !SIM_MEISHO.some((x) => x.faction === m.faction && x.name === m.name))
+          .flatMap((m) => {
+            if (m.candidates.length === 0) return [{ key: `${m.faction}|${m.name}`, label: `${m.name} (${m.faction})`, w: null as Warlord | null, gaps: ["図鑑に未登録"] }];
+            // 同じ名前が何人もいる時は、名将の印がある武将 (無ければ全員) を見る
+            const ws = m.candidates.some((w) => w.is_meisho) ? m.candidates.filter((w) => w.is_meisho) : m.candidates;
+            return ws.map((w) => ({
+              key: w.id,
+              label: `${w.is_special ? "【特】" : ""}${w.name} (${m.faction})`,
+              w: w as Warlord | null,
+              gaps: w.is_meisho ? meishoTalentGaps(w) : ["名将の印が無い", ...meishoTalentGaps({ ...w, is_meisho: true })],
+            }));
+          });
+        const todo = rows.filter((r) => r.gaps.length > 0);
         return (
-          <div className={`mb-4 rounded-lg border p-3 text-xs ${partial.length ? "border-hi-600/60" : "border-emerald-700/60"}`}>
-            <p className={`font-bold ${partial.length ? "text-hi-400" : "text-emerald-300"}`}>
-              名将修行の追加天賦: 8 つそろっている {meishoCount - gaps.length} 人 / 途中まで {partial.length} 人 / 図鑑には無し {none} 人
+          <div className={`mb-4 rounded-lg border p-3 text-xs ${todo.length ? "border-hi-600/60" : "border-emerald-700/60"}`}>
+            <p className={`font-bold ${todo.length ? "text-hi-400" : "text-emerald-300"}`}>
+              図鑑で読み取る名将 (シミュレーターに無い {rows.length} 人): 8 つそろっている {rows.length - todo.length} 人 / 足りない {todo.length} 人
             </p>
-            {none > 0 && <p className="mt-0.5 text-ash">「図鑑には無し」の名将は、シミュレーターの方に直接渡してあります。書き出すファイルには、そのデータも入ります。</p>}
-            {partial.length > 0 && (
+            <p className="mt-0.5 text-ash">シミュレーターに直接渡した 46 人は、書き出すファイルにそのデータが入るので、ここには出しません。</p>
+            {todo.length > 0 && (
               <ul className="mt-1.5 space-y-1">
-                {partial.map(({ w, gaps: g }) => (
-                  <li key={w.id}>
-                    <button onClick={() => onOpenWarlord(w.id)} className="text-left text-washi underline-offset-2 hover:underline">
-                      {w.is_special ? "【特】" : ""}
-                      {w.name}
-                      <span className="text-ash">（{w.faction || "勢力未入力"}）</span>
-                    </button>
-                    <span className="ml-1 text-ash">足りない: {g.join("、")}</span>
+                {todo.map((r) => (
+                  <li key={r.key}>
+                    {r.w ? (
+                      <button onClick={() => onOpenWarlord(r.w!.id)} className="text-left text-washi underline-offset-2 hover:underline">
+                        {r.label}
+                      </button>
+                    ) : (
+                      <span className="text-washi">{r.label}</span>
+                    )}
+                    <span className="ml-1 text-ash">
+                      {(() => {
+                        const notes = r.gaps.filter((g) => !/少史|大史|少納言|大輔|中納言/.test(g));
+                        const slots = r.gaps.filter((g) => /少史|大史|少納言|大輔|中納言/.test(g));
+                        const slotText = !r.w || slots.length >= 8 ? "8 つとも未取得" : slots.length ? `足りない: ${slots.join("、")}` : "";
+                        return [...notes, slotText].filter(Boolean).join(" / ");
+                      })()}
+                    </span>
                   </li>
                 ))}
               </ul>
