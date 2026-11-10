@@ -17,7 +17,7 @@ import { isStalled, lastProbe } from "../lib/probe.ts";
 import { LITE_GEMINI_MODEL, bgActive, loadSettings, setGeminiModel } from "../lib/settings.ts";
 import { useToast } from "../lib/toast.tsx";
 import { StoredImage } from "./StoredImage.tsx";
-import { MEISHO_ROSTER, ROSTER_NAMES, rosterFaction } from "../../core/meisho.ts";
+import { MEISHO_ROSTER, ROSTER_NAMES } from "../../core/meisho.ts";
 import { WarlordPicker } from "./WarlordPicker.tsx";
 import { normalizeName } from "../../core/domain.ts";
 import { differsByOneChar } from "../../core/ingest.ts";
@@ -408,8 +408,8 @@ function JobRow({
   const training = Boolean(job.extraction?.meisho_training?.visible);
   const unregisteredMeisho = useMemo(() => {
     if (!training) return [];
-    const have = new Set(warlords.map((w) => `${rosterFaction(w.faction)}|${w.name}`));
-    return [...new Map(MEISHO_ROSTER.filter((e) => !have.has(`${rosterFaction(e.faction)}|${e.name}`)).map((e) => [`${e.faction}|${e.name}`, e])).values()];
+    const have = new Set(warlords.map((w) => `${w.faction}|${w.name}`));
+    return [...new Map(MEISHO_ROSTER.filter((e) => !have.has(`${e.faction}|${e.name}`)).map((e) => [`${e.faction}|${e.name}`, e])).values()];
   }, [training, warlords]);
   const saveTo = async (targetId: string) => {
     if (!targetId) return;
