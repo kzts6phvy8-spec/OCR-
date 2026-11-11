@@ -479,24 +479,27 @@ export function meishoSlotFromEffect(effect: string): { rank: string; slot: stri
   return null;
 }
 
+/** 名将修行の画面で読んだ追加天賦 1 つ (AI が読んだ丸も持つ。効果からの丸と食い違う時に使う) */
+export type MeishoRead = MeishoTalent & { aiRank?: string; aiSlot?: string };
+
+/** AI が読んだ丸 (段階と上下) をそろえる (効果からは決めない)。分からなければ null */
+export function aiMeishoSlot(rank: unknown, slot: unknown): { rank: string; slot: string } | null {
+  const r = String(rank ?? "").normalize("NFKC").replace(/\s/g, "");
+  if (!(MEISHO_RANKS as readonly string[]).includes(r)) return null;
+  if (r === "大史" || r === "大輔") return { rank: r, slot: "" };
+  const s = String(slot ?? "");
+  return { rank: r, slot: /下/.test(s) ? "下" : /上/.test(s) ? "上" : "上" };
+}
+
 /**
  * 1 人の名将の名将修行の画面で読んだ追加天賦 (画面ごと) から、丸 8 つへの入れ方を決め直す。
- * 効果から位置が決まるものはその丸へ。決まらないもの (最終ダメージ軽減・兵力の条件付き等) は AI の読んだ丸へ入れ、
- * そこが別の効果で埋まっていたら、同じ種類の空いている丸 (中納言 上⇔下、大史⇔大輔、少史 上⇔下、少納言 上⇔下) へ入れる。
- * 同じ丸の同じ効果は 1 つにまとめる (修行済みは一度でも修行済みなら修行済み)
+ * 入れたい丸の順: 効果から決まる丸 → AI が読んだ丸 → それぞれの相方の丸 (中納言 上⇔下、大史⇔大輔、少史/少納言の上⇔下)。
+ * 空いている丸のうち最初のものに入れる (効果から決まるものを先に入れる)。
+ * 効果からの丸は名将 46 人分のデータから見つけた法則なので、限定・コラボの名将では外れることがある。その時も丸が空かないように、
+ * 埋まっていれば次の候補の丸へ入れる。同じ効果は 1 つにまとめる (修行済みは一度でも修行済みなら修行済み)
  */
-export function resolveMeishoSlots(reads: MeishoTalent[]): MeishoTalent[] {
+export function resolveMeishoSlots(reads: MeishoRead[]): MeishoTalent[] {
   const key = (t: { rank: string; slot: string }) => `${t.rank}|${t.slot}`;
-  const placed = new Map<string, MeishoTalent>();
-  const put = (t: MeishoTalent) => {
-    const cur = placed.get(key(t));
-    placed.set(key(t), cur ? { ...cur, trained: cur.trained || t.trained } : t);
-  };
-  const same = (a: MeishoTalent, b: MeishoTalent) => normText(a.effect) === normText(b.effect);
-  const fixed: MeishoTalent[] = [];
-  const loose: MeishoTalent[] = [];
-  for (const r of reads) (meishoSlotFromEffect(r.effect) ? fixed : loose).push(r);
-  for (const t of fixed) put({ ...t, ...meishoSlotFromEffect(t.effect)! });
   const partner = (t: { rank: string; slot: string }): { rank: string; slot: string } | null => {
     if (t.rank === "大史") return { rank: "大輔", slot: "" };
     if (t.rank === "大輔") return { rank: "大史", slot: "" };
@@ -504,22 +507,31 @@ export function resolveMeishoSlots(reads: MeishoTalent[]): MeishoTalent[] {
     if (t.slot === "下") return { rank: t.rank, slot: "上" };
     return null;
   };
-  // 同じ効果の画面は 1 つにまとめる
-  const uniq: MeishoTalent[] = [];
-  for (const t of loose) {
-    const dup = uniq.find((u) => same(u, t));
-    if (dup) dup.trained = dup.trained || t.trained;
-    else uniq.push({ ...t });
+  // 同じ効果の画面は 1 つにまとめる (AI の読んだ丸は最初のものを使う)
+  const uniq: MeishoRead[] = [];
+  for (const r of reads) {
+    const dup = uniq.find((u) => normText(u.effect) === normText(r.effect));
+    if (dup) dup.trained = dup.trained || r.trained;
+    else uniq.push({ ...r });
   }
-  for (const t of uniq) {
-    const here = placed.get(key(t));
-    if (!here || same(here, t)) {
-      put(t);
-      continue;
-    }
-    const other = partner(t);
-    if (other && !placed.has(key(other))) put({ ...t, ...other });
-    // どこにも入らない時は、前の読み取りを残す (後から読んだ方で置き換えない)
+  const prefs = (r: MeishoRead) => {
+    const rule = meishoSlotFromEffect(r.effect);
+    const ai = r.aiRank ? aiMeishoSlot(r.aiRank, r.aiSlot) : { rank: r.rank, slot: r.slot };
+    const list = [rule, ai, rule && partner(rule), ai && partner(ai)].filter((x): x is { rank: string; slot: string } => Boolean(x));
+    return list.filter((x, i) => list.findIndex((y) => key(y) === key(x)) === i);
+  };
+  const placed = new Map<string, MeishoTalent>();
+  // 先に入れる順: 効果からの丸と AI の読んだ丸が一致するもの → 効果から丸が決まるもの → それ以外
+  const weight = (r: MeishoRead) => {
+    const rule = meishoSlotFromEffect(r.effect);
+    if (!rule) return 0;
+    const ai = r.aiRank ? aiMeishoSlot(r.aiRank, r.aiSlot) : null;
+    return ai && key(ai) === key(rule) ? 2 : 1;
+  };
+  const ordered = [...uniq].sort((a, b) => weight(b) - weight(a));
+  for (const r of ordered) {
+    const spot = prefs(r).find((p) => !placed.has(key(p)));
+    if (spot) placed.set(key(spot), { rank: spot.rank, slot: spot.slot, effect: r.effect, trained: r.trained });
   }
   const order = (t: MeishoTalent) => MEISHO_RANKS.indexOf(t.rank as (typeof MEISHO_RANKS)[number]) * 3 + (t.slot === "下" ? 2 : t.slot === "上" ? 0 : 1);
   return [...placed.values()].sort((a, b) => order(a) - order(b));

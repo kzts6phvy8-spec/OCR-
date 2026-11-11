@@ -1,5 +1,5 @@
-import type { MeishoTalent, Warlord } from "../../core/types.ts";
-import { extractionToPatch, normText, normalizeInput, resolveMeishoSlots } from "../../core/domain.ts";
+import type { Warlord } from "../../core/types.ts";
+import { extractionToPatch, normText, normalizeInput, resolveMeishoSlots, type MeishoRead } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import * as db from "./db.ts";
 
@@ -9,11 +9,12 @@ import * as db from "./db.ts";
 /** 1 人分を決め直して保存する (変わらなければ保存しない)。決め直した武将を返す */
 export async function recomputeMeishoTalents(w: Warlord): Promise<Warlord> {
   if (!w.meisho_images?.length) return w;
-  const reads: MeishoTalent[] = [];
+  const reads: MeishoRead[] = [];
   for (const id of w.meisho_images) {
     const ext = await db.getExtraction(id).catch(() => null);
     const t = ext ? extractionToPatch(ext).meisho_talents?.[0] : undefined;
-    if (t) reads.push(t);
+    // AI が読んだ丸も渡す (効果からの丸が埋まっていた時に使う)
+    if (t) reads.push({ ...t, aiRank: String(ext?.meisho_training?.selected_rank ?? ""), aiSlot: String(ext?.meisho_training?.selected_slot ?? "") });
   }
   const resolved = resolveMeishoSlots(reads);
   // 画像の無い前の読み取り (この仕組みの前に入った分) は、空いている丸にだけ残す

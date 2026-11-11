@@ -414,3 +414,13 @@ describe("名将修行の丸 8 つへの入れ方を決め直す", () => {
     expect(resolveMeishoSlots([t("少史", "上", "兵数上限+175"), t("少史", "上", "兵数上限+175")])).toHaveLength(1);
   });
 });
+
+describe("名将修行の丸: 法則と違う名将でも丸が空かない", () => {
+  it("中納言の 2 つが法則ではどちらも上でも、AI の読んだ丸で上下に分ける", () => {
+    const r = resolveMeishoSlots([
+      { rank: "中納言", slot: "上", effect: "最終ダメージ+15%", trained: false, aiRank: "中納言", aiSlot: "下" },
+      { rank: "中納言", slot: "上", effect: "受止め+25%", trained: false, aiRank: "中納言", aiSlot: "上" },
+    ]);
+    expect(r.map((x) => `${x.slot}:${x.effect}`)).toEqual(["上:受止め+25%", "下:最終ダメージ+15%"]);
+  });
+});
