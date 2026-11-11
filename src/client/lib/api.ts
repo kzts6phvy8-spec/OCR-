@@ -706,12 +706,22 @@ export const api = {
   },
 
   async reidentifyMeishoTraining(): Promise<number> {
-    const images = await db.listTrainingImages();
+    const all = await db.listTrainingImages();
+    // 手で振り分けた名将の画面はそのまま残す (見分け直さない)
+    const warlords = await db.listWarlords();
+    const kept = new Set(warlords.filter((w) => w.meisho_training_manual).flatMap((w) => w.meisho_images ?? []));
+    // 解析待ち・サーバーに預け中の画面は、二重にしない
+    const jobs = await db.listJobs();
+    const busy = new Set(jobs.filter((j) => j.status === "queued" || j.status === "processing" || j.status === "remote").map((j) => j.image_id));
+    const images = all.filter((id) => !kept.has(id) && !busy.has(id));
     if (images.length === 0) return 0;
-    for (const w of await db.listWarlords()) {
-      if (!w.meisho_talents?.length && !w.meisho_images?.length) continue;
-      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), meisho_talents: [], meisho_images: [] }));
+    for (const w of warlords) {
+      if (w.meisho_training_manual || (!w.meisho_talents?.length && !w.meisho_images?.length)) continue;
+      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), meisho_talents: [], meisho_images: [], ...(await keepMeishoMark(w)) }));
     }
+    // 失敗のまま残っている同じ画像の記録は取り除く (見分け直しの記録と二重にならないように)
+    const failed = jobs.filter((j) => j.status === "error" && images.includes(j.image_id)).map((j) => j.id);
+    if (failed.length) await db.deleteJobs(failed);
     await queue.enqueue(
       images.map((id, i) => ({ fileName: `名将修行の画面 ${i + 1} (見分け直し)`, imageId: id })),
       "auto",
