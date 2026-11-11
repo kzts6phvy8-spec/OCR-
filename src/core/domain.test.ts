@@ -424,3 +424,13 @@ describe("名将修行の丸: 法則と違う名将でも丸が空かない", ()
     expect(r.map((x) => `${x.slot}:${x.effect}`)).toEqual(["上:受止め+25%", "下:最終ダメージ+15%"]);
   });
 });
+
+describe("名将修行の丸: 上下の分からない読み取り", () => {
+  it("「中納言」とだけ入った効果は、空いている方 (上か下) へ入れる", () => {
+    const r = resolveMeishoSlots([
+      { rank: "中納言", slot: "下", effect: "覚醒スキルでの被ダメージ軽減+20%", trained: false },
+      { rank: "中納言", slot: "", effect: "最終ダメージ軽減+15%", trained: false },
+    ]);
+    expect(r.map((x) => `${x.slot}:${x.effect}`)).toEqual(["上:最終ダメージ軽減+15%", "下:覚醒スキルでの被ダメージ軽減+20%"]);
+  });
+});
