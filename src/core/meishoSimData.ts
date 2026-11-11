@@ -119,3 +119,29 @@ export function contradictsSimMeisho(w: Pick<Warlord, "faction" | "name" | "is_s
   const sim = simMeishoTalents(w)?.find((t) => t.rank === read.rank && t.slot === read.slot);
   return Boolean(sim && clearlyDifferentEffect(sim.effect, read.effect));
 }
+
+/** この丸のこの効果を持つ、シミュレーターのデータの名将の数 (少ないほど、その名将らしさの手がかりになる) */
+function sharedCount(rank: string, slot: string, effect: string): number {
+  const i = MEISHO_SLOTS.findIndex((s) => s.rank === rank && s.slot === slot);
+  if (i < 0) return Infinity;
+  return SIM_MEISHO.filter((m) => !clearlyDifferentEffect(m.effects[i], effect)).length;
+}
+
+/**
+ * 同じ名将の名将修行の画面 (カードの絵が同じ画面) で読んだ追加天賦が、シミュレーターのデータの名将と合うか。
+ *  - "contradict": どれかの丸の効果がはっきり違う (この名将の画面ではない)
+ *  - "match": 食い違いが無く、その名将らしい (ほかの名将には 3 人以下しかない) 効果が 1 つ以上合う
+ *  - "none": シミュレーターのデータが無い、または全員共通の効果しか読めていない (手がかりにならない)
+ */
+export function simEvidence(w: Pick<Warlord, "faction" | "name" | "is_special">, reads: MeishoTalent[]): "contradict" | "match" | "none" {
+  const sim = simMeishoTalents(w);
+  if (!sim) return "none";
+  let distinctive = 0;
+  for (const r of reads) {
+    const t = sim.find((x) => x.rank === r.rank && x.slot === r.slot);
+    if (!t) continue;
+    if (clearlyDifferentEffect(t.effect, r.effect)) return "contradict";
+    if (sharedCount(r.rank, r.slot, r.effect) <= 3) distinctive++;
+  }
+  return distinctive > 0 ? "match" : "none";
+}
