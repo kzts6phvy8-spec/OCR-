@@ -712,6 +712,7 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     no_synergy: Boolean(v.no_synergy),
     is_meisho: Boolean(v.is_meisho),
     meisho_manual: Boolean(v.meisho_manual),
+    meisho_training_manual: Boolean(v.meisho_training_manual),
     meisho_images: uniqueStrings(Array.isArray(v.meisho_images) ? v.meisho_images.map(String) : []),
     meisho_talents: mergeMeishoTalents([], (Array.isArray(v.meisho_talents) ? v.meisho_talents : []).map(normalizeMeishoTalent).filter((t): t is MeishoTalent => t !== null)),
     oni_season: normalizeSeason(v.oni_season),

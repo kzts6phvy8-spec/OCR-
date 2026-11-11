@@ -1,6 +1,7 @@
 import type { Faction, MeishoTalent, OcrJob, Talent, UploadMode, Warlord } from "../../core/types.ts";
 import { differsByOneChar, ingestExtraction } from "../../core/ingest.ts";
 import { emptyWarlordInput, extractionToPatch, normalizeInput, warlordLabel } from "../../core/domain.ts";
+import { simMeishoTalents as simMeishoTalentsSync } from "../../core/meishoSimData.ts";
 import * as db from "./db.ts";
 import { bgActive, loadSettings } from "./settings.ts";
 import { ServerError, callServer, type RemoteResult, type ServerCounts } from "./remote.ts";
@@ -398,14 +399,16 @@ async function groupReads(imageId: string, extraction: OcrExtraction | null | un
   return reads;
 }
 
-/**
- * 名将修行の画面の持ち主になりうる名将か: 読んだ追加天賦が、シミュレーターのデータ (46 人分) と食い違わない名将。
- * 立ち絵はどの名将も見比べる
- */
+/** 名将修行の画面の持ち主になりうる名将か */
 async function meishoFits(imageId: string, extraction: OcrExtraction | null | undefined): Promise<(w: Warlord) => boolean> {
   const { simEvidence } = await import("../../core/meishoSimData.ts");
   const reads = await groupReads(imageId, extraction);
-  return (w) => simEvidence(w, reads) !== "contradict";
+  // シミュレーターに名将修行を直接渡した 46 人は、図鑑では名将修行の画面を読まないのが普通 (似た立ち絵の名将と取り違えた: 大姫→江姫、鶴姫→中.九の鶴姫)。
+  // その名将らしい追加天賦が読めた時と、利用者が手でこの武将に振り分けたことがある時 (足利義政など) だけ候補にする
+  return (w) => {
+    const e = simEvidence(w, reads);
+    return e === "match" || (e === "none" && (!simMeishoTalentsSync(w) || Boolean(w.meisho_training_manual)));
+  };
 }
 
 /**

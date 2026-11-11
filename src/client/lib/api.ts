@@ -303,7 +303,15 @@ export const api = {
   jobs: () => db.listJobs(),
   retryJob: (id: string) => queue.retryJob(id),
   /** 失敗したジョブを、選んだ武将に統合してやり直す */
-  retryJobWithTarget: (id: string, targetId: string) => queue.retryJobs([id], targetId),
+  async retryJobWithTarget(id: string, targetId: string) {
+    // 名将修行の画面を手で振り分けた武将は、以後も名将修行の画面の見分けの候補にする
+    const job = await db.getJob(id);
+    const w = await db.getWarlord(targetId);
+    if (job?.extraction?.meisho_training?.visible && w && !w.meisho_training_manual) {
+      await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), meisho_training_manual: true }));
+    }
+    return queue.retryJobs([id], targetId);
+  },
   /**
    * 失敗したジョブを、新しい武将として保存し直す (統合先に合う武将がいない時)。
    * 名前と通常/特異だけの武将を作り、そこへ統合する形で保存する (読み取り済みなら AI は使わない)。
@@ -628,18 +636,21 @@ export const api = {
    * シミュレーターに直接渡したデータがある名将で、同じ丸の効果がはっきり違う画面は、別の名将の画面なので外す。外した枚数を返す
    */
   async fixMisassignedTraining(): Promise<number> {
-    const { contradictsSimMeisho } = await import("../../core/meishoSimData.ts");
+    const { contradictsSimMeisho, simEvidence, simMeishoTalents } = await import("../../core/meishoSimData.ts");
     const { extractionToPatch, normText } = await import("../../core/domain.ts");
     const moved: string[] = [];
     for (const w of await db.listWarlords()) {
       if (!w.meisho_images?.length) continue;
-
-      const wrong: { id: string; effect: string; rank: string; slot: string }[] = [];
+      const reads: { id: string; effect: string; rank: string; slot: string; trained: boolean }[] = [];
       for (const id of w.meisho_images) {
         const ext = await db.getExtraction(id).catch(() => null);
         const read = ext ? extractionToPatch(ext).meisho_talents?.[0] : undefined;
-        if (read && contradictsSimMeisho(w, read)) wrong.push({ id, ...read });
+        if (read) reads.push({ id, ...read });
       }
+      // シミュレーターに名将修行を直接渡した名将に、その名将らしい追加天賦が 1 つも無い画面が自動で入っていたら取り違え
+      // (利用者が手で振り分けた名将は除く)
+      const unsure = Boolean(simMeishoTalents(w)) && !w.meisho_training_manual && simEvidence(w, reads) !== "match";
+      const wrong = reads.filter((r) => unsure || contradictsSimMeisho(w, r));
       if (wrong.length === 0) continue;
       const wrongIds = new Set(wrong.map((x) => x.id));
       const talents = (w.meisho_talents ?? []).filter(
@@ -769,6 +780,7 @@ export const api = {
       normalizeInput({
         ...toInput(to),
         is_meisho: true,
+        meisho_training_manual: true,
         meisho_images: [...(to.meisho_images ?? []), ...images],
         meisho_talents: mergeMeishoTalents(to.meisho_talents ?? [], read),
       }),
@@ -790,6 +802,7 @@ export const api = {
       normalizeInput({
         ...toInput(to),
         is_meisho: true,
+        meisho_training_manual: true,
         meisho_talents: mergeMeishoTalents(to.meisho_talents ?? [], from.meisho_talents ?? []),
         meisho_images: [...(to.meisho_images ?? []), ...(from.meisho_images ?? [])],
       }),
