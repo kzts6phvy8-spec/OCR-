@@ -419,9 +419,12 @@ export async function matchKnownTraining(imageId: string, warlords: Warlord[]): 
   }
   scores.sort((a, b) => b.score - a.score);
   const [first, second] = scores;
-  if (!first || first.score < TRAINING_SAME) return null;
-  if (second && first.score - second.score < TRAINING_MARGIN) return null;
-  return first.w;
+  if (!first) return null;
+  const margin = second ? first.score - second.score : 1;
+  // ほぼ同じ絵 (0.97 以上) か、少し低くても (縮小の違いなどで) 2 番目とはっきり差がある (0.93 以上・差 0.08 以上) なら同じ名将
+  if (first.score >= TRAINING_SAME && margin >= TRAINING_MARGIN) return first.w;
+  if (first.score >= 0.93 && margin >= 0.08) return first.w;
+  return null;
 }
 
 const SHORTLIST_PROMPT = (n: number) =>
