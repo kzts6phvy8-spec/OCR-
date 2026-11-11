@@ -570,3 +570,16 @@ export async function groupTrainingImages(ids: string[]): Promise<string[][]> {
   }
   return [...groups.map((g) => g.ids), ...loose];
 }
+
+/** 保存してある名将修行の画面のうち、この画面とカードの絵が同じもの (= 同じ名将の画面。この画面も含む) */
+export async function similarTrainingImages(imageId: string, all: string[]): Promise<string[]> {
+  const target = await trainingSigOf(imageId);
+  if (!target) return [imageId];
+  const out = [imageId];
+  for (const id of all) {
+    if (id === imageId) continue;
+    const sig = await trainingSigOf(id);
+    if (sig && signatureSimilarity(target, sig) >= TRAINING_SAME) out.push(id);
+  }
+  return out;
+}

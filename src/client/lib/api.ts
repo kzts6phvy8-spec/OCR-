@@ -628,18 +628,17 @@ export const api = {
    * シミュレーターに直接渡したデータがある名将で、同じ丸の効果がはっきり違う画面は、別の名将の画面なので外す。外した枚数を返す
    */
   async fixMisassignedTraining(): Promise<number> {
-    const { contradictsSimMeisho, simMeishoTalents } = await import("../../core/meishoSimData.ts");
+    const { contradictsSimMeisho } = await import("../../core/meishoSimData.ts");
     const { extractionToPatch, normText } = await import("../../core/domain.ts");
     const moved: string[] = [];
     for (const w of await db.listWarlords()) {
       if (!w.meisho_images?.length) continue;
-      // シミュレーターに名将修行を直接渡した 46 人には、図鑑の名将修行の画面は入らないはず (入っていれば取り違え)
-      const simWarlord = Boolean(simMeishoTalents(w));
+
       const wrong: { id: string; effect: string; rank: string; slot: string }[] = [];
       for (const id of w.meisho_images) {
         const ext = await db.getExtraction(id).catch(() => null);
         const read = ext ? extractionToPatch(ext).meisho_talents?.[0] : undefined;
-        if (read && (simWarlord || contradictsSimMeisho(w, read))) wrong.push({ id, ...read });
+        if (read && contradictsSimMeisho(w, read)) wrong.push({ id, ...read });
       }
       if (wrong.length === 0) continue;
       const wrongIds = new Set(wrong.map((x) => x.id));

@@ -277,7 +277,6 @@ function TrainingSorter({ warlords, onChanged }: { warlords: Warlord[]; onChange
   const choices = useMemo(() => {
     const special = ["限定武将", "コラボ武将", "姫武将"];
     return warlords
-      .filter((w) => !SIM_MEISHO.some((m) => m.faction === w.faction && m.name === w.name))
       .map((w) => ({ w, exact: MEISHO_ROSTER.some((e) => e.faction === w.faction && e.name === w.name) }))
       .filter(({ w, exact }) => exact || w.is_meisho || (ROSTER_NAMES.has(w.name) && special.includes(w.faction)))
       .sort((a, b) => Number(b.exact) - Number(a.exact) || a.w.faction.localeCompare(b.w.faction, "ja") || a.w.name.localeCompare(b.w.name, "ja"));

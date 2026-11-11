@@ -1,4 +1,4 @@
-import type { Faction, OcrJob, Talent, UploadMode, Warlord } from "../../core/types.ts";
+import type { Faction, MeishoTalent, OcrJob, Talent, UploadMode, Warlord } from "../../core/types.ts";
 import { differsByOneChar, ingestExtraction } from "../../core/ingest.ts";
 import { emptyWarlordInput, extractionToPatch, normalizeInput, warlordLabel } from "../../core/domain.ts";
 import * as db from "./db.ts";
@@ -23,6 +23,7 @@ import {
   buildMeishoShortlistRequest,
   identifyMeishoByArt,
   matchKnownTraining,
+  similarTrainingImages,
   parseMeishoConfirm,
   parseMeishoShortlist,
   type Part,
@@ -342,9 +343,13 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
       // 名将修行の画面: 登録済みの名将 (名将の印がある武将) の立ち絵と見比べて誰かを決める
       identifyMeisho: async () => {
         // 読んだ追加天賦と、シミュレーターに直接渡した名将修行のデータが食い違う名将は、候補から外す (取り違え防止)
-        const fits = await meishoFits(extraction);
+        const everyone = (await db.listWarlords()).filter((w) => !(job.exclude_ids ?? []).includes(w.id));
+        // 読んだ追加天賦が、シミュレーターのデータの名将の 1 人とだけ合えば、その名将 (AI を使わない)
+        const bySim = await meishoBySimData(job.image_id, extraction, everyone);
+        if (bySim) return bySim;
+        const fits = await meishoFits(job.image_id, extraction);
         // まず、すでに名将に振り分けた名将修行の画面と見比べる (同じ武将ならカードの絵がほぼ同じ。AI を使わない)
-        const all = (await db.listWarlords()).filter((w) => !(job.exclude_ids ?? []).includes(w.id) && fits(w));
+        const all = everyone.filter(fits);
         const known = await matchKnownTraining(job.image_id, all.filter((w) => w.meisho_images?.length));
         if (known) return known;
         // バックグラウンド解析がオンなら、AI での見分けはサーバーに任せる (アプリを閉じていても進む)
@@ -377,18 +382,43 @@ class NeedServerIdentify extends Error {}
 
 /** 名将修行の画面の持ち主の候補: 名将の印がある武将と、名将一覧に名前があるのにまだ印を付けられていない武将 */
 /**
- * 名将修行の画面の持ち主になりうる名将か。
- * シミュレーターに名将修行を直接渡した 46 人は、図鑑では名将修行を読み取らない (利用者がそう分けている) ので外す。
- * 読んだ追加天賦と食い違う名将も外す
+ * 名将修行の画面で読んだ追加天賦 (同じ名将の画面 = カードの絵が同じ保存済みの画面の分も合わせて)。
+ * 1 枚だけでは全員共通の効果しか読めないことが多いので、同じ名将の画面をまとめて手がかりにする
  */
-async function meishoFits(extraction: OcrExtraction | null | undefined): Promise<(w: Warlord) => boolean> {
-  const { contradictsSimMeisho, simMeishoTalents } = await import("../../core/meishoSimData.ts");
-  const read = extraction ? extractionToPatch(extraction).meisho_talents?.[0] : undefined;
-  return (w) => !simMeishoTalents(w) && !contradictsSimMeisho(w, read);
+async function groupReads(imageId: string, extraction: OcrExtraction | null | undefined): Promise<MeishoTalent[]> {
+  const reads: MeishoTalent[] = [];
+  const own = extraction ? extractionToPatch(extraction).meisho_talents?.[0] : undefined;
+  if (own) reads.push(own);
+  for (const id of await similarTrainingImages(imageId, await db.listTrainingImages())) {
+    if (id === imageId) continue;
+    const ext = await db.getExtraction(id).catch(() => null);
+    const t = ext ? extractionToPatch(ext).meisho_talents?.[0] : undefined;
+    if (t) reads.push(t);
+  }
+  return reads;
+}
+
+/**
+ * 名将修行の画面の持ち主になりうる名将か。
+ * シミュレーターに名将修行のデータがある名将 (46 人) は、読んだ追加天賦がそのデータと合う時 (その名将らしい効果が合う) だけ。
+ * データが無い名将は、食い違いが無ければ候補
+ */
+async function meishoFits(imageId: string, extraction: OcrExtraction | null | undefined): Promise<(w: Warlord) => boolean> {
+  const { simEvidence, simMeishoTalents } = await import("../../core/meishoSimData.ts");
+  const reads = await groupReads(imageId, extraction);
+  return (w) => (simMeishoTalents(w) ? simEvidence(w, reads) === "match" : true);
+}
+
+/** 読んだ追加天賦が、シミュレーターのデータの名将の 1 人とだけ合う時は、その名将 (立ち絵を見比べなくても決まる) */
+async function meishoBySimData(imageId: string, extraction: OcrExtraction | null | undefined, all: Warlord[]): Promise<Warlord | null> {
+  const { simEvidence } = await import("../../core/meishoSimData.ts");
+  const reads = await groupReads(imageId, extraction);
+  const hits = all.filter((w) => simEvidence(w, reads) === "match");
+  return hits.length === 1 ? hits[0] : null;
 }
 
 async function meishoCandidates(job: OcrJob, extraction?: OcrExtraction | null): Promise<Warlord[]> {
-  const fits = await meishoFits(extraction ?? job.extraction);
+  const fits = await meishoFits(job.image_id, extraction ?? job.extraction);
   const all = (await db.listWarlords()).filter((w) => !(job.exclude_ids ?? []).includes(w.id) && fits(w));
   const { matchMeishoRoster } = await import("../../core/meisho.ts");
   const unsure = matchMeishoRoster(all)
@@ -445,7 +475,7 @@ async function applyMeishoAnswer(job: OcrJob, text: string) {
   }
   const id = parseMeishoConfirm(text, ids);
   const found = id ? await db.getWarlord(id) : null;
-  if (!found || !(await meishoFits(extraction))(found)) return meishoFail(job, extraction);
+  if (!found || !(await meishoFits(job.image_id, extraction))(found)) return meishoFail(job, extraction);
   // 見分けた武将を統合先にして保存する
   const fresh = await update(job, { target_id: found.id });
   const result = await ingestJob(fresh, extraction);
