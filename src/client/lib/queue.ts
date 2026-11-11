@@ -332,7 +332,7 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
         );
       }
     }
-    return ingestExtraction(db.repo, extraction, {
+    const result = await ingestExtraction(db.repo, extraction, {
       mode: job.mode,
       targetId: job.target_id,
       adoptSpecial: job.adopt_special,
@@ -363,6 +363,12 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
         return (await Promise.all(names.map((n) => db.findByName(n)))).flat();
       },
     });
+    // 名将修行の画面: その名将の名将修行の画面をまとめて、丸 8 つへの入れ方を決め直す (位置の読み違いで丸が空くのを防ぐ)
+    if (extraction.meisho_training?.visible) {
+      const { recomputeMeishoTalents } = await import("./meishoSlots.ts");
+      return { ...result, warlord: await recomputeMeishoTalents(result.warlord) };
+    }
+    return result;
   });
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decideSpecial,
   meishoSlotFromEffect,
+  resolveMeishoSlots,
   detectTalentOrder,
   fixTalentOrder,
   learnTalentStats,
@@ -396,5 +397,20 @@ describe("名将修行の画面とシミュレーターのデータの合い方"
   });
   it("食い違えば contradict", () => {
     expect(simEvidence(yoshimasa, [{ rank: "大輔", slot: "", effect: "戦場進入時、自身に迅速(3ターン)を付与、回避+55%", trained: false }])).toBe("contradict");
+  });
+});
+
+describe("名将修行の丸 8 つへの入れ方を決め直す", () => {
+  const t = (rank: string, slot: string, effect: string) => ({ rank, slot, effect, trained: false });
+  it("位置を読み違えて同じ丸に 2 つ入ったら、空いている相方の丸へ入れる", () => {
+    const r = resolveMeishoSlots([t("中納言", "上", "最終ダメージ+15%"), t("中納言", "上", "最終ダメージ軽減+15%")]);
+    expect(r.map((x) => `${x.rank}${x.slot}:${x.effect}`)).toEqual(["中納言上:最終ダメージ+15%", "中納言下:最終ダメージ軽減+15%"]);
+  });
+  it("大史と大輔も相方として入れ替える", () => {
+    const r = resolveMeishoSlots([t("大輔", "", "戦闘進入時、受止め+40%"), t("大輔", "", "自身の兵力が50%未満の場合、攻撃回復+15%")]);
+    expect(r.map((x) => x.rank).sort()).toEqual(["大史", "大輔"]);
+  });
+  it("同じ画面を 2 回入れても 1 つ", () => {
+    expect(resolveMeishoSlots([t("少史", "上", "兵数上限+175"), t("少史", "上", "兵数上限+175")])).toHaveLength(1);
   });
 });

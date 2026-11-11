@@ -479,6 +479,52 @@ export function meishoSlotFromEffect(effect: string): { rank: string; slot: stri
   return null;
 }
 
+/**
+ * 1 人の名将の名将修行の画面で読んだ追加天賦 (画面ごと) から、丸 8 つへの入れ方を決め直す。
+ * 効果から位置が決まるものはその丸へ。決まらないもの (最終ダメージ軽減・兵力の条件付き等) は AI の読んだ丸へ入れ、
+ * そこが別の効果で埋まっていたら、同じ種類の空いている丸 (中納言 上⇔下、大史⇔大輔、少史 上⇔下、少納言 上⇔下) へ入れる。
+ * 同じ丸の同じ効果は 1 つにまとめる (修行済みは一度でも修行済みなら修行済み)
+ */
+export function resolveMeishoSlots(reads: MeishoTalent[]): MeishoTalent[] {
+  const key = (t: { rank: string; slot: string }) => `${t.rank}|${t.slot}`;
+  const placed = new Map<string, MeishoTalent>();
+  const put = (t: MeishoTalent) => {
+    const cur = placed.get(key(t));
+    placed.set(key(t), cur ? { ...cur, trained: cur.trained || t.trained } : t);
+  };
+  const same = (a: MeishoTalent, b: MeishoTalent) => normText(a.effect) === normText(b.effect);
+  const fixed: MeishoTalent[] = [];
+  const loose: MeishoTalent[] = [];
+  for (const r of reads) (meishoSlotFromEffect(r.effect) ? fixed : loose).push(r);
+  for (const t of fixed) put({ ...t, ...meishoSlotFromEffect(t.effect)! });
+  const partner = (t: { rank: string; slot: string }): { rank: string; slot: string } | null => {
+    if (t.rank === "大史") return { rank: "大輔", slot: "" };
+    if (t.rank === "大輔") return { rank: "大史", slot: "" };
+    if (t.slot === "上") return { rank: t.rank, slot: "下" };
+    if (t.slot === "下") return { rank: t.rank, slot: "上" };
+    return null;
+  };
+  // 同じ効果の画面は 1 つにまとめる
+  const uniq: MeishoTalent[] = [];
+  for (const t of loose) {
+    const dup = uniq.find((u) => same(u, t));
+    if (dup) dup.trained = dup.trained || t.trained;
+    else uniq.push({ ...t });
+  }
+  for (const t of uniq) {
+    const here = placed.get(key(t));
+    if (!here || same(here, t)) {
+      put(t);
+      continue;
+    }
+    const other = partner(t);
+    if (other && !placed.has(key(other))) put({ ...t, ...other });
+    // どこにも入らない時は、前の読み取りを残す (後から読んだ方で置き換えない)
+  }
+  const order = (t: MeishoTalent) => MEISHO_RANKS.indexOf(t.rank as (typeof MEISHO_RANKS)[number]) * 3 + (t.slot === "下" ? 2 : t.slot === "上" ? 0 : 1);
+  return [...placed.values()].sort((a, b) => order(a) - order(b));
+}
+
 export function normalizeMeishoTalent(t: { rank?: unknown; slot?: unknown; effect?: unknown; trained?: unknown } | null | undefined): MeishoTalent | null {
   const effect = String(t?.effect ?? "")
     .replace(/[(（]\s*未修行\s*[)）]/g, "")

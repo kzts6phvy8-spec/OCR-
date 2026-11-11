@@ -785,6 +785,9 @@ export const api = {
         meisho_talents: mergeMeishoTalents(to.meisho_talents ?? [], read),
       }),
     );
+    const { recomputeMeishoTalents } = await import("./meishoSlots.ts");
+    const saved = await db.getWarlord(warlordId);
+    if (saved) await recomputeMeishoTalents(saved);
     // この画面の見分けを待っている・失敗したままの記録は取り除く (後から別の武将に入らないように)。
     // 画像は名将に入れた後なので、記録を取り除いても消えない
     const pending = (await db.listJobs()).filter((j) => images.includes(j.image_id) && j.status !== "done" && j.status !== "processing").map((j) => j.id);
@@ -812,7 +815,8 @@ export const api = {
       from.id,
       normalizeInput({ ...toInput(from), meisho_talents: [], meisho_images: [], ...(await keepMeishoMark(from)) }),
     );
-    return { from: movedFrom, to: movedTo };
+    const { recomputeMeishoTalents } = await import("./meishoSlots.ts");
+    return { from: movedFrom, to: await recomputeMeishoTalents(movedTo) };
   },
 
   /** 名将かどうかを手で決める (自動の判断で変えなくなる) */

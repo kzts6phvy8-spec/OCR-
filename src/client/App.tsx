@@ -137,6 +137,8 @@ export default function App() {
       // 名将の印を、すでにあるデータから付ける (AI なし)
       await step("名将", async () => {
         const wrong = await api.fixMisassignedTraining();
+        // 名将修行の丸 8 つへの入れ方を、入っている画面から決め直す (位置の読み違いで丸が空いていた分)
+        await (await import("./lib/meishoSlots.ts")).recomputeAllMeishoTalents();
         if (wrong > 0) toast("info", `取り違えて入っていた名将修行の画面 ${wrong} 枚を見分け直します`, "読んだ追加天賦が、その名将のものと食い違っていました");
         const n = await api.markMeisho();
         if (n === 0) return;
