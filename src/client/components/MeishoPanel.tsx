@@ -4,7 +4,7 @@ import { api } from "../lib/api.ts";
 import { useToast } from "../lib/toast.tsx";
 import { saveFile, today } from "../lib/share.ts";
 import type { Warlord } from "../../core/types.ts";
-import { matchMeishoRoster } from "../../core/meisho.ts";
+import { MEISHO_ROSTER, ROSTER_NAMES, matchMeishoRoster } from "../../core/meisho.ts";
 import { meishoTalentGaps } from "../../core/missing.ts";
 import { SIM_MEISHO } from "../../core/meishoSimData.ts";
 import { StoredImage } from "./StoredImage.tsx";
@@ -189,6 +189,7 @@ export function MeishoPanel({
           </div>
         );
       })()}
+      <TrainingSorter warlords={warlords} onChanged={onChanged} />
       <div className="space-y-3">
         {factions.map((f) => (
           <div key={f}>
@@ -253,5 +254,83 @@ function MeishoChoice({ w, onOpen, onToggle }: { w: Warlord; onOpen: () => void;
         {w.is_meisho ? "名将 ✓" : "名将にする"}
       </button>
     </div>
+  );
+}
+
+/**
+ * 名将修行の画面を、カードの絵が同じものどうし (= 同じ名将) の組に分けて見せ、組ごとに手で名将を選んでもらう (AI なし)。
+ * AI の見分けが当てにならない時用
+ */
+function TrainingSorter({ warlords, onChanged }: { warlords: Warlord[]; onChanged: () => void }) {
+  const toast = useToast();
+  const [groups, setGroups] = useState<Awaited<ReturnType<typeof api.trainingGroups>> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const load = async () => {
+    setLoading(true);
+    try {
+      setGroups(await api.trainingGroups());
+    } finally {
+      setLoading(false);
+    }
+  };
+  // 選べる名将: シミュレーターにデータが無い名将 (名将一覧に勢力ごと載っている武将を先に)
+  const choices = useMemo(() => {
+    const special = ["限定武将", "コラボ武将", "姫武将"];
+    return warlords
+      .filter((w) => !SIM_MEISHO.some((m) => m.faction === w.faction && m.name === w.name))
+      .map((w) => ({ w, exact: MEISHO_ROSTER.some((e) => e.faction === w.faction && e.name === w.name) }))
+      .filter(({ w, exact }) => exact || w.is_meisho || (ROSTER_NAMES.has(w.name) && special.includes(w.faction)))
+      .sort((a, b) => Number(b.exact) - Number(a.exact) || a.w.faction.localeCompare(b.w.faction, "ja") || a.w.name.localeCompare(b.w.name, "ja"));
+  }, [warlords]);
+  return (
+    <details className="mb-4 rounded-lg border border-ebony-700 p-3 text-xs" onToggle={(e) => (e.currentTarget as HTMLDetailsElement).open && !groups && void load()}>
+      <summary className="cursor-pointer text-sm font-bold text-gold-300">名将修行の画面を手で振り分ける (AI の見分けが違う時)</summary>
+      <p className="mt-1 text-ash">
+        カードの絵が同じ画面を 1 組にまとめています (同じ名将の画面)。組ごとに、どの名将の画面か選んでください。前に別の武将に入っていた分はそこから外して入れ直します。AI は使いません。
+      </p>
+      {loading && <p className="mt-2 text-ash">まとめています…</p>}
+      {groups?.length === 0 && <p className="mt-2 text-ash">保存してある名将修行の画面がありません</p>}
+      <ul className="mt-2 space-y-2">
+        {groups?.map((g) => (
+          <li key={g.images[0]} className="flex gap-2 rounded border border-ebony-700 p-2">
+            {/* 画面の左のカードの絵だけを見せる */}
+            <div className="relative h-20 w-16 shrink-0 overflow-hidden rounded bg-ebony-800">
+              <StoredImage id={g.images[0]} alt="" style={{ position: "absolute", width: "500%", maxWidth: "none", left: "-85%", top: "-28%" }} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-washi">
+                {g.images.length} 枚 ・ いま: {g.owners.length ? g.owners.map((w) => `${w.name} (${w.faction || "勢力未入力"})`).join("、") : "どの名将にも入っていない"}
+              </p>
+              <p className="truncate text-[11px] text-ash">{g.talents.map((t) => `${t.rank}${t.slot ? ` ${t.slot}` : ""}:${t.effect}`).join(" / ")}</p>
+              <select
+                className="field mt-1 text-xs"
+                value=""
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const w = warlords.find((x) => x.id === id);
+                  if (!w) return;
+                  void api
+                    .assignTrainingGroup(g.images, id)
+                    .then(async () => {
+                      toast("success", `${g.images.length} 枚を「${w.name}」(${w.faction}) の名将修行に入れました`);
+                      onChanged();
+                      await load();
+                    })
+                    .catch((err: Error) => toast("error", "入れられませんでした", err.message));
+                }}
+              >
+                <option value="">どの名将の画面か選ぶ</option>
+                {choices.map(({ w, exact }) => (
+                  <option key={w.id} value={w.id}>
+                    {w.is_special ? "【特】" : ""}
+                    {w.name} ({w.faction || "勢力未入力"}){exact ? "" : " ※名将一覧の勢力と違う"} ・修行 {w.meisho_talents?.length ?? 0}/8
+                  </option>
+                ))}
+              </select>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }

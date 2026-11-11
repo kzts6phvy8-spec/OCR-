@@ -553,3 +553,20 @@ export async function identifyMeishoByArt(imageId: string, candidates: Warlord[]
   const id = parseMeishoConfirm(await ask(second.parts, settings, CONFIRM_SCHEMA, 100), second.ids);
   return id ? (candidates.find((w) => w.id === id) ?? null) : null;
 }
+
+/** 名将修行の画面を、カードの絵が同じものどうし (= 同じ名将) の組に分ける (AI なし) */
+export async function groupTrainingImages(ids: string[]): Promise<string[][]> {
+  const groups: { head: Float32Array; ids: string[] }[] = [];
+  const loose: string[][] = [];
+  for (const id of ids) {
+    const sig = await trainingSigOf(id);
+    if (!sig) {
+      loose.push([id]);
+      continue;
+    }
+    const g = groups.find((x) => signatureSimilarity(x.head, sig) >= TRAINING_SAME);
+    if (g) g.ids.push(id);
+    else groups.push({ head: sig, ids: [id] });
+  }
+  return [...groups.map((g) => g.ids), ...loose];
+}

@@ -376,11 +376,15 @@ function pauseForRateLimit(err: OcrError) {
 class NeedServerIdentify extends Error {}
 
 /** 名将修行の画面の持ち主の候補: 名将の印がある武将と、名将一覧に名前があるのにまだ印を付けられていない武将 */
-/** 名将修行の画面で読んだ追加天賦と食い違わない名将か (シミュレーターに直接渡したデータと比べる) */
+/**
+ * 名将修行の画面の持ち主になりうる名将か。
+ * シミュレーターに名将修行を直接渡した 46 人は、図鑑では名将修行を読み取らない (利用者がそう分けている) ので外す。
+ * 読んだ追加天賦と食い違う名将も外す
+ */
 async function meishoFits(extraction: OcrExtraction | null | undefined): Promise<(w: Warlord) => boolean> {
-  const { contradictsSimMeisho } = await import("../../core/meishoSimData.ts");
+  const { contradictsSimMeisho, simMeishoTalents } = await import("../../core/meishoSimData.ts");
   const read = extraction ? extractionToPatch(extraction).meisho_talents?.[0] : undefined;
-  return (w) => !contradictsSimMeisho(w, read);
+  return (w) => !simMeishoTalents(w) && !contradictsSimMeisho(w, read);
 }
 
 async function meishoCandidates(job: OcrJob, extraction?: OcrExtraction | null): Promise<Warlord[]> {
@@ -391,9 +395,11 @@ async function meishoCandidates(job: OcrJob, extraction?: OcrExtraction | null):
     .filter((m) => m.decided.length === 0)
     .flatMap((m) => m.candidates)
     .filter((w) => !w.meisho_manual);
-  // 名将一覧に名前が載っている武将も、勢力を問わず候補に入れる (勢力の登録が違って突き合わせから漏れた名将も見分けられるように)
+  // 名将一覧に名前が載っている限定・コラボ・姫の武将も候補に入れる (勢力の登録が違って突き合わせから漏れた名将も見分けられるように)。
+  // 普通の勢力の同じ名前の武将 (名将ではない方) は入れない
   const { ROSTER_NAMES } = await import("../../core/meisho.ts");
-  const byName = all.filter((w) => ROSTER_NAMES.has(w.name) && !(w.meisho_manual && !w.is_meisho));
+  const SPECIAL_FACTIONS = ["限定武将", "コラボ武将", "姫武将"];
+  const byName = all.filter((w) => ROSTER_NAMES.has(w.name) && SPECIAL_FACTIONS.includes(w.faction) && !(w.meisho_manual && !w.is_meisho));
   return [...new Set([...all.filter((w) => w.is_meisho), ...unsure, ...byName])];
 }
 
