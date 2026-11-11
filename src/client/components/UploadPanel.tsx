@@ -405,7 +405,9 @@ function JobRow({
   const [zoom, setZoom] = useState(false);
   const readName = job.extraction?.name ? normalizeName(job.extraction.name).name : "";
   // 名将修行の画面: 選んだ名将の名将修行 (追加天賦) に入れるだけ (武将をまとめるわけではない)
-  const training = Boolean(job.extraction?.meisho_training?.visible);
+  // 解析が終わって、どれかの名将に入っている名将修行の画面 (選び直し・見分け直しができる)
+  const doneTraining = job.status === "done" && warlords.some((w) => (w.meisho_images ?? []).includes(job.image_id));
+  const training = Boolean(job.extraction?.meisho_training?.visible) || doneTraining;
   const unregisteredMeisho = useMemo(() => {
     if (!training) return [];
     const have = new Set(warlords.map((w) => `${w.faction}|${w.name}`));
@@ -414,6 +416,12 @@ function JobRow({
   const saveTo = async (targetId: string) => {
     if (!targetId) return;
     try {
+      if (doneTraining) {
+        const w = await api.reassignTrainingImage(job.id, job.image_id, targetId);
+        setPicking(false);
+        toast("success", `「${w.name}」(${w.faction}) の名将修行に入れ直しました`, "AI は使っていません");
+        return;
+      }
       await api.retryJobWithTarget(job.id, targetId);
       setPicking(false);
       toast("info", training ? "選んだ名将の名将修行に入れます" : "選んだ武将に統合します", job.extraction ? "読み取り済みの内容で保存します (AI の回数は使いません)" : "もう一度解析してから保存します");
@@ -466,7 +474,42 @@ function JobRow({
           )}
         </p>
         {/* 天賦の読み直しは統合先が決まっているので、統合先を選ぶ欄は出さない */}
-        {job.status === "error" && !job.talents_only && (
+        {/* 解析が終わった画面も、1 枚ずつやり直せる */}
+        {job.status === "done" && !job.talents_only && !picking && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {doneTraining ? (
+              <>
+                <button onClick={() => setPicking(true)} className="rounded-md border border-ebony-600 px-2 py-1 text-[11px] text-gold-300">
+                  名将を選び直す
+                </button>
+                <button
+                  onClick={() =>
+                    void api
+                      .reidentifyTrainingImage(job.id, job.image_id)
+                      .then(() => toast("info", "この画面を見分け直します", "今入っている名将は候補から外します"))
+                      .catch((e: Error) => toast("error", "見分け直せませんでした", e.message))
+                  }
+                  className="rounded-md border border-ebony-600 px-2 py-1 text-[11px] text-ash"
+                >
+                  AI で見分け直す
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() =>
+                  void api
+                    .reanalyzeJob(job.id)
+                    .then(() => toast("info", "この画面をもう一度解析します", "同じ武将に保存し直します"))
+                    .catch((e: Error) => toast("error", "再解析できませんでした", e.message))
+                }
+                className="rounded-md border border-ebony-600 px-2 py-1 text-[11px] text-ash"
+              >
+                もう一度解析
+              </button>
+            )}
+          </div>
+        )}
+        {((job.status === "error" && !job.talents_only) || (doneTraining && picking)) && (
           <div className="mt-1.5">
             {picking ? (
               <div className="space-y-2">
@@ -511,7 +554,7 @@ function JobRow({
                   }
                 />
                 {training ? (
-                  unregisteredMeisho.length > 0 && (
+                  unregisteredMeisho.length > 0 && !doneTraining && (
                     <label className="block text-[11px] text-ash">
                       図鑑にまだいない名将なら、ここから選ぶと作って入れます:
                       <select

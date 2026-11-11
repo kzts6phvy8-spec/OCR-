@@ -1,6 +1,7 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { MeishoTalent, ExportPayload, Faction, OcrJob, Talent, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
 import { meishoTrainingToText, warlordsToText } from "../../core/text.ts";
+import { warlordLabel } from "../../core/domain.ts";
 import { decideSpecial, detectTalentOrder, emptyWarlordInput, hasMeishoMark, stripMeisho, fixTalentOrder, learnTalentStats, talentRules, mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies } from "../../core/oni.ts";
@@ -28,6 +29,30 @@ export function lastHealthReport(): HealthReport | null {
 }
 
 // 画面から使う操作。サーバーは無く、すべて端末内で完結する。
+
+/**
+ * 武将から名将修行の画面を外す (その画面で読んだ追加天賦も外し、残りの画面で丸の入れ方を決め直す)。
+ * 名将修行が無くなったら、名将一覧に載っていない武将の名将の印も外す
+ */
+async function removeTrainingImages(w: Warlord, images: string[]): Promise<void> {
+  if (!(w.meisho_images ?? []).some((id) => images.includes(id))) return;
+  const { extractionToPatch, normText } = await import("../../core/domain.ts");
+  const effects: string[] = [];
+  for (const id of images) {
+    const ext = await db.getExtraction(id).catch(() => null);
+    const t = ext ? extractionToPatch(ext).meisho_talents?.[0] : undefined;
+    if (t) effects.push(normText(t.effect));
+  }
+  const rest = (w.meisho_images ?? []).filter((id) => !images.includes(id));
+  // 丸の入れ方を決め直した後は位置が変わっていることがあるので、効果で外す
+  const talents = (w.meisho_talents ?? []).filter((t) => !effects.includes(normText(t.effect)));
+  const saved = await db.updateWarlord(
+    w.id,
+    normalizeInput({ ...toInput(w), meisho_images: rest, meisho_talents: talents, ...(rest.length === 0 && talents.length === 0 ? await keepMeishoMark(w) : {}) }),
+  );
+  const { recomputeMeishoTalents } = await import("./meishoSlots.ts");
+  await recomputeMeishoTalents(saved);
+}
 
 /**
  * 名将修行を外した武将の名将の印: 名将一覧に勢力ごと載っている・手で決めた武将はそのまま、それ以外は外す
@@ -765,6 +790,37 @@ export const api = {
     return out;
   },
 
+  /** 解析が終わった画面 1 枚を、もう一度読み取って同じ武将に保存し直す (AI で読み直す) */
+  async reanalyzeJob(jobId: string): Promise<void> {
+    const job = await db.getJob(jobId);
+    if (!job || job.status !== "done") throw new Error("この解析は、まだ終わっていません");
+    await queue.enqueue([{ fileName: `${job.file_name} (再解析)`, imageId: job.image_id }], job.mode, job.warlord_id, job.faction ?? "", true);
+    await db.deleteJobs([jobId]);
+    queue.notifyQueueChange();
+  },
+
+  /** 解析が終わった名将修行の画面 1 枚を、手で選んだ名将に入れ直す (前に入っていた名将からは外す。AI なし) */
+  async reassignTrainingImage(jobId: string, imageId: string, warlordId: string): Promise<Warlord> {
+    await api.assignTrainingGroup([imageId], warlordId);
+    const w = await db.getWarlord(warlordId);
+    if (!w) throw new Error("武将が見つかりません");
+    await queue.patchJob(jobId, { warlord_id: w.id, warlord_label: warlordLabel(w), warnings: ["手で選んだ名将に入れ直しました"] });
+    return w;
+  },
+
+  /** 解析が終わった名将修行の画面 1 枚を、誰の画面か見分け直す (今入っている名将は候補から外す。読み取りはやり直さない) */
+  async reidentifyTrainingImage(jobId: string, imageId: string): Promise<void> {
+    const owners = (await db.listWarlords()).filter((w) => (w.meisho_images ?? []).includes(imageId));
+    await queue.enqueue([{ fileName: "名将修行の画面 (見分け直し)", imageId }], "auto", null, "", true, {
+      reuse: true,
+      excludeIds: owners.map((w) => w.id),
+    });
+    // 新しい記録が画像を使うので、外しても画像は消えない
+    for (const w of owners) await removeTrainingImages(w, [imageId]);
+    await db.deleteJobs([jobId]);
+    queue.notifyQueueChange();
+  },
+
   /** 名将修行の画面の組を、手で選んだ名将に入れる (前に入っていた武将からは外す。AI なし) */
   async assignTrainingGroup(images: string[], warlordId: string): Promise<void> {
     const { extractionToPatch, mergeMeishoTalents, normText } = await import("../../core/domain.ts");
@@ -775,13 +831,8 @@ export const api = {
       if (t) read.push(t);
     }
     for (const w of await db.listWarlords()) {
-      if (w.id === warlordId || !(w.meisho_images ?? []).some((id) => images.includes(id))) continue;
-      const rest = (w.meisho_images ?? []).filter((id) => !images.includes(id));
-      const talents = (w.meisho_talents ?? []).filter((t) => !read.some((r) => r.rank === t.rank && r.slot === t.slot && normText(r.effect) === normText(t.effect)));
-      await db.updateWarlord(
-        w.id,
-        normalizeInput({ ...toInput(w), meisho_images: rest, meisho_talents: talents, ...(rest.length === 0 && talents.length === 0 ? await keepMeishoMark(w) : {}) }),
-      );
+      if (w.id === warlordId) continue;
+      await removeTrainingImages(w, images);
     }
     const to = await db.getWarlord(warlordId);
     if (!to) throw new Error("武将が見つかりません");
@@ -930,7 +981,7 @@ export const api = {
 
 // 武将を読んでから書き換える操作は、解析結果の保存と重ならないように 1 つずつ行う (変更が消えないように)。
 // ※ ここに挙げた操作どうしで呼び合うと順番待ちで止まるので、中から他の api の操作を呼ばないこと
-for (const key of ["autoFixTalentOrder", "markMeisho", "fixMisassignedTraining", "assignTrainingGroup", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
+for (const key of ["autoFixTalentOrder", "markMeisho", "fixMisassignedTraining", "assignTrainingGroup", "reidentifyTrainingImage", "dedupeImages", "reanalyzeWarlord", "updateWarlord", "fillPriorities", "fixHimeSpecial", "shareAllOniSynergies", "runHealthCheck", "splitWarlord", "deleteWarlords", "rebuildWarlords", "mergeWarlords", "attachImages", "importData"] as const) {
   const fn = api[key] as (...args: unknown[]) => Promise<unknown>;
   (api as Record<string, unknown>)[key] = (...args: unknown[]) => queue.exclusive(() => fn.apply(api, args));
 }
