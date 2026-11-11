@@ -62,6 +62,8 @@ export interface MeishoTalent {
   effect: string;
   /** 修行済みか (「(未修行)」と書かれていなければ修行済み) */
   trained: boolean;
+  /** 書き出しの時だけ: 名将全員が同じ丸なので、読み取れていなくても推定で入れた */
+  estimated?: boolean;
 }
 
 export interface SynergySkill {

@@ -889,16 +889,36 @@ export const api = {
 
   /** 名将の武将だけを書き出す (テキスト / JSON) */
   async exportMeisho(format: "txt" | "json" | "training"): Promise<{ blob: Blob; count: number }> {
-    const { simMeishoTalents, simMeishoNotIn } = await import("../../core/meishoSimData.ts");
+    const { SIM_MEISHO, simMeishoNotIn } = await import("../../core/meishoSimData.ts");
+    const { MEISHO_SLOTS } = await import("../../core/types.ts");
     const all = await db.listWarlords();
-    // 図鑑に名将修行のデータが無い名将は、シミュレーターに直接渡したデータで埋める
-    const meisho = all
-      .filter((w) => w.is_meisho || simMeishoTalents(w))
-      .map((w): Warlord => {
-        if (w.meisho_talents?.length) return w;
-        const sim = simMeishoTalents(w);
-        return sim ? { ...w, is_meisho: true, meisho_talents: sim, meisho_source: "simulator" } : w;
-      });
+    const meisho: Warlord[] = [];
+    const used = new Set<string>();
+    // シミュレーターに直接渡した名将: 同じ勢力・名前の武将が図鑑に何人いても 1 人だけ書き出す
+    // (図鑑で読み取ったデータがある武将 → 名将の印がある武将 → 通常/特異が合う武将 の順に選ぶ)
+    for (const m of SIM_MEISHO) {
+      const twins = SIM_MEISHO.filter((x) => x.faction === m.faction && x.name === m.name).length > 1;
+      const same = all.filter((w) => w.faction === m.faction && w.name === m.name && !used.has(w.id) && (!twins || w.is_special === m.special));
+      if (same.length === 0) continue;
+      const pick =
+        same.find((w) => w.meisho_talents?.length) ?? same.find((w) => w.is_meisho) ?? same.find((w) => w.is_special === m.special) ?? same[0];
+      used.add(pick.id);
+      // 同じ勢力・名前の他の武将は名将として書き出さない (名将ではない通常/特異の武将)
+      for (const w of same) used.add(w.id);
+      meisho.push(
+        pick.meisho_talents?.length
+          ? pick
+          : { ...pick, is_meisho: true, meisho_talents: m.effects.map((effect, k) => ({ ...MEISHO_SLOTS[k], effect, trained: true })), meisho_source: "simulator" },
+      );
+    }
+    // それ以外の名将 (図鑑で読み取る名将)。同じ勢力・名前で何人もいる時は、データがある武将を 1 人だけ
+    const rest = all.filter((w) => w.is_meisho && !used.has(w.id));
+    for (const w of rest) {
+      const same = rest.filter((x) => x.faction === w.faction && x.name === w.name);
+      const pick = same.find((x) => x.meisho_talents?.length) ?? same[0];
+      if (pick.id !== w.id) continue;
+      meisho.push(w);
+    }
     // シミュレーターにはあるが、図鑑にまだいない名将も入れる
     const now = new Date().toISOString();
     for (const m of simMeishoNotIn(all)) {
@@ -910,6 +930,17 @@ export const api = {
         screenshot_count: 0,
         meisho_source: "simulator",
       });
+    }
+    // 名将全員が同じ丸 (少史 上: 兵数上限+175、少納言 下: 物理計略防御+20%) が足りない名将は、推定で埋める (書き出しの時だけ)
+    for (const [k, w] of meisho.entries()) {
+      const talents = [...(w.meisho_talents ?? [])];
+      const add = (rank: string, slot: string, effect: string) => {
+        if (!talents.some((t) => t.rank === rank && t.slot === slot)) talents.push({ rank, slot, effect, trained: false, estimated: true });
+      };
+      add("少史", "上", "兵数上限+175");
+      add("少納言", "下", "物理計略防御+20%");
+      const order = (t: MeishoTalent) => MEISHO_SLOTS.findIndex((s) => s.rank === t.rank && s.slot === t.slot);
+      meisho[k] = { ...w, meisho_talents: talents.sort((a, b) => order(a) - order(b)) };
     }
     const list = meisho.sort(
       (a, b) => a.faction.localeCompare(b.faction, "ja") || a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special),

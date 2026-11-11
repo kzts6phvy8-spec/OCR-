@@ -517,7 +517,11 @@ export function resolveMeishoSlots(reads: MeishoRead[]): MeishoTalent[] {
   const prefs = (r: MeishoRead) => {
     const rule = meishoSlotFromEffect(r.effect);
     const ai = r.aiRank ? aiMeishoSlot(r.aiRank, r.aiSlot) : { rank: r.rank, slot: r.slot };
-    const list = [rule, ai, rule && partner(rule), ai && partner(ai)].filter((x): x is { rank: string; slot: string } => Boolean(x));
+    const raw = [rule, ai, rule && partner(rule), ai && partner(ai)].filter((x): x is { rank: string; slot: string } => Boolean(x));
+    // 上下 2 つある段階で上下が分からないもの (前の読み取りで「中納言」とだけ入ったもの) は、上・下のどちらか空いている方へ
+    const list = raw.flatMap((x) =>
+      x.slot === "" && x.rank !== "大史" && x.rank !== "大輔" ? [{ rank: x.rank, slot: "上" }, { rank: x.rank, slot: "下" }] : [x],
+    );
     return list.filter((x, i) => list.findIndex((y) => key(y) === key(x)) === i);
   };
   const placed = new Map<string, MeishoTalent>();
