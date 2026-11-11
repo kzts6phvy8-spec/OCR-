@@ -300,6 +300,10 @@ function TrainingSorter({ warlords, onChanged }: { warlords: Warlord[]; onChange
               <p className="text-washi">
                 {g.images.length} 枚 ・ いま: {g.owners.length ? g.owners.map((w) => `${w.name} (${w.faction || "勢力未入力"})`).join("、") : "どの名将にも入っていない"}
               </p>
+              {/* 1 人の名将に、カードの絵が違う組が 2 つ以上入っている = どちらかが取り違え */}
+              {g.owners.some((w) => (groups ?? []).filter((x) => x.owners.some((o) => o.id === w.id)).length > 1) && (
+                <p className="font-bold text-hi-400">※ この名将には、絵の違う別の組も入っています。どちらかが取り違えです。正しい名将を選び直してください</p>
+              )}
               <p className="truncate text-[11px] text-ash">{g.talents.map((t) => `${t.rank}${t.slot ? ` ${t.slot}` : ""}:${t.effect}`).join(" / ")}</p>
               <select
                 className="field mt-1 text-xs"
