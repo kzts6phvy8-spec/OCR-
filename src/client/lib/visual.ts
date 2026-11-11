@@ -530,10 +530,16 @@ export async function buildMeishoConfirmRequest(imageId: string, shortlist: Warl
 
 /** 2 回目の答えから、決まった武将 ID を取り出す (確信度 65 未満なら null) */
 export function parseMeishoConfirm(text: string, ids: string[]): string | null {
+  const d = parseMeishoConfirmDetail(text, ids);
+  return d && d.confidence >= 65 ? d.id : null;
+}
+
+/** 2 回目の答え (選んだ武将 ID と確信度)。選べていなければ null */
+export function parseMeishoConfirmDetail(text: string, ids: string[]): { id: string; confidence: number } | null {
   const v = parseJson<{ match?: number; confidence?: number }>(text);
   const n = Number(v?.match);
-  if (!Number.isInteger(n) || n < 1 || n > ids.length || (v?.confidence ?? 0) < 65) return null;
-  return ids[n - 1];
+  if (!Number.isInteger(n) || n < 1 || n > ids.length) return null;
+  return { id: ids[n - 1], confidence: Number(v?.confidence ?? 0) };
 }
 
 /**
@@ -541,7 +547,12 @@ export function parseMeishoConfirm(text: string, ids: string[]): string | null {
  * 1 回目: 名将全員の立ち絵の一覧表から、似ている候補を 3 人まで選ばせる。
  * 2 回目: その 3 人の立ち絵を大きく見せて、同じ絵を 1 人選ばせる (確信度 80 未満なら決めない)
  */
-export async function identifyMeishoByArt(imageId: string, candidates: Warlord[]): Promise<Warlord | null> {
+export async function identifyMeishoByArt(
+  imageId: string,
+  candidates: Warlord[],
+  /** 選んだ武将ごとに必要な確信度 (無ければ 65) */
+  minConfidence: (w: Warlord) => number = () => 65,
+): Promise<Warlord | null> {
   const settings = loadSettings();
   const first = await buildMeishoShortlistRequest(imageId, candidates);
   if (!first) return null;
@@ -550,8 +561,9 @@ export async function identifyMeishoByArt(imageId: string, candidates: Warlord[]
   if (shortlist.length === 0) return null;
   const second = await buildMeishoConfirmRequest(imageId, shortlist);
   if (!second) return null;
-  const id = parseMeishoConfirm(await ask(second.parts, settings, CONFIRM_SCHEMA, 100), second.ids);
-  return id ? (candidates.find((w) => w.id === id) ?? null) : null;
+  const d = parseMeishoConfirmDetail(await ask(second.parts, settings, CONFIRM_SCHEMA, 100), second.ids);
+  const found = d ? candidates.find((w) => w.id === d.id) : undefined;
+  return found && d && d.confidence >= minConfidence(found) ? found : null;
 }
 
 /** 名将修行の画面を、カードの絵が同じものどうし (= 同じ名将) の組に分ける (AI なし) */

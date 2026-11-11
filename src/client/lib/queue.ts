@@ -24,7 +24,7 @@ import {
   identifyMeishoByArt,
   matchKnownTraining,
   similarTrainingImages,
-  parseMeishoConfirm,
+  parseMeishoConfirmDetail,
   parseMeishoShortlist,
   type Part,
 } from "./visual.ts";
@@ -354,7 +354,7 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
         if (known) return known;
         // バックグラウンド解析がオンなら、AI での見分けはサーバーに任せる (アプリを閉じていても進む)
         if (bgActive(loadSettings())) throw new NeedServerIdentify();
-        return identifyMeishoByArt(job.image_id, await meishoCandidates(job, extraction));
+        return identifyMeishoByArt(job.image_id, await meishoCandidates(job, extraction), await meishoMinConfidence(job.image_id, extraction));
       },
       similarNames: async (name) => {
         // 名前だけを索引から読む (全武将の中身を毎回読むと遅い)
@@ -399,14 +399,24 @@ async function groupReads(imageId: string, extraction: OcrExtraction | null | un
 }
 
 /**
- * 名将修行の画面の持ち主になりうる名将か。
- * シミュレーターに名将修行のデータがある名将 (46 人) は、読んだ追加天賦がそのデータと合う時 (その名将らしい効果が合う) だけ。
- * データが無い名将は、食い違いが無ければ候補
+ * 名将修行の画面の持ち主になりうる名将か: 読んだ追加天賦が、シミュレーターのデータ (46 人分) と食い違わない名将。
+ * 立ち絵はどの名将も見比べる
  */
 async function meishoFits(imageId: string, extraction: OcrExtraction | null | undefined): Promise<(w: Warlord) => boolean> {
+  const { simEvidence } = await import("../../core/meishoSimData.ts");
+  const reads = await groupReads(imageId, extraction);
+  return (w) => simEvidence(w, reads) !== "contradict";
+}
+
+/**
+ * 立ち絵の見比べで決める時に必要な確信度。
+ * シミュレーターのデータがある名将で、全員共通の効果しか読めていない (追加天賦が手がかりにならない) 時は、
+ * 似た立ち絵の別の名将と取り違えやすかったので、ほぼ確かな時 (90 以上) だけにする
+ */
+async function meishoMinConfidence(imageId: string, extraction: OcrExtraction | null | undefined): Promise<(w: Warlord) => number> {
   const { simEvidence, simMeishoTalents } = await import("../../core/meishoSimData.ts");
   const reads = await groupReads(imageId, extraction);
-  return (w) => (simMeishoTalents(w) ? simEvidence(w, reads) === "match" : true);
+  return (w) => (simMeishoTalents(w) && simEvidence(w, reads) !== "match" ? 90 : 65);
 }
 
 /** 読んだ追加天賦が、シミュレーターのデータの名将の 1 人とだけ合う時は、その名将 (立ち絵を見比べなくても決まる) */
@@ -473,9 +483,10 @@ async function applyMeishoAnswer(job: OcrJob, text: string) {
     if (!second) return meishoFail(job, extraction);
     return sendMeishoRequest(job, extraction, 2, second.parts, second.ids);
   }
-  const id = parseMeishoConfirm(text, ids);
-  const found = id ? await db.getWarlord(id) : null;
-  if (!found || !(await meishoFits(job.image_id, extraction))(found)) return meishoFail(job, extraction);
+  const d = parseMeishoConfirmDetail(text, ids);
+  const found = d ? await db.getWarlord(d.id) : null;
+  if (!found || !d || !(await meishoFits(job.image_id, extraction))(found)) return meishoFail(job, extraction);
+  if (d.confidence < (await meishoMinConfidence(job.image_id, extraction))(found)) return meishoFail(job, extraction);
   // 見分けた武将を統合先にして保存する
   const fresh = await update(job, { target_id: found.id });
   const result = await ingestJob(fresh, extraction);

@@ -387,7 +387,7 @@ describe("名将修行の取り違えを、シミュレーターのデータで�
 
 describe("名将修行の画面とシミュレーターのデータの合い方", async () => {
   const { simEvidence } = await import("./meishoSimData.ts");
-  const yoshimasa = { faction: "限定武将", name: "足利義政", is_special: false };
+  const yoshimasa = { faction: "限定武将" as const, name: "足利義政", is_special: false };
   it("その名将らしい効果が合えば match", () => {
     expect(simEvidence(yoshimasa, [{ rank: "大輔", slot: "", effect: "戦闘進入時、受止め+40%、デバフ耐性+20%", trained: false }])).toBe("match");
   });
