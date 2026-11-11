@@ -443,7 +443,10 @@ async function meishoCandidates(job: OcrJob, extraction?: OcrExtraction | null):
   const { ROSTER_NAMES } = await import("../../core/meisho.ts");
   const SPECIAL_FACTIONS = ["限定武将", "コラボ武将", "姫武将"];
   const byName = all.filter((w) => ROSTER_NAMES.has(w.name) && SPECIAL_FACTIONS.includes(w.faction) && !(w.meisho_manual && !w.is_meisho));
-  return [...new Set([...all.filter((w) => w.is_meisho), ...unsure, ...byName])];
+  // すでに名将修行の画面が入っている武将は、立ち絵の見比べの候補にしない。
+  // 同じ名将の画面ならカードの絵が同じなので、その前の端末での見比べで決まっているはず。決まらなかった = 別の名将の画面
+  // (例: 鶴姫の画面がもう入っているのに、霧隠才蔵の画面を鶴姫と取り違えた)
+  return [...new Set([...all.filter((w) => w.is_meisho), ...unsure, ...byName])].filter((w) => !w.meisho_images?.length);
 }
 
 const MEISHO_FAIL = "名将修行の画面の立ち絵から、どの名将か見分けられませんでした。下の「どの名将か選ぶ」で選んでください (その名将の名将修行に入れるだけで、武将をまとめるわけではありません)";
@@ -489,6 +492,8 @@ async function applyMeishoAnswer(job: OcrJob, text: string) {
   const d = parseMeishoConfirmDetail(text, ids);
   const found = d ? await db.getWarlord(d.id) : null;
   if (!found || !d || !(await meishoFits(job.image_id, extraction))(found)) return meishoFail(job, extraction);
+  // 答えを待つ間に別の画面が入った武将で、その画面とカードの絵が違えば、別の名将の画面
+  if (found.meisho_images?.length && !(await matchKnownTraining(job.image_id, [found]))) return meishoFail(job, extraction);
   if (d.confidence < (await meishoMinConfidence(job.image_id, extraction))(found)) return meishoFail(job, extraction);
   // 見分けた武将を統合先にして保存する
   const fresh = await update(job, { target_id: found.id });
