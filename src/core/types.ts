@@ -92,6 +92,21 @@ export const APEX_COSTS: { rank: string; big: number; small: number; area: strin
   { rank: "中納言", big: 130, small: 65, area: "左下" },
 ];
 
+/**
+ * 頂点武将の名将 (「名将の道」の「名将覚醒」の画面) の丸 1 つ。今までの名将修行とは形が違い、
+ * 少納言 = 【強化】奥義スキル (Lv.1〜4)、大輔 = 名将スキル (上) と追加天賦 (下)、中納言 = 【強化】名将スキル (Lv.1〜5)
+ */
+export interface MeishoAwakeningNode {
+  /** 少納言 / 大輔 / 中納言 */
+  rank: string;
+  /** 大輔の 上 (名将スキル) / 下 (追加天賦)。ほかは空 */
+  slot: string;
+  /** 欄の見出し (【強化】奥義スキル / 名将スキル / 追加天賦 / 【強化】名将スキル) */
+  title: string;
+  /** 効果の全文 (「(未開放)」は含めない。長い文は何枚かのスクショをつなげる) */
+  effect: string;
+}
+
 export interface SynergySkill {
   partner: string;
   effect: string;
@@ -154,6 +169,8 @@ export interface Warlord {
   passive_skill?: string;
   /** 頂点武将の頂天突破の丸 (突破の画面から 1 つずつ読み取る) */
   apex_nodes?: ApexNode[];
+  /** 頂点武将の名将覚醒 (「名将の道」の画面) の丸 */
+  meisho_awakening?: MeishoAwakeningNode[];
   /** 頂天突破の画面の画像 (登録画像とは別に持つ) */
   apex_images?: string[];
   /** 鬼憑武将のシーズン (4 人の組。例: 徳川四天王)。連携スキルから自動で入るほか、手でも選べる */

@@ -53,6 +53,14 @@ export const OcrExtractionSchema = z.object({
       cost: nullableNumber("緑の「突破」ボタンの数字 (例: 25)。ボタンが無ければ null"),
     })
     .optional(),
+  // 頂点武将の名将 (「名将の道」の「名将覚醒」の画面)。前の版で送った解析の結果には無いので、無くても通す
+  meisho_awakening: z
+    .object({
+      visible: z.boolean().describe("左に「名将の道」のカード、上に「名将覚醒」の見出しと 少納言 >> 大輔 >> 中納言 の並びがある画面が写っている場合のみ true"),
+      title: nullableString("下の欄の見出しをそのまま (【強化】奥義スキル / 名将スキル / 追加天賦 / 【強化】名将スキル)"),
+      effect: nullableString("見出しの下の効果の、見えている所の全文 (「Lv.1:」などの書き出しも含める)。「(未開放)」は含めない"),
+    })
+    .optional(),
   passive_skill: z
     .object({
       visible: z.boolean().describe("スキル画面に「受動スキル」の欄が写っている場合のみ true (頂点武将だけにある)"),
@@ -112,7 +120,7 @@ export type OcrExtraction = z.infer<typeof OcrExtractionSchema>;
  * AI が名将修行の画面とも答えることがある: 頂天突破の画面なら名将修行の画面ではない
  */
 export function tidyExtraction(e: OcrExtraction): OcrExtraction {
-  if (e.apex_breakthrough?.visible && e.meisho_training?.visible) {
+  if ((e.apex_breakthrough?.visible || e.meisho_awakening?.visible) && e.meisho_training?.visible) {
     return { ...e, meisho_training: { ...e.meisho_training, visible: false }, meisho_marker_visible: false };
   }
   return e;

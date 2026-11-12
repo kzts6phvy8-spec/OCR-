@@ -519,6 +519,7 @@ export const api = {
         meisho_talents: w.meisho_talents,
         meisho_images: w.meisho_images,
         apex_nodes: w.apex_nodes,
+        meisho_awakening: w.meisho_awakening,
         apex_images: w.apex_images,
         gallery_images: [],
         image_url: "",
@@ -789,7 +790,7 @@ export const api = {
   async clearApex(id: string): Promise<Warlord> {
     const w = await db.getWarlord(id);
     if (!w) throw new Error("武将が見つかりません");
-    const saved = await db.updateWarlord(id, normalizeInput({ ...toInput(w), apex_nodes: [], apex_images: [] }));
+    const saved = await db.updateWarlord(id, normalizeInput({ ...toInput(w), apex_nodes: [], meisho_awakening: [], apex_images: [] }));
     await db.removeUnreferencedImages(w.apex_images ?? []);
     return saved;
   },

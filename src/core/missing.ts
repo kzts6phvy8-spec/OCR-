@@ -3,8 +3,9 @@
 import { APEX_COSTS, AWAKENING_PRIORITIES, MEISHO_SLOTS, type Warlord } from "./types.ts";
 
 /** 名将の武将で、名将修行の追加天賦がまだ読み取れていない丸 (例: 「少史 下」「大輔」) */
+// 頂点武将の名将は「名将の道」の形 (丸 4 つ) で、名将修行の丸 8 つは無い
 export const meishoTalentGaps = (w: Warlord): string[] =>
-  w.is_meisho
+  w.is_meisho && w.faction !== "頂点武将"
     ? MEISHO_SLOTS.filter((s) => !(w.meisho_talents ?? []).some((t) => t.rank === s.rank && t.slot === s.slot)).map((s) => `${s.rank}${s.slot ? ` ${s.slot}` : ""}`)
     : [];
 

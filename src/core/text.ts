@@ -48,6 +48,10 @@ export function warlordToText(w: Warlord): string {
     lines.push("頂天突破");
     for (const n of w.apex_nodes) lines.push(apexNodeText(n));
   }
+  if (w.meisho_awakening?.length) {
+    lines.push("名将覚醒 (名将の道)");
+    for (const n of w.meisho_awakening) lines.push(`${n.rank}${n.slot ? ` ${n.slot}` : ""}『${n.title}』${n.effect}`);
+  }
   if (w.troop_variants.length) lines.push(`兵種:${w.troop_variants.join("、")}`);
   if (w.rarity) lines.push(`レア度:${w.rarity}`);
   if (w.faction) lines.push(`勢力:${w.faction}`);

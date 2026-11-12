@@ -328,6 +328,7 @@ function ingestJob(snapshot: OcrJob, read: OcrExtraction) {
             meisho_images: target.meisho_images,
             // 頂天突破の画面も登録画像に残さないので消さない
             apex_nodes: target.apex_nodes,
+            meisho_awakening: target.meisho_awakening,
             apex_images: target.apex_images,
             gallery_images: target.gallery_images,
             image_url: target.image_url,

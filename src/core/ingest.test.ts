@@ -315,3 +315,19 @@ describe("頂天突破の画面を名将修行の画面とも答えた時", () =
     expect(e.meisho_marker_visible).toBe(false);
   });
 });
+
+describe("頂点武将の名将の道の画面", () => {
+  it("名将の頂点武将に入れ、送って撮った文をつなげる", async () => {
+    await ingestExtraction(makeExtraction({ name: "今川義元", faction: "頂点武将" }), opts("imagawa.png"));
+    const d = await ingestExtraction(makeExtraction({ name: "伊達政宗", faction: "頂点武将", meisho_marker_visible: true }), opts("date.png"));
+    const road = (title: string, effect: string) => makeExtraction({ name: null, meisho_awakening: { visible: true, title, effect } });
+    const o = { ...opts("road-1.png"), sameArt: async () => "unknown" as const };
+    await ingestExtraction(road("名将スキル", "ターン開始時、闘気+4pt 通常攻撃後、闘気+2pt 闘気が上限に達すると、闘気を全て消費して「蒼牙」を発動"), o);
+    await ingestExtraction(road("名将スキル", "闘気が上限に達すると、闘気を全て消費して「蒼牙」を発動 蒼牙:味方後列(闘気上限:10pt)(未開放)"), { ...o, imageId: "road-2.png" });
+    const r = await ingestExtraction(road("追加天賦", "最終ダメージ+10%、最終ダメージ軽減+10%"), { ...o, imageId: "road-3.png" });
+    expect(r.warlord.id).toBe(d.warlord.id);
+    expect(r.warlord.meisho_awakening?.map((n) => `${n.rank}${n.slot}`)).toEqual(["大輔上", "大輔下"]);
+    expect(r.warlord.meisho_awakening?.[0].effect).toBe("ターン開始時、闘気+4pt通常攻撃後、闘気+2pt闘気が上限に達すると、闘気を全て消費して「蒼牙」を発動蒼牙:味方後列(闘気上限:10pt)");
+    expect(r.warlord.meisho_talents ?? []).toEqual([]);
+  });
+});

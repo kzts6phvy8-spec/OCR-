@@ -887,7 +887,7 @@ function DetailView({
           {(w.apex_nodes?.length ?? 0) > 0 && (
             <button
               onClick={() => {
-                if (!confirm(`「${w.name}」の頂天突破 (${w.apex_nodes!.length} つ) を消しますか？\n別の武将の画面が取り違えて入っていた時に使います。`)) return;
+                if (!confirm(`「${w.name}」の頂天突破 (${w.apex_nodes!.length} つ) と名将覚醒を消しますか？\n別の武将の画面が取り違えて入っていた時に使います。`)) return;
                 void api.clearApex(w.id).then(onSaved);
               }}
               className="mt-2 rounded-md border border-hi-600/60 px-2.5 py-1 text-xs text-hi-400"
@@ -896,6 +896,24 @@ function DetailView({
             </button>
           )}
           <p className="mt-1.5 text-[11px] text-ebony-500">「突破」の画面で丸を選ぶと、下に効果が出ます。丸ごとにスクショを取り込むと、ここに増えます (画面に名前が無くても、立ち絵から誰か見分けます)。</p>
+        </Section>
+      )}
+
+      {(w.meisho_awakening?.length ?? 0) > 0 && (
+        <Section title="名将覚醒 (名将の道)">
+          <ul className="space-y-1.5">
+            {w.meisho_awakening!.map((n, i) => (
+              <li key={i} className="rounded-lg border border-shu-600/60 bg-ebony-900 p-2.5 text-sm">
+                <span className="font-bold text-gold-300">
+                  {n.rank}
+                  {n.slot && ` ${n.slot}`}
+                </span>
+                <span className="ml-2 font-bold">{n.title}</span>
+                <p className="mt-0.5 whitespace-pre-wrap text-washi/80">{n.effect}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11px] text-ebony-500">長い文は、欄の中を送って撮った何枚かのスクショをつなげます。</p>
         </Section>
       )}
 
