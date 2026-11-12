@@ -120,6 +120,8 @@ export interface Warlord {
   meisho_images?: string[];
   /** 名将修行の画面を、利用者が手でこの武将に振り分けたことがある (この武将も名将修行の画面の見分けの候補にする) */
   meisho_training_manual?: boolean;
+  /** 名将修行の追加天賦を手で入力した (画面からの決め直しで上書きしない) */
+  meisho_talents_manual?: boolean;
   /** 書き出しの時だけ付ける: 名将修行の追加天賦が、シミュレーターに直接渡したデータから入っている (図鑑には保存しない) */
   meisho_source?: "simulator";
   /** 鬼憑武将のシーズン (4 人の組。例: 徳川四天王)。連携スキルから自動で入るほか、手でも選べる */

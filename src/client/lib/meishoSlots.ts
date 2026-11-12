@@ -8,7 +8,8 @@ import * as db from "./db.ts";
 
 /** 1 人分を決め直して保存する (変わらなければ保存しない)。決め直した武将を返す */
 export async function recomputeMeishoTalents(w: Warlord): Promise<Warlord> {
-  if (!w.meisho_images?.length) return w;
+  // 手で入力した名将修行は、画面から決め直さない
+  if (!w.meisho_images?.length || w.meisho_talents_manual) return w;
   const reads: MeishoRead[] = [];
   for (const id of w.meisho_images) {
     const ext = await db.getExtraction(id).catch(() => null);

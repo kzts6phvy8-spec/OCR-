@@ -24,6 +24,7 @@ import {
 import {
   AWAKENING_PRIORITIES,
   FACTIONS,
+  MEISHO_SLOTS,
   RARITIES,
   isPending,
   type Talent,
@@ -1104,6 +1105,7 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
           />
           名将 (奥義スキルの欄の右上に「名将一覧」がある武将)
         </label>
+        {draft.is_meisho && <MeishoTalentEditor draft={draft} setDraft={setDraft} />}
         <div className="space-y-2">
           {draft.synergy_skills.map((s, i) => (
             <div key={i} className="grid items-end gap-2 rounded-lg border border-ebony-700 p-2 sm:grid-cols-[12rem_1fr_auto]">
@@ -1259,6 +1261,46 @@ function MoveMeisho({ w, allWarlords, onSaved }: { w: Warlord; allWarlords: Warl
           });
         }}
       />
+    </div>
+  );
+}
+
+/** 名将修行の追加天賦を、丸 8 つの欄に手で入力する (空欄はその丸を消す) */
+function MeishoTalentEditor({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d: WarlordInput) => WarlordInput) => void }) {
+  const find = (rank: string, slot: string) => (draft.meisho_talents ?? []).find((t) => t.rank === rank && t.slot === slot);
+  const setSlot = (rank: string, slot: string, patch: { effect?: string; trained?: boolean }) =>
+    setDraft((d) => {
+      const list = (d.meisho_talents ?? []).filter((t) => !(t.rank === rank && t.slot === slot));
+      const cur = (d.meisho_talents ?? []).find((t) => t.rank === rank && t.slot === slot);
+      const effect = patch.effect ?? cur?.effect ?? "";
+      const trained = patch.trained ?? cur?.trained ?? false;
+      if (effect.trim()) list.push({ rank, slot, effect, trained });
+      const order = (t: { rank: string; slot: string }) => MEISHO_SLOTS.findIndex((x) => x.rank === t.rank && x.slot === t.slot);
+      // 手で入力したので、名将修行の画面からの決め直しで上書きしない
+      return { ...d, meisho_talents: list.sort((a, b) => order(a) - order(b)), meisho_talents_manual: true };
+    });
+  return (
+    <div className="mb-3 rounded-lg border border-shu-600/40 p-2.5">
+      <p className="mb-1.5 text-sm font-bold text-gold-300">名将修行 (追加天賦)</p>
+      <p className="mb-2 text-[11px] text-ash">効果と数値を入力してください (例: 最終ダメージ+15%)。空欄にするとその丸は未入力になります。</p>
+      <div className="space-y-1.5">
+        {MEISHO_SLOTS.map(({ rank, slot }) => {
+          const t = find(rank, slot);
+          return (
+            <div key={`${rank}${slot}`} className="flex items-center gap-1.5">
+              <span className="w-16 shrink-0 text-xs font-bold text-gold-300">
+                {rank}
+                {slot && ` ${slot}`}
+              </span>
+              <input className="field flex-1 text-sm" value={t?.effect ?? ""} placeholder="未入力" onChange={(e) => setSlot(rank, slot, { effect: e.target.value })} />
+              <label className="flex shrink-0 items-center gap-1 text-[11px] text-ash">
+                <input type="checkbox" checked={Boolean(t?.trained)} disabled={!t} onChange={(e) => setSlot(rank, slot, { trained: e.target.checked })} className="accent-shu-500" />
+                修行済み
+              </label>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
