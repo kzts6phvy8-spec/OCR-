@@ -84,7 +84,8 @@ export function MeishoPanel({
   // 名将の方が選ばれていて、名将修行もそろっている (シミュレーターのデータがある・8 つ入っている) 名将は、ふだんは出さない
   const [showAll, setShowAll] = useState(false);
   const done = (m: (typeof matches)[number]) =>
-    m.candidates.some((w) => w.is_meisho && (simMeishoTalents(w) !== null || meishoTalentGaps(w).length === 0));
+    // 一覧に並ぶ人数ぶん (江姫・前田利家は 2 人) そろっていれば、そろっている
+    m.candidates.filter((w) => w.is_meisho && (simMeishoTalents(w) !== null || meishoTalentGaps(w).length === 0)).length >= m.count;
   const shown = showAll ? matches : matches.filter((m) => !done(m));
   const factions = [...new Set(shown.map((m) => m.faction))];
   const missing = matches.filter((m) => m.candidates.length === 0).length;
@@ -160,7 +161,12 @@ export function MeishoPanel({
             if (m.candidates.length === 0) return [{ key: `${m.faction}|${m.name}`, label: `${m.name} (${m.faction})`, w: null as Warlord | null, gaps: ["図鑑に未登録"] }];
             // 同じ名前が何人もいる時は、名将の印がある武将 (無ければ全員) を見る
             const ws = m.candidates.some((w) => w.is_meisho) ? m.candidates.filter((w) => w.is_meisho) : m.candidates;
-            return ws.map((w) => ({
+            // 同じ名将が図鑑に 2 重に登録されていて、どちらかに名将修行がそろっていれば、そろっているとみなす
+            // (一覧に並ぶ人数ぶんだけ、そろっている武将がいれば足りている)
+            const complete = ws.filter((w) => meishoTalentGaps({ ...w, is_meisho: true }).length === 0);
+            if (complete.length >= m.count) return complete.slice(0, m.count).map((w) => ({ key: w.id, label: "", w: w as Warlord | null, gaps: [] as string[] }));
+            const rest = ws.filter((w) => !complete.includes(w)).slice(0, m.count - complete.length);
+            return [...complete, ...rest].map((w) => ({
               key: w.id,
               label: `${w.is_special ? "【特】" : ""}${w.name} (${m.faction})`,
               w: w as Warlord | null,
