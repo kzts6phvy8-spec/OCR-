@@ -1,5 +1,5 @@
 import { meishoTalentGaps } from "./missing.ts";
-import type { Talent, Warlord } from "./types.ts";
+import type { ApexNode, Talent, Warlord } from "./types.ts";
 
 // 武将データを読みやすいテキストにする (コピー・.txt 書き出し用)。
 // 利用者が普段使っている書式に合わせている。
@@ -12,6 +12,13 @@ export function talentText(t: Talent): string {
 
 const skillLine = (name: string, desc: string) => [name && `『${name}』`, desc].filter(Boolean).join("");
 
+/** 頂天突破の丸 1 つのテキスト */
+export function apexNodeText(n: ApexNode): string {
+  const head = `${n.rank || "官職不明"} ${n.size}`;
+  const title = n.title && n.title !== "追加天賦" ? `『${n.title}』` : "";
+  return `${head}:${title}${n.effect}${n.cost ? ` [${n.cost}]` : ""}`;
+}
+
 export function warlordToText(w: Warlord): string {
   const lines: string[] = [];
   lines.push(`武将名:${w.name}${w.is_special ? " (特異)" : ""}`);
@@ -20,10 +27,12 @@ export function warlordToText(w: Warlord): string {
   if (w.skill_name || w.skill_desc) {
     lines.push(`奥義スキル${w.skill_gauge ? `（奥義ゲージ${w.skill_gauge}）` : ""}: ${skillLine(w.skill_name, w.skill_desc)}`);
   }
+  const apex = w.faction === "頂点武将";
   if (w.has_awakening) {
-    lines.push(`覚醒スキル${w.awakening_priority ? `（${w.awakening_priority}）` : ""}: ${skillLine(w.awakening_skill_name, w.awakening_before_weapon)}`);
+    lines.push(`${apex ? "突破スキル" : "覚醒スキル"}${w.awakening_priority ? `（${w.awakening_priority}）` : ""}: ${skillLine(w.awakening_skill_name, w.awakening_before_weapon)}`);
     if (w.has_weapon_awakening && w.awakening_after_weapon) lines.push(`武器覚醒後: ${w.awakening_after_weapon}`);
   }
+  if (w.passive_skill) lines.push(`受動スキル: ${w.passive_skill}`);
   if (w.talents.length) {
     // 「星1:物理防御+30%」の形で、効果と数値だけを並べる
     lines.push("天賦");
@@ -33,6 +42,11 @@ export function warlordToText(w: Warlord): string {
     // 「少史 上:兵数上限+175 (未修行)」の形
     lines.push("名将修行");
     for (const t of w.meisho_talents) lines.push(`${t.rank}${t.slot ? ` ${t.slot}` : ""}:${t.effect}`);
+  }
+  if (w.apex_nodes?.length) {
+    // 「少史 大『突破スキル(辛·8)』…[50]」の形 (官職の順・大 → 小)
+    lines.push("頂天突破");
+    for (const n of w.apex_nodes) lines.push(apexNodeText(n));
   }
   if (w.troop_variants.length) lines.push(`兵種:${w.troop_variants.join("、")}`);
   if (w.rarity) lines.push(`レア度:${w.rarity}`);

@@ -261,3 +261,41 @@ describe("名将修行の画面", () => {
     await expect(ingestExtraction(training, { ...opts("train.png"), identifyMeisho: async () => null })).rejects.toThrow("どの名将か選ぶ");
   });
 });
+
+describe("頂点武将の頂天突破の画面", () => {
+  const apex = (title: string, effect: string, cost: number | null) =>
+    makeExtraction({ name: null, apex_breakthrough: { visible: true, selected_area: null, selected_size: null, title, effect, cost } });
+  const date = () =>
+    ingestExtraction(
+      makeExtraction({ name: "伊達政宗", faction: "頂点武将", passive_skill: { visible: true, desc: "敵が奥義スキルを発動する度に、通常攻撃ダメージ+5%(最大10回重複可能)" } }),
+      opts("skill.png"),
+    );
+  it("頂点武将が 1 人なら、立ち絵がはっきり違わなければその武将に入れ、必要数から官職を決める", async () => {
+    const d = await date();
+    expect(d.warlord.passive_skill).toContain("通常攻撃ダメージ+5%");
+    const r = await ingestExtraction(apex("追加天賦", "防+40. 兵+40. (未突破)", 25), { ...opts("apex-1.png"), sameArt: async () => "unknown" });
+    expect(r.warlord.id).toBe(d.warlord.id);
+    expect(r.warlord.apex_nodes).toEqual([{ rank: "少史", size: "小", title: "追加天賦", effect: "防+40. 兵+40", cost: 25 }]);
+    expect(r.warlord.apex_images).toEqual(["apex-1.png"]);
+    expect(r.warlord.gallery_images).toEqual(["skill.png"]);
+    const s = await ingestExtraction(apex("突破スキル(辛·8)", "味方が通常攻撃でダメージを与えた後、追撃を発動.", 50), { ...opts("apex-2.png"), sameArt: async () => "unknown" });
+    expect(s.warlord.apex_nodes?.[0]).toMatchObject({ rank: "少史", size: "大" });
+    expect(s.warlord.awakening_priority).toBe("辛・8");
+    expect(s.warlord.has_awakening).toBe(true);
+    const t = await ingestExtraction(apex("【強化】受動スキル", "敵が覚醒スキルを発動する度に…", null), { ...opts("apex-3.png"), sameArt: async () => "unknown" });
+    expect(t.warlord.apex_nodes?.map((n) => `${n.rank}${n.size}`)).toEqual(["少史大", "少史小", "大輔大"]);
+  });
+  it("頂点武将がいなければ、統合先を選んでもらう", async () => {
+    await expect(ingestExtraction(apex("追加天賦", "攻+40. 計+40", 25), { ...opts("apex.png"), sameArt: async () => "same" })).rejects.toThrow("統合先を選んで保存");
+  });
+  it("頂点武将が 2 人以上いて、立ち絵で 1 人に決まればその武将", async () => {
+    await date();
+    const imagawa = await ingestExtraction(makeExtraction({ name: "今川義元", faction: "頂点武将" }), opts("imagawa.png"));
+    const r = await ingestExtraction(apex("追加天賦", "ダメージ+25%", 45), {
+      ...opts("apex.png"),
+      sameArt: async (c: Warlord) => (c.id === imagawa.warlord.id ? "same" : "different"),
+    });
+    expect(r.warlord.id).toBe(imagawa.warlord.id);
+    expect(r.warlord.apex_nodes?.[0]).toMatchObject({ rank: "少納言", size: "小" });
+  });
+});

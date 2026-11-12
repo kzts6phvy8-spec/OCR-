@@ -337,7 +337,7 @@ export const api = {
       const current = await db.getWarlord(id);
       if (!current) continue;
       await db.deleteWarlord(id);
-      images.push(...current.gallery_images, ...(current.meisho_images ?? []));
+      images.push(...current.gallery_images, ...(current.meisho_images ?? []), ...(current.apex_images ?? []));
     }
     await db.removeUnreferencedImages(images);
   },
@@ -518,6 +518,8 @@ export const api = {
         // 名将修行の画面は登録画像に残さないので、読み取った追加天賦は作り直しで消さない
         meisho_talents: w.meisho_talents,
         meisho_images: w.meisho_images,
+        apex_nodes: w.apex_nodes,
+        apex_images: w.apex_images,
         gallery_images: [],
         image_url: "",
       }),
@@ -783,6 +785,15 @@ export const api = {
   },
 
   /** 1 人の武将の名将修行の追加天賦を消す (取り違えて入った時に) */
+  /** 頂天突破の丸と画面を消す (別の武将の画面が取り違えて入っていた時) */
+  async clearApex(id: string): Promise<Warlord> {
+    const w = await db.getWarlord(id);
+    if (!w) throw new Error("武将が見つかりません");
+    const saved = await db.updateWarlord(id, normalizeInput({ ...toInput(w), apex_nodes: [], apex_images: [] }));
+    await db.removeUnreferencedImages(w.apex_images ?? []);
+    return saved;
+  },
+
   async clearMeishoTraining(id: string): Promise<Warlord> {
     const w = await db.getWarlord(id);
     if (!w) throw new Error("武将が見つかりません");

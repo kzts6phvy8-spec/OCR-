@@ -66,6 +66,32 @@ export interface MeishoTalent {
   estimated?: boolean;
 }
 
+/**
+ * 頂点武将の「頂天突破」の丸 1 つ。15 個の丸は官職ごとに 3 つ (大 1 つ・小 2 つ) で、全員同じ並び。
+ * 大 = 突破スキル (少史) / 受動スキル (大史) / 固有 (少納言) / 【強化】受動スキル (大輔) / 【強化】突破スキル (中納言)、小 = 追加天賦
+ */
+export interface ApexNode {
+  /** 官職 (少史 / 大史 / 少納言 / 大輔 / 中納言)。分からなければ空 */
+  rank: string;
+  /** 大きい丸か小さい丸か */
+  size: "大" | "小";
+  /** 欄の見出し (例: 追加天賦 / 突破スキル(辛·8) / 受動スキル / 【強化】受動スキル / 伊達の気魄) */
+  title: string;
+  /** 効果の全文 (「(未突破)」は含めない) */
+  effect: string;
+  /** 突破に要る数 (読めなければ 0) */
+  cost: number;
+}
+
+/** 頂天突破の官職ごとの必要数 (大・小)。官職が上がるごとに 大 +20・小 +10 */
+export const APEX_COSTS: { rank: string; big: number; small: number; area: string }[] = [
+  { rank: "少史", big: 50, small: 25, area: "左上" },
+  { rank: "大史", big: 70, small: 35, area: "右上" },
+  { rank: "少納言", big: 90, small: 45, area: "中央" },
+  { rank: "大輔", big: 110, small: 55, area: "右下" },
+  { rank: "中納言", big: 130, small: 65, area: "左下" },
+];
+
 export interface SynergySkill {
   partner: string;
   effect: string;
@@ -124,6 +150,12 @@ export interface Warlord {
   meisho_talents_manual?: boolean;
   /** 書き出しの時だけ付ける: 名将修行の追加天賦が、シミュレーターに直接渡したデータから入っている (図鑑には保存しない) */
   meisho_source?: "simulator";
+  /** 頂点武将の受動スキル (スキル画面の「受動スキル」の欄。強化前の効果) */
+  passive_skill?: string;
+  /** 頂点武将の頂天突破の丸 (突破の画面から 1 つずつ読み取る) */
+  apex_nodes?: ApexNode[];
+  /** 頂天突破の画面の画像 (登録画像とは別に持つ) */
+  apex_images?: string[];
   /** 鬼憑武将のシーズン (4 人の組。例: 徳川四天王)。連携スキルから自動で入るほか、手でも選べる */
   oni_season?: string;
   /** 天賦の星の番号を、画面の並び (①② / ③④ / ⑤) に合わせて直し済みか */

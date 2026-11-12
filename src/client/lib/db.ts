@@ -178,7 +178,7 @@ export const removeUnreferencedImages = retrying(async function removeUnreferenc
   if (ids.length === 0) return;
   const d = await db();
   const used = new Set<string>();
-  for (const w of await d.getAll("warlords")) [...w.gallery_images, ...(w.meisho_images ?? [])].forEach((g) => used.add(g));
+  for (const w of await d.getAll("warlords")) [...w.gallery_images, ...(w.meisho_images ?? []), ...(w.apex_images ?? [])].forEach((g) => used.add(g));
   for (const j of await d.getAll("jobs")) if (j.status !== "done") used.add(j.image_id);
   for (const id of ids) {
     if (used.has(id)) continue;
@@ -226,7 +226,7 @@ export const deleteJobs = retrying(async function deleteJobs(ids: string[]) {
 export const deleteFinishedJobs = retrying(async function deleteFinishedJobs(): Promise<string[]> {
   const d = await db();
   const failedImages: string[] = [];
-  const inGallery = new Set((await d.getAll("warlords")).flatMap((w) => [...w.gallery_images, ...(w.meisho_images ?? [])]));
+  const inGallery = new Set((await d.getAll("warlords")).flatMap((w) => [...w.gallery_images, ...(w.meisho_images ?? []), ...(w.apex_images ?? [])]));
   for (const j of await d.getAll("jobs")) {
     // 作り直し・分ける時に失敗した画像は、どの武将にも入っていなければ消さずに残す (消すと画像が無くなるため)
     if (j.status === "error" && j.keep_image && !inGallery.has(j.image_id)) continue;
@@ -288,7 +288,7 @@ export const listTrainingImages = retrying(async function listTrainingImages(): 
 /** どの武将の画像にも入っていない画像を消す (解析の記録が指していても消す。同じ画像の重なりを消す時用) */
 export const deleteImagesNotInGallery = retrying(async function deleteImagesNotInGallery(ids: string[]) {
   const d = await db();
-  const used = new Set((await d.getAll("warlords")).flatMap((w) => [w.image_url, ...w.gallery_images, ...(w.meisho_images ?? [])]));
+  const used = new Set((await d.getAll("warlords")).flatMap((w) => [w.image_url, ...w.gallery_images, ...(w.meisho_images ?? []), ...(w.apex_images ?? [])]));
   // 解析待ち・解析中のジョブが使う画像は消さない (再解析の途中など)
   for (const j of await d.getAll("jobs")) if (j.status !== "done") used.add(j.image_id);
   for (const id of ids) {
