@@ -1172,7 +1172,8 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
           />
           名将 (奥義スキルの欄の右上に「名将一覧」がある武将)
         </label>
-        {draft.is_meisho && <MeishoTalentEditor draft={draft} setDraft={setDraft} />}
+        {draft.is_meisho &&
+          (draft.faction === "頂点武将" ? <MeishoAwakeningEditor draft={draft} setDraft={setDraft} /> : <MeishoTalentEditor draft={draft} setDraft={setDraft} />)}
         <div className="space-y-2">
           {draft.synergy_skills.map((s, i) => (
             <div key={i} className="grid items-end gap-2 rounded-lg border border-ebony-700 p-2 sm:grid-cols-[12rem_1fr_auto]">
@@ -1333,6 +1334,42 @@ function MoveMeisho({ w, allWarlords, onSaved }: { w: Warlord; allWarlords: Warl
 }
 
 /** 名将修行の追加天賦を、丸 8 つの欄に手で入力する (空欄はその丸を消す) */
+/** 頂点武将の名将 (名将の道・名将覚醒): 少納言 / 大輔 上・下 / 中納言 の 4 つ */
+const AWAKENING_ROWS = [
+  { rank: "少納言", slot: "", title: "【強化】奥義スキル", hint: "Lv.1:… Lv.2:…" },
+  { rank: "大輔", slot: "上", title: "名将スキル", hint: "ターン開始時、闘気+4pt …" },
+  { rank: "大輔", slot: "下", title: "追加天賦", hint: "最終ダメージ+10%、…" },
+  { rank: "中納言", slot: "", title: "【強化】名将スキル", hint: "Lv.1:… Lv.5:…" },
+];
+
+function MeishoAwakeningEditor({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d: WarlordInput) => WarlordInput) => void }) {
+  const find = (rank: string, slot: string) => (draft.meisho_awakening ?? []).find((n) => n.rank === rank && n.slot === slot);
+  const setRow = (row: (typeof AWAKENING_ROWS)[number], effect: string) =>
+    setDraft((d) => {
+      const list = (d.meisho_awakening ?? []).filter((n) => !(n.rank === row.rank && n.slot === row.slot));
+      if (effect.trim()) list.push({ rank: row.rank, slot: row.slot, title: row.title, effect });
+      const order = (n: { rank: string; slot: string }) => AWAKENING_ROWS.findIndex((r) => r.rank === n.rank && r.slot === n.slot);
+      return { ...d, meisho_awakening: list.sort((a, b) => order(a) - order(b)) };
+    });
+  return (
+    <div className="mb-3 rounded-lg border border-shu-600/40 p-2.5">
+      <p className="mb-1.5 text-sm font-bold text-gold-300">名将覚醒 (名将の道)</p>
+      <p className="mb-2 text-[11px] text-ash">頂点武将の名将は 少納言 → 大輔 → 中納言 の 4 つの丸です。空欄にするとその丸は未入力になります。</p>
+      <div className="space-y-2">
+        {AWAKENING_ROWS.map((row) => (
+          <label key={`${row.rank}${row.slot}`} className="block">
+            <span className="text-xs font-bold text-gold-300">
+              {row.rank}
+              {row.slot && ` ${row.slot}`} <span className="text-ash">{row.title}</span>
+            </span>
+            <textarea rows={3} className="field mt-0.5 text-sm" value={find(row.rank, row.slot)?.effect ?? ""} placeholder={row.hint} onChange={(e) => setRow(row, e.target.value)} />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MeishoTalentEditor({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d: WarlordInput) => WarlordInput) => void }) {
   const find = (rank: string, slot: string) => (draft.meisho_talents ?? []).find((t) => t.rank === rank && t.slot === slot);
   const setSlot = (rank: string, slot: string, patch: { effect?: string }) =>

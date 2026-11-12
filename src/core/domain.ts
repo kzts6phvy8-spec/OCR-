@@ -425,6 +425,16 @@ export function mergeMeishoAwakening(cur: MeishoAwakeningNode[], incoming: Meish
   return out.sort((a, b) => AWAKENING_ORDER.indexOf(awakeningKey(a)) - AWAKENING_ORDER.indexOf(awakeningKey(b)));
 }
 
+/** 名将修行の丸に入ってしまった頂点武将の名将の文を、中身から名将の道の丸にする */
+function awakeningFromTalent(t: { effect: string }): MeishoAwakeningNode {
+  const e = t.effect.trim();
+  const lv = /^Lv\.?\s*\d/i.test(e.normalize("NFKC"));
+  if (lv && /奥義/.test(e) && !/名将スキル|闘気|蒼牙/.test(e)) return { rank: "少納言", slot: "", title: "【強化】奥義スキル", effect: e };
+  if (lv) return { rank: "中納言", slot: "", title: "【強化】名将スキル", effect: e };
+  if (/闘気|蒼牙|名将スキル/.test(e)) return { rank: "大輔", slot: "上", title: "名将スキル", effect: e };
+  return { rank: "大輔", slot: "下", title: "追加天賦", effect: e };
+}
+
 function normalizeMeishoAwakening(v: unknown): MeishoAwakeningNode[] {
   if (!Array.isArray(v)) return [];
   const list = v
@@ -994,6 +1004,15 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     gallery_images: gallery,
   };
   if (out.has_weapon_awakening || out.awakening_after_weapon || out.awakening_skill_name) out.has_awakening = true;
+  // 頂点武将の名将は「名将の道」の形 (丸 4 つ)。名将修行の丸 8 つに入ってしまった分は、中身から 4 つの丸に移す
+  if (out.faction === "頂点武将" && out.meisho_talents?.length) {
+    out.meisho_awakening = mergeMeishoAwakening(
+      [],
+      [...(out.meisho_awakening ?? []), ...out.meisho_talents.map(awakeningFromTalent).filter((n) => !(out.meisho_awakening ?? []).some((o) => awakeningKey(o) === awakeningKey(n)))],
+    );
+    out.meisho_talents = [];
+    out.meisho_talents_manual = false;
+  }
   // 鬼憑武将のシーズン: 手で選んでいなければ、連携スキルの文章から見つける
   // 鬼憑武将のシーズン: 保存するのは手で選んだものだけ。連携スキルの文章から分かるものは、使う時に毎回見つける
   // (保存すると、連携スキルが直った・取り除かれた後も古いシーズンが残ってしまうため)

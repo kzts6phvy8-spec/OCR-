@@ -786,6 +786,17 @@ export const api = {
   },
 
   /** 1 人の武将の名将修行の追加天賦を消す (取り違えて入った時に) */
+  /** 頂点武将の名将修行の丸 8 つに入ってしまった名将の道の文を、名将の道の丸 4 つに移す (保存し直すと移る) */
+  async fixApexMeisho(): Promise<number> {
+    let n = 0;
+    for (const w of await db.listWarlords()) {
+      if (w.faction !== "頂点武将" || !w.meisho_talents?.length) continue;
+      await db.updateWarlord(w.id, normalizeInput(toInput(w)));
+      n++;
+    }
+    return n;
+  },
+
   /** 頂天突破の丸と画面を消す (別の武将の画面が取り違えて入っていた時) */
   async clearApex(id: string): Promise<Warlord> {
     const w = await db.getWarlord(id);

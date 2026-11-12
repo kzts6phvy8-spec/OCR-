@@ -141,6 +141,8 @@ export default function App() {
       });
       // 名将の印を、すでにあるデータから付ける (AI なし)
       await step("名将", async () => {
+        // 頂点武将の名将 (名将の道) が名将修行の丸に入っていたら、名将の道の丸に移す
+        await api.fixApexMeisho();
         const wrong = await api.fixMisassignedTraining();
         // 名将修行の丸 8 つへの入れ方を、入っている画面から決め直す (位置の読み違いで丸が空いていた分)
         await (await import("./lib/meishoSlots.ts")).recomputeAllMeishoTalents();
