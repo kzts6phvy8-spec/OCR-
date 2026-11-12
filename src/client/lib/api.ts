@@ -678,7 +678,8 @@ export const api = {
       const wrong = reads.filter((r) => unsure || contradictsSimMeisho(w, r));
       if (wrong.length === 0) continue;
       const wrongIds = new Set(wrong.map((x) => x.id));
-      const talents = (w.meisho_talents ?? []).filter(
+      // 手で入力した名将修行は消さない (画面だけ外す)
+      const talents = w.meisho_talents_manual ? (w.meisho_talents ?? []) : (w.meisho_talents ?? []).filter(
         (t) => !wrong.some((x) => x.rank === t.rank && x.slot === t.slot && normText(x.effect) === normText(t.effect)),
       );
       const rest = w.meisho_images.filter((id) => !wrongIds.has(id));
@@ -947,7 +948,9 @@ export const api = {
     );
     if (format === "training") return { blob: new Blob([meishoTrainingToText(list)], { type: "text/plain;charset=utf-8" }), count: list.length };
     if (format === "txt") return { blob: new Blob([warlordsToText(list)], { type: "text/plain;charset=utf-8" }), count: list.length };
-    const payload: ExportPayload = { app: "sengoku-fubu-warlord-db", version: 2, exported_at: new Date().toISOString(), warlords: list };
+    // 修行したかどうかは、シミュレーターを使う人が決めるので書き出さない
+    const warlords = list.map((w) => ({ ...w, meisho_talents: w.meisho_talents?.map(({ trained: _t, ...t }) => t) })) as unknown as Warlord[];
+    const payload: ExportPayload = { app: "sengoku-fubu-warlord-db", version: 2, exported_at: new Date().toISOString(), warlords };
     return { blob: new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), count: list.length };
   },
 

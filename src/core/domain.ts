@@ -692,7 +692,13 @@ export function mergeWarlord(
   if (patch.has_weapon_awakening) merged.has_weapon_awakening = true;
 
   if (patch.talents) merged.talents = mergeTalents(merged.talents, patch.talents);
-  if (patch.meisho_talents?.length) merged.meisho_talents = mergeMeishoTalents(merged.meisho_talents ?? [], patch.meisho_talents);
+  if (patch.meisho_talents?.length) {
+    // 手で入力した名将修行は上書きしない (空いている丸にだけ入れる)
+    const incoming = merged.meisho_talents_manual
+      ? patch.meisho_talents.filter((t) => !(merged.meisho_talents ?? []).some((m) => m.rank === t.rank && m.slot === t.slot))
+      : patch.meisho_talents;
+    merged.meisho_talents = mergeMeishoTalents(merged.meisho_talents ?? [], incoming);
+  }
   if (patch.meisho_images?.length) merged.meisho_images = uniqueStrings([...(merged.meisho_images ?? []), ...patch.meisho_images]);
   if (patch.synergy_skills) merged.synergy_skills = mergeSynergies(merged.synergy_skills, patch.synergy_skills);
   if (patch.troop_variants) merged.troop_variants = uniqueStrings([...merged.troop_variants, ...patch.troop_variants]);

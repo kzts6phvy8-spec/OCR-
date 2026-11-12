@@ -334,7 +334,7 @@ describe("名将修行のテキスト", async () => {
     const a = { ...normalizeInput({ ...emptyWarlordInput(), name: "南部晴政", faction: "奥.関.甲", is_special: true, is_meisho: true, meisho_talents: [{ rank: "少史", slot: "上", effect: "兵数上限+175", trained: false }] }), id: "a" };
     const b = { ...normalizeInput({ ...emptyWarlordInput(), name: "武田信玄", faction: "奥.関.甲", is_meisho: true }), id: "b" };
     const text = meishoTrainingToText([a, b] as never);
-    expect(text).toContain("■ 奥.関.甲\n【特】南部晴政\n  少史 上:兵数上限+175 (未修行)");
+    expect(text).toContain("■ 奥.関.甲\n【特】南部晴政\n  少史 上:兵数上限+175");
     expect(text).toContain("武田信玄\n  未取得");
   });
 });
@@ -444,5 +444,21 @@ describe("名将修行の手入力", () => {
       meisho_talents: [{ rank: "中納言", slot: "下", effect: "最終ダメージ+15%", trained: false }],
     });
     expect(w.meisho_talents).toEqual([{ rank: "中納言", slot: "下", effect: "最終ダメージ+15%", trained: false }]);
+  });
+});
+
+describe("手で入力した名将修行は、読み取りで上書きしない", () => {
+  it("空いている丸にだけ入れる", () => {
+    const base = normalizeInput({
+      ...emptyWarlordInput(),
+      name: "北条政子",
+      meisho_talents_manual: true,
+      meisho_talents: [{ rank: "中納言", slot: "上", effect: "最終ダメージ+15%", trained: false }],
+    });
+    const read = (rank: string, slot: string | null, effect: string) =>
+      extractionToPatch(makeExtraction({ meisho_training: { visible: true, selected_rank: rank, selected_slot: slot, effect, trained: false } }));
+    let w = mergeWarlord(base, read("中納言", "上", "最終ダメージ軽減+15%")).merged;
+    w = mergeWarlord(w, read("大史", null, "奥義スキル初回発動後、奥義ゲージ+1")).merged;
+    expect(w.meisho_talents?.map((t) => `${t.rank}${t.slot}:${t.effect}`)).toEqual(["大史:奥義スキル初回発動後、奥義ゲージ+1", "中納言上:最終ダメージ+15%"]);
   });
 });
