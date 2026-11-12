@@ -18,7 +18,7 @@ import {
 import { inferPriorityFromCondition } from "./priorityRules.ts";
 import { detectSeason, normalizeSeason } from "./seasons.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
-import { APEX_COSTS, MEISHO_RANKS, type ApexNode, type MeishoTalent } from "./types.ts";
+import { APEX_COSTS, MEISHO_RANKS, type ApexNode, type MeishoAwakeningNode, type MeishoTalent } from "./types.ts";
 
 const SPECIAL_MARKER_RE = /【\s*特\s*】/g;
 /**
@@ -225,6 +225,13 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
   set("skill_gauge", int(ext.skill.gauge, 0, 3));
   set("skill_desc", stripMeisho(str(ext.skill.desc)));
 
+  // 頂点武将の「名将の道」の画面: 選ばれている丸 1 つ分だけを読む
+  if (ext.meisho_awakening?.visible) {
+    patch.is_meisho = true;
+    const node = meishoAwakeningFromRead(ext.meisho_awakening);
+    if (node) patch.meisho_awakening = [node];
+    return patch;
+  }
   // 頂点武将の「突破」の画面: 選ばれている丸 1 つ分だけを読む (覚醒・天賦・奥義の欄は無い画面)
   const apex = ext.apex_breakthrough?.visible ? apexNodeFromRead(ext.apex_breakthrough) : null;
   if (ext.apex_breakthrough?.visible) {
@@ -363,6 +370,69 @@ export function mergeApexNodes(cur: ApexNode[], incoming: ApexNode[]): { nodes: 
   }
   out.sort((a, b) => APEX_RANK_ORDER(a.rank) - APEX_RANK_ORDER(b.rank) || (a.size === b.size ? 0 : a.size === "大" ? -1 : 1));
   return { nodes: out, warnings };
+}
+
+const AWAKENING_ORDER = ["少納言", "大輔 上", "大輔 下", "中納言"];
+const awakeningKey = (n: { rank: string; slot: string }) => `${n.rank}${n.slot ? ` ${n.slot}` : ""}`;
+
+/** 「名将の道」の画面の欄の見出しから、どの丸かを決める */
+export function meishoAwakeningFromRead(r: { title?: string | null; effect?: string | null }): MeishoAwakeningNode | null {
+  const title = str(r.title).normalize("NFKC").replace(/\s+/g, "");
+  const effect = str(r.effect)
+    .replace(/[（(]\s*未開放\s*[)）]/g, "")
+    .replace(/\s*\n\s*/g, " ")
+    .trim();
+  if (!effect) return null;
+  let rank = "";
+  let slot = "";
+  if (/強化.*奥義/.test(title)) rank = "少納言";
+  else if (/強化.*名将/.test(title)) rank = "中納言";
+  else if (/名将スキル/.test(title)) [rank, slot] = ["大輔", "上"];
+  else if (/追加天賦/.test(title)) [rank, slot] = ["大輔", "下"];
+  else return null;
+  return { rank, slot, title: str(r.title).replace(/\s+/g, ""), effect };
+}
+
+/**
+ * 同じ欄の文を、別々のスクショで読んだ 2 つからつなげる (長い文は欄の中で送らないと全部見えないため)。
+ * 片方がもう片方を含めば長い方、前の終わりと後の始まりが重なればつなげる。重ならなければ長い方
+ */
+export function joinScrolledText(a: string, b: string): string {
+  const squash = (t: string) => t.normalize("NFKC").replace(/\s+/g, "");
+  const x = squash(a);
+  const y = squash(b);
+  if (!x) return b;
+  if (!y || x.includes(y)) return a;
+  if (y.includes(x)) return b;
+  const overlap = (p: string, q: string) => {
+    for (let k = Math.min(p.length, q.length) - 1; k >= 6; k--) if (p.endsWith(q.slice(0, k))) return k;
+    return 0;
+  };
+  const k1 = overlap(x, y);
+  const k2 = overlap(y, x);
+  if (k1 >= k2 && k1 > 0) return x + y.slice(k1);
+  if (k2 > 0) return y + x.slice(k2);
+  return x.length >= y.length ? a : b;
+}
+
+export function mergeMeishoAwakening(cur: MeishoAwakeningNode[], incoming: MeishoAwakeningNode[]): MeishoAwakeningNode[] {
+  const out = [...cur];
+  for (const n of incoming) {
+    const i = out.findIndex((o) => awakeningKey(o) === awakeningKey(n));
+    if (i < 0) out.push(n);
+    else out[i] = { ...out[i], effect: joinScrolledText(out[i].effect, n.effect) };
+  }
+  return out.sort((a, b) => AWAKENING_ORDER.indexOf(awakeningKey(a)) - AWAKENING_ORDER.indexOf(awakeningKey(b)));
+}
+
+function normalizeMeishoAwakening(v: unknown): MeishoAwakeningNode[] {
+  if (!Array.isArray(v)) return [];
+  const list = v
+    .map((n) => (n && typeof n === "object" ? (n as Record<string, unknown>) : null))
+    .filter((o): o is Record<string, unknown> => o !== null && String(o.effect ?? "").trim() !== "")
+    .map((o) => ({ rank: String(o.rank ?? ""), slot: String(o.slot ?? ""), title: String(o.title ?? "").trim(), effect: String(o.effect).trim() }))
+    .filter((n) => AWAKENING_ORDER.includes(awakeningKey(n)));
+  return mergeMeishoAwakening([], list);
 }
 
 function normalizeApexNodes(v: unknown): ApexNode[] {
@@ -818,6 +888,7 @@ export function mergeWarlord(
     merged.apex_nodes = r.nodes;
     warnings.push(...r.warnings);
   }
+  if (patch.meisho_awakening?.length) merged.meisho_awakening = mergeMeishoAwakening(merged.meisho_awakening ?? [], patch.meisho_awakening);
   if (patch.apex_images?.length) merged.apex_images = uniqueStrings([...(merged.apex_images ?? []), ...patch.apex_images]);
   if (patch.passive_skill && patch.passive_skill.length > (merged.passive_skill ?? "").length) merged.passive_skill = patch.passive_skill;
   if (patch.meisho_images?.length) merged.meisho_images = uniqueStrings([...(merged.meisho_images ?? []), ...patch.meisho_images]);
@@ -911,6 +982,7 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     meisho_talents: mergeMeishoTalents([], (Array.isArray(v.meisho_talents) ? v.meisho_talents : []).map((t) => normalizeMeishoTalent(t, Boolean(v.meisho_talents_manual))).filter((t): t is MeishoTalent => t !== null)),
     passive_skill: String(v.passive_skill ?? "").trim() || undefined,
     apex_nodes: normalizeApexNodes(v.apex_nodes),
+    meisho_awakening: normalizeMeishoAwakening(v.meisho_awakening),
     apex_images: uniqueStrings(Array.isArray(v.apex_images) ? v.apex_images.map(String) : []),
     oni_season: normalizeSeason(v.oni_season),
     talent_order_v2: Boolean(v.talent_order_v2),

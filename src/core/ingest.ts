@@ -214,13 +214,16 @@ export async function ingestExtraction(
     if (opts.mode === "auto" && decision.is_special !== isSpecial && decision.reasons.length > 0) {
       warnings.push(`画像は${decision.is_special ? "特異" : "通常"}武将と判定されましたが、指定された統合先に保存しました`);
     }
-  } else if (ext.apex_breakthrough?.visible) {
-    // 頂点武将の「突破」の画面には武将名が無いので、登録済みの頂点武将の中から立ち絵で決める
+  } else if (ext.apex_breakthrough?.visible || ext.meisho_awakening?.visible) {
+    // 頂点武将の「突破」「名将の道」の画面には武将名が無いので、登録済みの頂点武将の中から立ち絵で決める
     const excluded = new Set(opts.excludeIds ?? []);
-    const candidates = repo.list ? (await repo.list()).filter((w) => w.faction === "頂点武将" && !excluded.has(w.id)) : [];
-    const pickError = new IngestError("頂天突破の画面から、どの頂点武将か見分けられませんでした。下の「統合先を選んで保存」でその頂点武将を選んでください");
+    let candidates = repo.list ? (await repo.list()).filter((w) => w.faction === "頂点武将" && !excluded.has(w.id)) : [];
+    // 名将の道の画面は、名将の頂点武将 (いまは伊達政宗だけ) の画面
+    if (ext.meisho_awakening?.visible && candidates.some((w) => w.is_meisho)) candidates = candidates.filter((w) => w.is_meisho);
+    const screen = ext.apex_breakthrough?.visible ? "頂天突破" : "名将の道";
+    const pickError = new IngestError(screen + "の画面から、どの頂点武将か見分けられませんでした。下の「統合先を選んで保存」でその頂点武将を選んでください");
     if (candidates.length === 0) {
-      throw new IngestError("頂天突破の画面ですが、頂点武将がまだ登録されていません。先にその頂点武将のスキル画面などを取り込むか、下の「統合先を選んで保存」で選んでください");
+      throw new IngestError(screen + "の画面ですが、頂点武将がまだ登録されていません。先にその頂点武将のスキル画面などを取り込むか、下の「統合先を選んで保存」で選んでください");
     }
     let found = opts.matchKnownApex ? await opts.matchKnownApex(candidates) : null;
     if (!found && opts.sameArt) {
@@ -236,7 +239,7 @@ export async function ingestExtraction(
     existing = found;
     name = found.name;
     isSpecial = found.is_special;
-    warnings.push(`頂天突破の画面なので、立ち絵から「${found.name}」と判断しました`);
+    warnings.push(`${screen}の画面なので、立ち絵から「${found.name}」と判断しました`);
   } else if (!readName && ext.meisho_training?.visible) {
     // 名将修行の画面には武将名が無いので、立ち絵を登録済みの名将と見比べて誰かを決める
     const found = opts.identifyMeisho ? await opts.identifyMeisho() : null;
@@ -297,6 +300,9 @@ export async function ingestExtraction(
     patch.apex_images = [opts.imageId];
     if (!patch.apex_nodes?.length) warnings.push("頂天突破の画面ですが、選ばれている丸の効果を読み取れませんでした");
     else if (!patch.apex_nodes[0].rank) warnings.push(`頂天突破の「${patch.apex_nodes[0].effect}」がどの官職の丸か分かりませんでした (必要数が読めませんでした)`);
+  } else if (ext.meisho_awakening?.visible) {
+    patch.apex_images = [opts.imageId];
+    if (!patch.meisho_awakening?.length) warnings.push("名将の道の画面ですが、選ばれている丸の効果を読み取れませんでした");
   } else if (!ext.meisho_training?.visible) {
     patch.gallery_images = [opts.imageId];
     patch.image_url = opts.imageId;
