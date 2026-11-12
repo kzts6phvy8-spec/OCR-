@@ -331,3 +331,25 @@ describe("頂点武将の名将の道の画面", () => {
     expect(r.warlord.meisho_talents ?? []).toEqual([]);
   });
 });
+
+describe("名将修行の画面と読まれた名将の道の画面", () => {
+  it("Lv.1 で始まる文なら名将の道として頂点武将に入れる", async () => {
+    const { tidyExtraction } = await import("./ocrSchema.ts");
+    const d = await ingestExtraction(makeExtraction({ name: "伊達政宗", faction: "頂点武将", meisho_marker_visible: true }), opts("date.png"));
+    await ingestExtraction(makeExtraction({ name: "伊達政宗", faction: "奥.関.甲", meisho_marker_visible: true }), opts("date2.png"));
+    const e = tidyExtraction(
+      makeExtraction({
+        name: null,
+        meisho_training: { visible: true, selected_rank: "少納言", selected_slot: "上", effect: "Lv.1:兵力が50%まで下がると、奥義スキルを発動する Lv.2:奥義スキルダメージ+10%", trained: false },
+      }),
+    );
+    const r = await ingestExtraction(e, { ...opts("road.png"), sameArt: async () => "unknown" });
+    expect(r.warlord.id).toBe(d.warlord.id);
+    expect(r.warlord.meisho_awakening?.[0]).toMatchObject({ rank: "少納言", title: "【強化】奥義スキル" });
+  });
+  it("ふつうの名将修行の追加天賦はそのまま", async () => {
+    const { tidyExtraction } = await import("./ocrSchema.ts");
+    const e = tidyExtraction(makeExtraction({ name: null, meisho_training: { visible: true, selected_rank: "大輔", selected_slot: null, effect: "戦闘進入時、自身に鉄壁(3ターン)", trained: false } }));
+    expect(e.meisho_training?.visible).toBe(true);
+  });
+});

@@ -143,6 +143,8 @@ export default function App() {
       await step("名将", async () => {
         // 頂点武将の名将 (名将の道) が名将修行の丸に入っていたら、名将の道の丸に移す
         await api.fixApexMeisho();
+        const road = await api.fixMisreadAwakening();
+        if (road > 0) toast("info", `名将修行と取り違えて入っていた「名将の道」の画面 ${road} 枚を、頂点武将に入れ直します`);
         const wrong = await api.fixMisassignedTraining();
         // 名将修行の丸 8 つへの入れ方を、入っている画面から決め直す (位置の読み違いで丸が空いていた分)
         await (await import("./lib/meishoSlots.ts")).recomputeAllMeishoTalents();

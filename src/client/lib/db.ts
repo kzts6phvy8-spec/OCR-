@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { OcrJob, Warlord, WarlordInput } from "../../core/types.ts";
-import type { OcrExtraction } from "../../core/ocrSchema.ts";
+import { tidyExtraction, type OcrExtraction } from "../../core/ocrSchema.ts";
 import type { WarlordRepo } from "../../core/ingest.ts";
 
 // 端末内データベース (IndexedDB)。
@@ -279,7 +279,7 @@ export const listTrainingImages = retrying(async function listTrainingImages(): 
   const d = await db();
   const out: string[] = [];
   for (const row of await d.getAll("extractions")) {
-    if (!row.ext?.meisho_training?.visible || row.ext.apex_breakthrough?.visible) continue;
+    if (!row.ext || !tidyExtraction(row.ext).meisho_training?.visible) continue;
     if (await d.getKey("images", row.id)) out.push(row.id);
   }
   return out;

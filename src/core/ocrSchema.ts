@@ -116,12 +116,43 @@ export const OcrExtractionSchema = z.object({
 export type OcrExtraction = z.infer<typeof OcrExtractionSchema>;
 
 /**
- * 読み取り結果の食い違いを直す。頂天突破の画面も下に「追加天賦」の欄があるので、
- * AI が名将修行の画面とも答えることがある: 頂天突破の画面なら名将修行の画面ではない
+ * 名将修行の画面と読まれたが、中身は頂点武将の「名将の道」(名将覚醒) の画面らしいか。
+ * 名将の道の文は「Lv.1:…」で始まるか、闘気・蒼牙・名将スキルが出てくる (名将修行の追加天賦には無い)。
+ * 大輔の追加天賦 (最終ダメージ+10%、…) は名将修行と見分けられないので、AI が名将の道と読んだ時だけ
+ */
+export function looksLikeMeishoAwakening(e: OcrExtraction): boolean {
+  if (e.meisho_awakening?.visible) return true;
+  if (/名将の道|名将覚醒/.test((e.screen_types ?? []).join(" "))) return true;
+  const mt = e.meisho_training;
+  if (!mt?.visible) return false;
+  const eff = (mt.effect ?? "").normalize("NFKC").trim();
+  return /^Lv\.?\s*\d/i.test(eff) || /闘気|蒼牙|名将スキル/.test(eff);
+}
+
+/** 名将の道の画面の文から、どの欄の見出しかを決める (AI が見出しを読めなかった時) */
+function guessAwakeningTitle(effect: string): string {
+  const e = effect.normalize("NFKC").trim();
+  const lv = /^Lv\.?\s*\d/i.test(e);
+  if (lv && /奥義/.test(e) && !/名将スキル|闘気|蒼牙/.test(e)) return "【強化】奥義スキル";
+  if (lv) return "【強化】名将スキル";
+  if (/闘気|蒼牙|名将スキル/.test(e)) return "名将スキル";
+  return "追加天賦";
+}
+
+/**
+ * 読み取り結果の食い違いを直す。頂天突破・名将の道の画面も下に効果の欄があり、
+ * AI が名将修行の画面とも答えることがある: その時は名将修行の画面としては扱わない
  */
 export function tidyExtraction(e: OcrExtraction): OcrExtraction {
-  if ((e.apex_breakthrough?.visible || e.meisho_awakening?.visible) && e.meisho_training?.visible) {
+  if (e.apex_breakthrough?.visible && e.meisho_training?.visible) {
     return { ...e, meisho_training: { ...e.meisho_training, visible: false }, meisho_marker_visible: false };
+  }
+  if (looksLikeMeishoAwakening(e) && e.meisho_training?.visible) {
+    const mt = e.meisho_training;
+    const awakening = e.meisho_awakening?.visible
+      ? e.meisho_awakening
+      : { visible: true, title: guessAwakeningTitle(mt.effect ?? ""), effect: mt.effect };
+    return { ...e, name: null, meisho_training: { ...mt, visible: false }, meisho_awakening: awakening };
   }
   return e;
 }
