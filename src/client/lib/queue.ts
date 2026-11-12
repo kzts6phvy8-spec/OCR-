@@ -31,7 +31,7 @@ import {
 } from "./visual.ts";
 import { logError } from "./errorLog.ts";
 import { dedupeWarlordImages } from "./dedupe.ts";
-import type { OcrExtraction } from "../../core/ocrSchema.ts";
+import { tidyExtraction, type OcrExtraction } from "../../core/ocrSchema.ts";
 
 // 画像を解析するキュー。AI への問い合わせは 2 枚同時に進め、保存 (同じ武将への統合) は 1 件ずつ順番に行う。
 // iPhone ではアプリを閉じる・画面を消すと処理が止まるため、処理中は画面消灯を防ぎ、戻ったら自動で再開する。
@@ -302,7 +302,8 @@ async function shrinkStoredImage(imageId: string) {
 }
 
 /** 読み取り結果を図鑑に保存する。同じ名前の武将がいれば立ち絵を見比べてから統合する */
-function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
+function ingestJob(snapshot: OcrJob, read: OcrExtraction) {
+  const extraction = tidyExtraction(read);
   return ingestLock(async () => {
     // 順番を待つ間に取り除かれた・統合先が付け替えられたかもしれないので、今の状態で保存する
     const job = await db.getJob(snapshot.id);

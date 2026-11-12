@@ -106,3 +106,14 @@ export const OcrExtractionSchema = z.object({
 });
 
 export type OcrExtraction = z.infer<typeof OcrExtractionSchema>;
+
+/**
+ * 読み取り結果の食い違いを直す。頂天突破の画面も下に「追加天賦」の欄があるので、
+ * AI が名将修行の画面とも答えることがある: 頂天突破の画面なら名将修行の画面ではない
+ */
+export function tidyExtraction(e: OcrExtraction): OcrExtraction {
+  if (e.apex_breakthrough?.visible && e.meisho_training?.visible) {
+    return { ...e, meisho_training: { ...e.meisho_training, visible: false }, meisho_marker_visible: false };
+  }
+  return e;
+}

@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { UploadMode } from "../../core/types.ts";
-import { OcrExtractionSchema, type OcrExtraction } from "../../core/ocrSchema.ts";
+import { OcrExtractionSchema, tidyExtraction, type OcrExtraction } from "../../core/ocrSchema.ts";
 import { SYSTEM_PROMPT } from "../../core/prompt.ts";
 import { blobToBase64 } from "./images.ts";
 import type { Settings } from "./settings.ts";
@@ -67,7 +67,7 @@ export async function analyzeScreenshot(image: Blob, mode: UploadMode, settings:
     }
     if (response.stop_reason === "max_tokens") throw new OcrError("AI の出力が上限で途切れました", true);
     if (!response.parsed_output) throw new OcrError("AI の応答を JSON として解釈できませんでした", true);
-    return response.parsed_output;
+    return tidyExtraction(response.parsed_output);
   } catch (err) {
     throw toOcrError(err, settings);
   }

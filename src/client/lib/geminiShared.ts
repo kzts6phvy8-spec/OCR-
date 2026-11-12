@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { UploadMode } from "../../core/types.ts";
-import { OcrExtractionSchema, type OcrExtraction } from "../../core/ocrSchema.ts";
+import { OcrExtractionSchema, tidyExtraction, type OcrExtraction } from "../../core/ocrSchema.ts";
 import { SYSTEM_PROMPT } from "../../core/prompt.ts";
 import { OcrError, modeHint } from "./ocrCommon.ts";
 import { isDailyLimit } from "./quota.ts";
@@ -68,7 +68,7 @@ export function parseExtractionText(text: string | undefined): OcrExtraction {
   }
   const parsed = OcrExtractionSchema.safeParse(json);
   if (!parsed.success) throw new OcrError("AI の応答が決められた形式ではありませんでした", true);
-  return parsed.data;
+  return tidyExtraction(parsed.data);
 }
 
 type RestResponse = {

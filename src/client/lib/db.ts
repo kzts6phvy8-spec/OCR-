@@ -279,7 +279,7 @@ export const listTrainingImages = retrying(async function listTrainingImages(): 
   const d = await db();
   const out: string[] = [];
   for (const row of await d.getAll("extractions")) {
-    if (!row.ext?.meisho_training?.visible) continue;
+    if (!row.ext?.meisho_training?.visible || row.ext.apex_breakthrough?.visible) continue;
     if (await d.getKey("images", row.id)) out.push(row.id);
   }
   return out;
