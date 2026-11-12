@@ -541,7 +541,11 @@ export function resolveMeishoSlots(reads: MeishoRead[]): MeishoTalent[] {
   return [...placed.values()].sort((a, b) => order(a) - order(b));
 }
 
-export function normalizeMeishoTalent(t: { rank?: unknown; slot?: unknown; effect?: unknown; trained?: unknown } | null | undefined): MeishoTalent | null {
+export function normalizeMeishoTalent(
+  t: { rank?: unknown; slot?: unknown; effect?: unknown; trained?: unknown } | null | undefined,
+  /** 手で入力した丸の位置をそのまま使う (効果からの丸で動かさない) */
+  keepPosition = false,
+): MeishoTalent | null {
   const effect = String(t?.effect ?? "")
     .replace(/[(（]\s*未修行\s*[)）]/g, "")
     .replace(/[.。\s]+$/, "")
@@ -549,7 +553,7 @@ export function normalizeMeishoTalent(t: { rank?: unknown; slot?: unknown; effec
   if (!effect) return null;
   const trained = t?.trained !== false && !/未修行/.test(String(t?.effect ?? ""));
   // 効果から位置が決まる時は、AI の読んだ位置より優先する
-  const known = meishoSlotFromEffect(effect);
+  const known = keepPosition ? null : meishoSlotFromEffect(effect);
   if (known) return { ...known, effect, trained };
   const rank = String(t?.rank ?? "").normalize("NFKC").replace(/\s/g, "");
   if (!(MEISHO_RANKS as readonly string[]).includes(rank)) return null;
@@ -775,8 +779,9 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     is_meisho: Boolean(v.is_meisho),
     meisho_manual: Boolean(v.meisho_manual),
     meisho_training_manual: Boolean(v.meisho_training_manual),
+    meisho_talents_manual: Boolean(v.meisho_talents_manual),
     meisho_images: uniqueStrings(Array.isArray(v.meisho_images) ? v.meisho_images.map(String) : []),
-    meisho_talents: mergeMeishoTalents([], (Array.isArray(v.meisho_talents) ? v.meisho_talents : []).map(normalizeMeishoTalent).filter((t): t is MeishoTalent => t !== null)),
+    meisho_talents: mergeMeishoTalents([], (Array.isArray(v.meisho_talents) ? v.meisho_talents : []).map((t) => normalizeMeishoTalent(t, Boolean(v.meisho_talents_manual))).filter((t): t is MeishoTalent => t !== null)),
     oni_season: normalizeSeason(v.oni_season),
     talent_order_v2: Boolean(v.talent_order_v2),
     talent_reorder_undone: Boolean(v.talent_reorder_undone),

@@ -434,3 +434,15 @@ describe("名将修行の丸: 上下の分からない読み取り", () => {
     expect(r.map((x) => `${x.slot}:${x.effect}`)).toEqual(["上:最終ダメージ軽減+15%", "下:覚醒スキルでの被ダメージ軽減+20%"]);
   });
 });
+
+describe("名将修行の手入力", () => {
+  it("手で入力した丸の位置は、効果からの丸で動かさない", () => {
+    const w = normalizeInput({
+      ...emptyWarlordInput(),
+      name: "北条政子",
+      meisho_talents_manual: true,
+      meisho_talents: [{ rank: "中納言", slot: "下", effect: "最終ダメージ+15%", trained: false }],
+    });
+    expect(w.meisho_talents).toEqual([{ rank: "中納言", slot: "下", effect: "最終ダメージ+15%", trained: false }]);
+  });
+});
