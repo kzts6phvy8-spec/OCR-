@@ -221,11 +221,34 @@ export const api = {
       await db.updateWarlord(w.id, normalizeInput(next));
       if (is_meisho && !w.is_meisho) marked++;
     }
+    // シミュレーターのデータがある名将は、通常か特異のどちらかだけが名将 (シミュレーター側の確認)。
+    // 名将の方に印を付け、名将ではない方に自動で付いた印は外す (手で決めた・名将修行の画面が入っている武将はそのまま)
+    {
+      const { SIM_MEISHO } = await import("../../core/meishoSimData.ts");
+      const everyone = await db.listWarlords();
+      for (const m of SIM_MEISHO) {
+        const variants = everyone.filter((w) => w.faction === m.faction && w.name === m.name);
+        const right = variants.filter((w) => w.is_special === m.special);
+        for (const w of variants) {
+          if (w.meisho_manual || w.meisho_images?.length) continue;
+          const should = right.includes(w) && (right.length === 1 || Boolean(w.is_meisho));
+          if (should && !w.is_meisho) {
+            await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), is_meisho: true }));
+            marked++;
+          } else if (!right.includes(w) && w.is_meisho) {
+            await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), is_meisho: false }));
+          }
+        }
+      }
+    }
     // ゲーム内の「名将一覧」と勢力・名前が合う武将にも付ける (同じ勢力に同じ名前が一覧より多い時は、立ち絵で選んでもらう)
     const { matchMeishoRoster } = await import("../../core/meisho.ts");
     for (const m of matchMeishoRoster(await db.listWarlords())) {
       for (const w of m.decided) {
         if (w.is_meisho || w.meisho_manual) continue;
+        // シミュレーターのデータで通常/特異が分かっている名将は、違う方に印を付けない
+        const { SIM_MEISHO: sims } = await import("../../core/meishoSimData.ts");
+        if (sims.some((x) => x.faction === w.faction && x.name === w.name && x.special !== w.is_special) && !sims.some((x) => x.faction === w.faction && x.name === w.name && x.special === w.is_special)) continue;
         await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), is_meisho: true }));
         marked++;
       }
@@ -898,8 +921,8 @@ export const api = {
     // シミュレーターに直接渡した名将: 同じ勢力・名前の武将が図鑑に何人いても 1 人だけ書き出す
     // (図鑑で読み取ったデータがある武将 → 名将の印がある武将 → 通常/特異が合う武将 の順に選ぶ)
     for (const m of SIM_MEISHO) {
-      const twins = SIM_MEISHO.filter((x) => x.faction === m.faction && x.name === m.name).length > 1;
-      const same = all.filter((w) => w.faction === m.faction && w.name === m.name && !used.has(w.id) && (!twins || w.is_special === m.special));
+      // 名将は、同じ名前の武将のうち通常か特異のどちらか (シミュレーター側の確認)。通常/特異まで合う武将から選ぶ
+      const same = all.filter((w) => w.faction === m.faction && w.name === m.name && !used.has(w.id) && w.is_special === m.special);
       if (same.length === 0) continue;
       const pick =
         same.find((w) => w.meisho_talents?.length) ?? same.find((w) => w.is_meisho) ?? same.find((w) => w.is_special === m.special) ?? same[0];
@@ -913,7 +936,8 @@ export const api = {
       );
     }
     // それ以外の名将 (図鑑で読み取る名将)。同じ勢力・名前で何人もいる時は、データがある武将を 1 人だけ
-    const rest = all.filter((w) => w.is_meisho && !used.has(w.id));
+    // シミュレーターのデータと同じ勢力・名前で、通常/特異が違う武将 (名将ではない方) は書き出さない
+    const rest = all.filter((w) => w.is_meisho && !used.has(w.id) && !SIM_MEISHO.some((m) => m.faction === w.faction && m.name === w.name));
     for (const w of rest) {
       const same = rest.filter((x) => x.faction === w.faction && x.name === w.name);
       const pick = same.find((x) => x.meisho_talents?.length) ?? same[0];

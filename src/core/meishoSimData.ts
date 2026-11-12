@@ -66,22 +66,17 @@ const toTalents = (m: SimMeisho): MeishoTalent[] => m.effects.map((effect, i) =>
 
 /**
  * 図鑑の武将に当たる、シミュレーターに直接渡した名将修行の追加天賦 (無ければ null)。
- * 勢力と名前で合わせる。同じ勢力に同じ名前が 2 人いる名将 (江姫・前田利家) は、通常/特異でも合わせる
+ * 勢力と名前で合わせる。名将は同じ名前の武将のうち通常か特異のどちらかなので、通常/特異まで合わせる (江姫・前田利家は両方が名将)
  */
 export function simMeishoTalents(w: Pick<Warlord, "faction" | "name" | "is_special">): MeishoTalent[] | null {
-  const same = SIM_MEISHO.filter((m) => m.faction === w.faction && m.name === w.name);
-  const hit = same.length > 1 ? same.find((m) => m.special === w.is_special) : same[0];
+  // 名将は、同じ名前の武将のうち通常か特異のどちらか 1 人だけ (シミュレーター側の確認)。通常/特異まで合う武将だけ
+  const hit = SIM_MEISHO.find((m) => m.faction === w.faction && m.name === w.name && m.special === w.is_special);
   return hit ? toTalents(hit) : null;
 }
 
 /** シミュレーターのデータのうち、図鑑のどの武将にも当たらない名将 (図鑑に未登録) */
 export function simMeishoNotIn(warlords: Pick<Warlord, "faction" | "name" | "is_special">[]): { faction: string; name: string; special: boolean; talents: MeishoTalent[] }[] {
-  return SIM_MEISHO.filter((m) => {
-    const same = warlords.filter((w) => w.faction === m.faction && w.name === m.name);
-    if (same.length === 0) return true;
-    const twins = SIM_MEISHO.filter((x) => x.faction === m.faction && x.name === m.name).length > 1;
-    return twins && !same.some((w) => w.is_special === m.special);
-  }).map((m) => ({ faction: m.faction, name: m.name, special: m.special, talents: toTalents(m) }));
+  return SIM_MEISHO.filter((m) => !warlords.some((w) => w.faction === m.faction && w.name === m.name && w.is_special === m.special)).map((m) => ({ faction: m.faction, name: m.name, special: m.special, talents: toTalents(m) }));
 }
 
 /** 効果の文を比べやすくする (書き方の揺れ: 戦場/戦闘・状態・記号・空白) */
