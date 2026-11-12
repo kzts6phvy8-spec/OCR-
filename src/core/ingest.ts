@@ -315,6 +315,11 @@ export async function ingestExtraction(
   warnings.push(...mergeWarnings.filter((w) => !(opts.faction && w.startsWith("勢力"))));
   // アップロード時に選んだ勢力は、画像の読み取り結果より優先する
   if (opts.faction) merged.faction = opts.faction;
+  // 前の版で登録画像に入った頂天突破・名将の道の画面は、読み直したら登録画像から外す
+  if (ext.apex_breakthrough?.visible || ext.meisho_awakening?.visible) {
+    merged.gallery_images = merged.gallery_images.filter((g) => g !== opts.imageId);
+    if (merged.image_url === opts.imageId) merged.image_url = merged.gallery_images[0] ?? "";
+  }
 
   const record = normalizeInput(merged);
   // 天賦がすべて今回の読み取り (画面の位置から星を決める) から入った時は、並びは確かめ済み

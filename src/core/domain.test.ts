@@ -462,3 +462,21 @@ describe("手で入力した名将修行は、読み取りで上書きしない"
     expect(w.meisho_talents?.map((t) => `${t.rank}${t.slot}:${t.effect}`)).toEqual(["大史:奥義スキル初回発動後、奥義ゲージ+1", "中納言上:最終ダメージ+15%"]);
   });
 });
+
+describe("頂点武将の名将修行の丸に入った名将の道", async () => {
+  const { normalizeInput } = await import("./domain.ts");
+  it("中身から名将の道の丸に移す", () => {
+    const w = normalizeInput({
+      name: "伊達政宗",
+      faction: "頂点武将",
+      is_meisho: true,
+      meisho_talents: [
+        { rank: "大輔", slot: "", effect: "通常攻撃後、闘気+2pt。闘気が上限に達すると", trained: false },
+        { rank: "中納言", slot: "上", effect: "最終ダメージ+10%、最終ダメージ軽減+10%", trained: false },
+        { rank: "少納言", slot: "上", effect: "Lv.1:兵力が50%まで下がると、奥義ゲージを消費せずに", trained: false },
+      ],
+    });
+    expect(w.meisho_talents).toEqual([]);
+    expect(w.meisho_awakening?.map((n) => `${n.rank}${n.slot}`)).toEqual(["少納言", "大輔上", "大輔下"]);
+  });
+});
