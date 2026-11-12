@@ -786,6 +786,36 @@ export const api = {
   },
 
   /** 1 人の武将の名将修行の追加天賦を消す (取り違えて入った時に) */
+  /**
+   * 名将修行の画面として別の武将 (同じ名前の伊達政宗など) に入ってしまった「名将の道」の画面を外し、
+   * 頂点武将の名将の道として保存し直す (読み取り結果をそのまま使うので AI は使わない)
+   */
+  async fixMisreadAwakening(): Promise<number> {
+    const { looksLikeMeishoAwakening } = await import("../../core/ocrSchema.ts");
+    const moved: string[] = [];
+    for (const w of await db.listWarlords()) {
+      const wrong: string[] = [];
+      for (const id of w.meisho_images ?? []) {
+        const ext = await db.getExtraction(id).catch(() => null);
+        if (ext && looksLikeMeishoAwakening(ext)) wrong.push(id);
+      }
+      if (!wrong.length) continue;
+      await removeTrainingImages(w, wrong);
+      moved.push(...wrong);
+    }
+    if (moved.length) {
+      await queue.enqueue(
+        moved.map((imageId, i) => ({ fileName: `名将の道の画面${i + 1} (振り分け直し)`, imageId })),
+        "auto",
+        null,
+        "",
+        true,
+        { reuse: true },
+      );
+    }
+    return moved.length;
+  },
+
   /** 頂点武将の名将修行の丸 8 つに入ってしまった名将の道の文を、名将の道の丸 4 つに移す (保存し直すと移る) */
   async fixApexMeisho(): Promise<number> {
     let n = 0;
