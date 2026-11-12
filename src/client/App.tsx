@@ -33,6 +33,7 @@ export default function App() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const knownStatus = useRef<Map<string, OcrJob["status"]> | null>(null);
+  const knownLabel = useRef<Map<string, string> | null>(null);
   const sendingRef = useRef(0);
 
   const refreshWarlords = useCallback(async () => {
@@ -107,6 +108,10 @@ export default function App() {
       toast("success", "送信完了！ アプリを閉じても大丈夫です", `サーバーで ${remoteNow} 枚を解析中。次に開いた時に結果を受け取ります`);
     }
     sendingRef.current = sendingNow;
+    // 解析が終わった画面の保存先が変わった (名将の選び直しなど) 時も、図鑑の表示を読み直す
+    const labels = new Map(list.map((j) => [j.id, `${j.warlord_id ?? ""}|${j.warlord_label ?? ""}`]));
+    if (knownLabel.current && list.some((j) => j.status === "done" && knownLabel.current!.has(j.id) && knownLabel.current!.get(j.id) !== labels.get(j.id))) changed = true;
+    knownLabel.current = labels;
     knownStatus.current = new Map(list.map((j) => [j.id, j.status]));
     setJobs(list);
     if (changed) refreshWarlordsSoon();
@@ -141,9 +146,10 @@ export default function App() {
         await (await import("./lib/meishoSlots.ts")).recomputeAllMeishoTalents();
         if (wrong > 0) toast("info", `取り違えて入っていた名将修行の画面 ${wrong} 枚を見分け直します`, "読んだ追加天賦が、その名将のものと食い違っていました");
         const n = await api.markMeisho();
+        // 名将修行の決め直し・印の付け外しを、画面 (名将一覧の足りない丸など) に反映する
+        void refreshWarlords();
         if (n === 0) return;
         toast("success", `${n} 人に「名将」の印を付けました`, "図鑑の「名将のみ」で絞り込めます");
-        void refreshWarlords();
       });
       // 同じスクショが 2 重に登録された画像を 1 枚にまとめる
       await step("画像の重なり", async () => {
