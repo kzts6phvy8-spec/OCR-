@@ -6,7 +6,7 @@ import { saveFile, today } from "../lib/share.ts";
 import type { Warlord } from "../../core/types.ts";
 import { MEISHO_ROSTER, ROSTER_NAMES, matchMeishoRoster } from "../../core/meisho.ts";
 import { meishoTalentGaps } from "../../core/missing.ts";
-import { SIM_MEISHO } from "../../core/meishoSimData.ts";
+import { SIM_MEISHO, simMeishoTalents } from "../../core/meishoSimData.ts";
 import { StoredImage } from "./StoredImage.tsx";
 
 // 「データ管理」の名将一覧: ゲーム内の「名将一覧」の武将が図鑑のどの武将か、登録されていない名将はいないかを見せる
@@ -81,7 +81,12 @@ export function MeishoPanel({
       toast("error", "保存できませんでした", (e as Error).message);
     }
   };
-  const factions = [...new Set(matches.map((m) => m.faction))];
+  // 名将の方が選ばれていて、名将修行もそろっている (シミュレーターのデータがある・8 つ入っている) 名将は、ふだんは出さない
+  const [showAll, setShowAll] = useState(false);
+  const done = (m: (typeof matches)[number]) =>
+    m.candidates.some((w) => w.is_meisho && (simMeishoTalents(w) !== null || meishoTalentGaps(w).length === 0));
+  const shown = showAll ? matches : matches.filter((m) => !done(m));
+  const factions = [...new Set(shown.map((m) => m.faction))];
   const missing = matches.filter((m) => m.candidates.length === 0).length;
   const choose = matches.filter((m) => m.candidates.length > 0 && m.decided.length === 0 && !m.candidates.some((w) => w.meisho_manual)).length;
   return (
@@ -197,11 +202,16 @@ export function MeishoPanel({
       })()}
       <TrainingSorter warlords={warlords} onChanged={onChanged} />
       <div className="space-y-3">
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ash">
+          <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="accent-gold-500" />
+          そろっている名将も表示する (ふだんは、名将の方が決まっていない・名将修行が足りない名将だけ)
+        </label>
+        {factions.length === 0 && <p className="text-xs text-emerald-300">すべての名将がそろっています</p>}
         {factions.map((f) => (
           <div key={f}>
             <p className="mb-1 text-xs font-bold text-gold-300">{f}</p>
             <ul className="flex flex-wrap gap-1.5">
-              {matches
+              {shown
                 .filter((m) => m.faction === f)
                 .map((m) => {
                   const label = `${m.name}${m.count > 1 ? ` ×${m.count}` : ""}`;
