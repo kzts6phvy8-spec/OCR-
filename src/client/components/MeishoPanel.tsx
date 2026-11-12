@@ -22,6 +22,12 @@ export function MeishoPanel({
 }) {
   const toast = useToast();
   const [progress, setProgress] = useState<string | null>(null);
+  // 名将一覧を開いた時は、最新の図鑑の内容を読み直す (解析キューでの選び直しなどを反映する)
+  useEffect(() => {
+    onChanged();
+    // 開いた時に 1 回だけ
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // どの名将にも入っていない名将修行の画面の枚数 (見分けに失敗したままの分)
   const [unassigned, setUnassigned] = useState(0);
   useEffect(() => {
