@@ -299,3 +299,19 @@ describe("頂点武将の頂天突破の画面", () => {
     expect(r.warlord.apex_nodes?.[0]).toMatchObject({ rank: "少納言", size: "小" });
   });
 });
+
+describe("頂天突破の画面を名将修行の画面とも答えた時", () => {
+  it("名将修行の画面としては扱わない", async () => {
+    const { tidyExtraction } = await import("./ocrSchema.ts");
+    const e = tidyExtraction(
+      makeExtraction({
+        name: null,
+        meisho_marker_visible: true,
+        meisho_training: { visible: true, selected_rank: "少史", selected_slot: "上", effect: "攻+40", trained: false },
+        apex_breakthrough: { visible: true, selected_area: "左上", selected_size: "小", title: "追加天賦", effect: "攻+40. 計+40", cost: 25 },
+      }),
+    );
+    expect(e.meisho_training?.visible).toBe(false);
+    expect(e.meisho_marker_visible).toBe(false);
+  });
+});
