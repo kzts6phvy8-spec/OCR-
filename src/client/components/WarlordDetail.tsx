@@ -832,13 +832,12 @@ function DetailView({
         <Section title="名将修行 (追加天賦)">
           <ul className="space-y-1.5">
             {w.meisho_talents!.map((t, i) => (
-              <li key={i} className={`flex flex-wrap items-center gap-2 rounded-lg border p-2.5 text-sm ${t.trained ? "border-shu-600/60 bg-ebony-900" : "border-ebony-800 bg-ebony-900/50 opacity-70"}`}>
+              <li key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-shu-600/60 bg-ebony-900 p-2.5 text-sm">
                 <span className="font-bold text-gold-300">
                   {t.rank}
                   {t.slot && ` ${t.slot}`}
                 </span>
                 <span className="font-bold">{t.effect}</span>
-                <span className={`ml-auto text-[11px] ${t.trained ? "text-shu-300" : "text-ebony-500"}`}>{t.trained ? "修行済み" : "未修行"}</span>
               </li>
             ))}
           </ul>
@@ -1268,13 +1267,13 @@ function MoveMeisho({ w, allWarlords, onSaved }: { w: Warlord; allWarlords: Warl
 /** 名将修行の追加天賦を、丸 8 つの欄に手で入力する (空欄はその丸を消す) */
 function MeishoTalentEditor({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d: WarlordInput) => WarlordInput) => void }) {
   const find = (rank: string, slot: string) => (draft.meisho_talents ?? []).find((t) => t.rank === rank && t.slot === slot);
-  const setSlot = (rank: string, slot: string, patch: { effect?: string; trained?: boolean }) =>
+  const setSlot = (rank: string, slot: string, patch: { effect?: string }) =>
     setDraft((d) => {
       const list = (d.meisho_talents ?? []).filter((t) => !(t.rank === rank && t.slot === slot));
       const cur = (d.meisho_talents ?? []).find((t) => t.rank === rank && t.slot === slot);
       const effect = patch.effect ?? cur?.effect ?? "";
-      const trained = patch.trained ?? cur?.trained ?? false;
-      if (effect.trim()) list.push({ rank, slot, effect, trained });
+      // 修行したかどうかは、シミュレーターを使う人が決めるので持たない (いつも未修行として入れる)
+      if (effect.trim()) list.push({ rank, slot, effect, trained: false });
       const order = (t: { rank: string; slot: string }) => MEISHO_SLOTS.findIndex((x) => x.rank === t.rank && x.slot === t.slot);
       // 手で入力したので、名将修行の画面からの決め直しで上書きしない
       return { ...d, meisho_talents: list.sort((a, b) => order(a) - order(b)), meisho_talents_manual: true };
@@ -1293,10 +1292,6 @@ function MeishoTalentEditor({ draft, setDraft }: { draft: WarlordInput; setDraft
                 {slot && ` ${slot}`}
               </span>
               <input className="field flex-1 text-sm" value={t?.effect ?? ""} placeholder="未入力" onChange={(e) => setSlot(rank, slot, { effect: e.target.value })} />
-              <label className="flex shrink-0 items-center gap-1 text-[11px] text-ash">
-                <input type="checkbox" checked={Boolean(t?.trained)} disabled={!t} onChange={(e) => setSlot(rank, slot, { trained: e.target.checked })} className="accent-shu-500" />
-                修行済み
-              </label>
             </div>
           );
         })}
