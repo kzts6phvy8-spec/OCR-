@@ -325,6 +325,9 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
             // 名将修行の画面は登録画像に残さないので、読み取った追加天賦は作り直しで消さない
             meisho_talents: target.meisho_talents,
             meisho_images: target.meisho_images,
+            // 頂天突破の画面も登録画像に残さないので消さない
+            apex_nodes: target.apex_nodes,
+            apex_images: target.apex_images,
             gallery_images: target.gallery_images,
             image_url: target.image_url,
             reset_batch: job.reset_batch,
@@ -341,6 +344,8 @@ function ingestJob(snapshot: OcrJob, extraction: OcrExtraction) {
       // バックグラウンド解析がオンなら、立ち絵の確認で AI に尋ねる時もサーバーに任せる
       sameArt: artChecker(job.image_id, extraction.screen_types, bgActive(loadSettings()) ? { answers: job.art_answers ?? {} } : undefined),
       excludeIds: job.exclude_ids,
+      // 頂天突破の画面: すでに振り分けた同じ頂点武将の突破の画面と見比べる (カードの絵がほぼ同じ)
+      matchKnownApex: (candidates) => matchKnownTraining(job.image_id, candidates.filter((w) => w.apex_images?.length), (w) => w.apex_images ?? []),
       // 名将修行の画面: 登録済みの名将 (名将の印がある武将) の立ち絵と見比べて誰かを決める
       identifyMeisho: async () => {
         // 読んだ追加天賦と、シミュレーターに直接渡した名将修行のデータが食い違う名将は、候補から外す (取り違え防止)

@@ -42,6 +42,23 @@ export const OcrExtractionSchema = z.object({
       trained: z.boolean().describe("「追加天賦」の欄に「(未修行)」と書かれていなければ true"),
     })
     .optional(),
+  // 頂点武将の「突破」の画面 (頂天突破)。前の版で送った解析の結果には無いので、無くても通す
+  apex_breakthrough: z
+    .object({
+      visible: z.boolean().describe("頂点武将の「突破」の画面 (紫の星空に丸が線でつながった図があり、下に効果の欄と緑の「突破」ボタンがある画面) が写っている場合のみ true"),
+      selected_area: nullableString("光って (黄色い輪で) 選ばれている丸がある場所: 左上 / 右上 / 中央 / 右下 / 左下 のどれか"),
+      selected_size: nullableString("選ばれている丸が 大きい丸 なら 大、小さい丸 なら 小"),
+      title: nullableString("下の欄のオレンジ色の見出しをそのまま (例: 追加天賦 / 突破スキル(辛·8) / 受動スキル / 【強化】受動スキル / 【強化】突破スキル(庚·7) / 固有の名前)"),
+      effect: nullableString("見出しの下の効果の全文。「(未突破)」と、「強化後、…上書きされ…」の注意書きは含めない"),
+      cost: nullableNumber("緑の「突破」ボタンの数字 (例: 25)。ボタンが無ければ null"),
+    })
+    .optional(),
+  passive_skill: z
+    .object({
+      visible: z.boolean().describe("スキル画面に「受動スキル」の欄が写っている場合のみ true (頂点武将だけにある)"),
+      desc: nullableString("「受動スキル」の欄の効果の全文"),
+    })
+    .optional(),
   meisho_marker_visible: z.boolean().optional().describe("奥義スキル名の行の右端に青い「名将一覧」のボタンが写っている、または「名将修行」の画面の場合のみ true"),
 
   growth_total: nullableString('成長値合計 (例: "9" や "8.5")'),

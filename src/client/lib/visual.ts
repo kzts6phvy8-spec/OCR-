@@ -405,13 +405,17 @@ function trainingSigOf(imageId: string) {
  * 名将修行の画面を、すでに名将に振り分けた名将修行の画面と見比べる (AI なし)。
  * 名将修行の画面は配置が同じなので、同じ武将ならカードの絵がほぼ同じになる
  */
-export async function matchKnownTraining(imageId: string, warlords: Warlord[]): Promise<Warlord | null> {
+export async function matchKnownTraining(
+  imageId: string,
+  warlords: Warlord[],
+  imagesOf: (w: Warlord) => string[] = (w) => w.meisho_images ?? [],
+): Promise<Warlord | null> {
   const target = await trainingSigOf(imageId);
   if (!target) return null;
   const scores: { w: Warlord; score: number }[] = [];
   for (const w of warlords) {
     let best = -1;
-    for (const id of (w.meisho_images ?? []).filter((x) => x !== imageId)) {
+    for (const id of imagesOf(w).filter((x) => x !== imageId)) {
       const sig = await trainingSigOf(id);
       if (sig) best = Math.max(best, signatureSimilarity(target, sig));
     }

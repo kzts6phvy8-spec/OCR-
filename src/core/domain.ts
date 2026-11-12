@@ -18,7 +18,7 @@ import {
 import { inferPriorityFromCondition } from "./priorityRules.ts";
 import { detectSeason, normalizeSeason } from "./seasons.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
-import { MEISHO_RANKS, type MeishoTalent } from "./types.ts";
+import { APEX_COSTS, MEISHO_RANKS, type ApexNode, type MeishoTalent } from "./types.ts";
 
 const SPECIAL_MARKER_RE = /【\s*特\s*】/g;
 /**
@@ -225,6 +225,24 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
   set("skill_gauge", int(ext.skill.gauge, 0, 3));
   set("skill_desc", stripMeisho(str(ext.skill.desc)));
 
+  // 頂点武将の「突破」の画面: 選ばれている丸 1 つ分だけを読む (覚醒・天賦・奥義の欄は無い画面)
+  const apex = ext.apex_breakthrough?.visible ? apexNodeFromRead(ext.apex_breakthrough) : null;
+  if (ext.apex_breakthrough?.visible) {
+    if (apex) {
+      patch.apex_nodes = [apex];
+      // 少史の大きい丸は突破スキル (覚醒スキルの位置) そのもの
+      if (apex.rank === "少史" && apex.size === "大" && apex.effect) {
+        patch.has_awakening = true;
+        const pr = normalizePriority(apex.title.replace(/^.*?[（(]/, "").replace(/[）)].*$/, ""));
+        if (pr) patch.awakening_priority = pr;
+        patch.awakening_before_weapon = apex.effect;
+      }
+    }
+    return patch;
+  }
+  const passive = str(ext.passive_skill?.visible ? ext.passive_skill.desc : "");
+  if (passive) patch.passive_skill = passive;
+
   const aw = ext.awakening;
   const split = splitAwakeningName(aw.skill_name);
   if (aw.visible && (split.name || str(aw.before_weapon_effect))) {
@@ -270,6 +288,102 @@ export function extractionToPatch(ext: OcrExtraction): Partial<WarlordInput> {
       .filter((s) => s.partner),
   );
   return patch;
+}
+
+const APEX_RANK_ORDER = (r: string) => {
+  const i = APEX_COSTS.findIndex((c) => c.rank === r);
+  return i < 0 ? 99 : i;
+};
+
+/** 頂天突破の効果の文から「(未突破)」と末尾の「.」を取り除く */
+const cleanApexText = (t: string) =>
+  t
+    .replace(/[（(]\s*未突破\s*[)）]/g, "")
+    .replace(/強化後[、,].*?上書きされ.*$/, "")
+    .trim()
+    .replace(/[.。]+$/, "")
+    .trim();
+
+/**
+ * 「突破」の画面で選ばれていた丸 1 つを、官職・大小つきの丸にする。
+ * 官職は必要数 (官職ごとに決まっている) から決め、無ければ見出しの文字、最後に AI が読んだ場所から決める
+ */
+export function apexNodeFromRead(r: {
+  selected_area?: string | null;
+  selected_size?: string | null;
+  title?: string | null;
+  effect?: string | null;
+  cost?: number | null;
+}): ApexNode | null {
+  const title = cleanApexText(str(r.title)).normalize("NFKC").replace(/\s+/g, "");
+  const effect = cleanApexText(str(r.effect));
+  if (!effect && !title) return null;
+  const cost = Number.isFinite(Number(r.cost)) ? Math.max(0, Math.round(Number(r.cost))) : 0;
+  let rank = "";
+  let size: "大" | "小" | "" = "";
+  const byCost = APEX_COSTS.find((c) => c.big === cost || c.small === cost);
+  if (byCost) {
+    rank = byCost.rank;
+    size = byCost.big === cost ? "大" : "小";
+  } else if (/強化.*受動/.test(title)) [rank, size] = ["大輔", "大"];
+  else if (/強化.*突破/.test(title)) [rank, size] = ["中納言", "大"];
+  else if (/^突破スキル/.test(title)) [rank, size] = ["少史", "大"];
+  else if (/^受動スキル/.test(title)) [rank, size] = ["大史", "大"];
+  else if (title && !/追加天賦/.test(title)) [rank, size] = ["少納言", "大"];
+  else if (/^(攻|計|防|兵)\+40/.test(effect.normalize("NFKC"))) [rank, size] = ["少史", "小"];
+  else {
+    rank = APEX_COSTS.find((c) => c.area === str(r.selected_area))?.rank ?? "";
+    size = /大/.test(str(r.selected_size)) ? "大" : "小";
+  }
+  if (!size) size = /追加天賦/.test(title) ? "小" : "大";
+  return { rank, size, title: str(r.title).replace(/\s+/g, "").trim() || (size === "小" ? "追加天賦" : ""), effect, cost };
+}
+
+/**
+ * 頂天突破の丸をまとめる。大きい丸は官職ごとに 1 つ (新しく読んだ方で置き換え)、小さい丸は官職ごとに 2 つまで (同じ効果は 1 つに)。
+ * 官職の順 (少史 → 中納言)、大 → 小 に並べる
+ */
+export function mergeApexNodes(cur: ApexNode[], incoming: ApexNode[]): { nodes: ApexNode[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const out = [...cur];
+  for (const n of incoming) {
+    if (n.size === "大" && n.rank) {
+      const i = out.findIndex((o) => o.size === "大" && o.rank === n.rank);
+      if (i >= 0) out[i] = n;
+      else out.push(n);
+      continue;
+    }
+    if (out.some((o) => o.size === n.size && o.rank === n.rank && normText(o.effect) === normText(n.effect))) continue;
+    const same = out.filter((o) => o.size === "小" && o.rank === n.rank);
+    if (n.rank && same.length >= 2) {
+      warnings.push(`頂天突破の${n.rank}の小さい丸はもう 2 つ入っているので、「${n.effect}」は入れませんでした (違う武将の画面かもしれません)`);
+      continue;
+    }
+    out.push(n);
+  }
+  out.sort((a, b) => APEX_RANK_ORDER(a.rank) - APEX_RANK_ORDER(b.rank) || (a.size === b.size ? 0 : a.size === "大" ? -1 : 1));
+  return { nodes: out, warnings };
+}
+
+function normalizeApexNodes(v: unknown): ApexNode[] {
+  if (!Array.isArray(v)) return [];
+  const list = v
+    .map((n): ApexNode | null => {
+      if (!n || typeof n !== "object") return null;
+      const o = n as Record<string, unknown>;
+      const effect = String(o.effect ?? "").trim();
+      const title = String(o.title ?? "").trim();
+      if (!effect && !title) return null;
+      return {
+        rank: (MEISHO_RANKS as readonly string[]).includes(String(o.rank)) ? String(o.rank) : "",
+        size: o.size === "小" ? "小" : "大",
+        title,
+        effect,
+        cost: Math.max(0, Math.round(Number(o.cost) || 0)),
+      };
+    })
+    .filter((n): n is ApexNode => n !== null);
+  return list.sort((a, b) => APEX_RANK_ORDER(a.rank) - APEX_RANK_ORDER(b.rank) || (a.size === b.size ? 0 : a.size === "大" ? -1 : 1));
 }
 
 function uniqueStrings(values: string[]): string[] {
@@ -699,6 +813,13 @@ export function mergeWarlord(
       : patch.meisho_talents;
     merged.meisho_talents = mergeMeishoTalents(merged.meisho_talents ?? [], incoming);
   }
+  if (patch.apex_nodes?.length) {
+    const r = mergeApexNodes(merged.apex_nodes ?? [], patch.apex_nodes);
+    merged.apex_nodes = r.nodes;
+    warnings.push(...r.warnings);
+  }
+  if (patch.apex_images?.length) merged.apex_images = uniqueStrings([...(merged.apex_images ?? []), ...patch.apex_images]);
+  if (patch.passive_skill && patch.passive_skill.length > (merged.passive_skill ?? "").length) merged.passive_skill = patch.passive_skill;
   if (patch.meisho_images?.length) merged.meisho_images = uniqueStrings([...(merged.meisho_images ?? []), ...patch.meisho_images]);
   if (patch.synergy_skills) merged.synergy_skills = mergeSynergies(merged.synergy_skills, patch.synergy_skills);
   if (patch.troop_variants) merged.troop_variants = uniqueStrings([...merged.troop_variants, ...patch.troop_variants]);
@@ -788,6 +909,9 @@ export function normalizeInput(raw: Partial<WarlordInput>): WarlordInput {
     meisho_talents_manual: Boolean(v.meisho_talents_manual),
     meisho_images: uniqueStrings(Array.isArray(v.meisho_images) ? v.meisho_images.map(String) : []),
     meisho_talents: mergeMeishoTalents([], (Array.isArray(v.meisho_talents) ? v.meisho_talents : []).map((t) => normalizeMeishoTalent(t, Boolean(v.meisho_talents_manual))).filter((t): t is MeishoTalent => t !== null)),
+    passive_skill: String(v.passive_skill ?? "").trim() || undefined,
+    apex_nodes: normalizeApexNodes(v.apex_nodes),
+    apex_images: uniqueStrings(Array.isArray(v.apex_images) ? v.apex_images.map(String) : []),
     oni_season: normalizeSeason(v.oni_season),
     talent_order_v2: Boolean(v.talent_order_v2),
     talent_reorder_undone: Boolean(v.talent_reorder_undone),

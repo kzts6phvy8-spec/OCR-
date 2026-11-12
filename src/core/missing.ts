@@ -1,12 +1,24 @@
 // 図鑑の「未入力の項目で絞り込み」に使う項目の一覧。各項目は「まだ入っていない」ことを判定する。
 
-import { AWAKENING_PRIORITIES, MEISHO_SLOTS, type Warlord } from "./types.ts";
+import { APEX_COSTS, AWAKENING_PRIORITIES, MEISHO_SLOTS, type Warlord } from "./types.ts";
 
 /** 名将の武将で、名将修行の追加天賦がまだ読み取れていない丸 (例: 「少史 下」「大輔」) */
 export const meishoTalentGaps = (w: Warlord): string[] =>
   w.is_meisho
     ? MEISHO_SLOTS.filter((s) => !(w.meisho_talents ?? []).some((t) => t.rank === s.rank && t.slot === s.slot)).map((s) => `${s.rank}${s.slot ? ` ${s.slot}` : ""}`)
     : [];
+
+/** 頂点武将の頂天突破で、まだ読み取れていない丸 (例: 「大史 大」「少納言 小」) */
+export const apexNodeGaps = (w: Warlord): string[] => {
+  const nodes = w.apex_nodes ?? [];
+  const gaps: string[] = [];
+  for (const { rank } of APEX_COSTS) {
+    if (!nodes.some((n) => n.rank === rank && n.size === "大")) gaps.push(`${rank} 大`);
+    const small = nodes.filter((n) => n.rank === rank && n.size === "小").length;
+    for (let i = small; i < 2; i++) gaps.push(`${rank} 小`);
+  }
+  return gaps;
+};
 
 export interface MissingField {
   id: string;
@@ -75,7 +87,13 @@ export const MISSING_FIELDS: MissingField[] = [
     label: "連携スキル",
     // 鬼憑武将の連携スキル (〜鬼憑武将◯体が同時に場内にいる場合) は段階ごとに複数あるので、1 つだけなら読み残しがある
     missing: (w) =>
-      !w.no_synergy && (w.synergy_skills.length === 0 || (w.faction === "鬼憑武将" && w.synergy_skills.length < 2)),
+      !w.no_synergy && w.faction !== "頂点武将" && (w.synergy_skills.length === 0 || (w.faction === "鬼憑武将" && w.synergy_skills.length < 2)),
+  },
+  { id: "passive_skill", label: "受動スキル (頂点武将)", missing: (w) => w.faction === "頂点武将" && !w.passive_skill },
+  {
+    id: "apex_nodes",
+    label: "頂天突破 (頂点武将・15 個)",
+    missing: (w) => w.faction === "頂点武将" && apexNodeGaps(w).length > 0,
   },
   // 1 つも無い名将は、シミュレーターの方に直接渡してあるので未入力に数えない (途中まで入っているのに足りない名将だけ)
   { id: "meisho_talents", label: "名将修行の追加天賦 (途中まで入っている名将)", missing: (w) => (w.meisho_talents?.length ?? 0) > 0 && meishoTalentGaps(w).length > 0 },

@@ -1,3 +1,4 @@
+import { apexNodeGaps } from "../../core/missing.ts";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Camera,
@@ -770,7 +771,7 @@ function DetailView({
       <div className="mb-6 rounded-2xl border border-ebony-700 bg-ebony-950/60 p-4 sm:p-5">
         <h3 className="flex flex-wrap items-center gap-2 font-serif text-base font-extrabold text-shu-300">
           <Swords className="size-5" />
-          覚醒スキル{w.awakening_priority && `（${w.awakening_priority}）`}
+          {w.faction === "頂点武将" ? "突破スキル" : "覚醒スキル"}{w.awakening_priority && `（${w.awakening_priority}）`}
           {w.has_weapon_awakening && <WeaponBadge />}
         </h3>
         {w.has_awakening ? (
@@ -799,6 +800,13 @@ function DetailView({
           <p className="mt-2 text-sm text-ebony-500">未解析</p>
         )}
       </div>
+
+      {(w.faction === "頂点武将" || w.passive_skill) && (
+        <div className="mb-6 rounded-2xl border border-ebony-700 bg-ebony-950/60 p-4 sm:p-5">
+          <h3 className="font-serif text-base font-extrabold text-shu-300">受動スキル</h3>
+          <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap text-washi/80">{w.passive_skill || <span className="text-ebony-500">未解析</span>}</p>
+        </div>
+      )}
 
       <Section title="天賦">
         {w.talents.length ? (
@@ -852,6 +860,42 @@ function DetailView({
           </button>
           <MoveMeisho w={w} allWarlords={allWarlords} onSaved={onSaved} />
           <p className="mt-1.5 text-[11px] text-ebony-500">名将修行の画面で官職の丸を選ぶと、その丸の追加天賦が出ます。丸ごとにスクショを取り込むと、ここに増えます (画面に名前が無くても、立ち絵から誰か見分けます)。</p>
+        </Section>
+      )}
+
+      {(w.faction === "頂点武将" || (w.apex_nodes?.length ?? 0) > 0) && (
+        <Section title="頂天突破">
+          {w.apex_nodes?.length ? (
+            <ul className="space-y-1.5">
+              {w.apex_nodes.map((n, i) => (
+                <li key={i} className={`rounded-lg border bg-ebony-900 p-2.5 text-sm ${n.size === "大" ? "border-gold-700/60" : "border-ebony-700"}`}>
+                  <span className="font-bold text-gold-300">
+                    {n.rank || "官職不明"} {n.size}
+                  </span>
+                  {n.title && n.title !== "追加天賦" && <span className="ml-2 font-bold">{n.title}</span>}
+                  {n.cost > 0 && <span className="ml-2 text-[11px] text-ebony-500">[{n.cost}]</span>}
+                  <p className="mt-0.5 whitespace-pre-wrap text-washi/80">{n.effect}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Empty />
+          )}
+          {w.faction === "頂点武将" && apexNodeGaps(w).length > 0 && (
+            <p className="mt-1.5 text-[11px] text-hi-400">まだ無い丸: {apexNodeGaps(w).join("、")}</p>
+          )}
+          {(w.apex_nodes?.length ?? 0) > 0 && (
+            <button
+              onClick={() => {
+                if (!confirm(`「${w.name}」の頂天突破 (${w.apex_nodes!.length} つ) を消しますか？\n別の武将の画面が取り違えて入っていた時に使います。`)) return;
+                void api.clearApex(w.id).then(onSaved);
+              }}
+              className="mt-2 rounded-md border border-hi-600/60 px-2.5 py-1 text-xs text-hi-400"
+            >
+              頂天突破を消す (取り違えて入った時)
+            </button>
+          )}
+          <p className="mt-1.5 text-[11px] text-ebony-500">「突破」の画面で丸を選ぶと、下に効果が出ます。丸ごとにスクショを取り込むと、ここに増えます (画面に名前が無くても、立ち絵から誰か見分けます)。</p>
         </Section>
       )}
 
@@ -1042,6 +1086,12 @@ function EditForm({ draft, setDraft }: { draft: WarlordInput; setDraft: (fn: (d:
           )}
         </div>
       </Section>
+
+      {(draft.faction === "頂点武将" || draft.passive_skill) && (
+        <Section title="受動スキル (頂点武将)">
+          <textarea rows={3} className="field" value={draft.passive_skill ?? ""} onChange={(e) => setDraft((d) => ({ ...d, passive_skill: e.target.value }))} />
+        </Section>
+      )}
 
       <Section title="天賦">
         <div className="space-y-2">
