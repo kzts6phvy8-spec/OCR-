@@ -351,7 +351,8 @@ function ingestJob(snapshot: OcrJob, read: OcrExtraction) {
       // 名将修行の画面: 登録済みの名将 (名将の印がある武将) の立ち絵と見比べて誰かを決める
       identifyMeisho: async () => {
         // 読んだ追加天賦と、シミュレーターに直接渡した名将修行のデータが食い違う名将は、候補から外す (取り違え防止)
-        const everyone = (await db.listWarlords()).filter((w) => !(job.exclude_ids ?? []).includes(w.id));
+        // 頂点武将の名将は「名将の道」の形で、名将修行の画面は無い (立ち絵が似た伊達政宗と取り違えないように候補から外す)
+        const everyone = (await db.listWarlords()).filter((w) => !(job.exclude_ids ?? []).includes(w.id) && w.faction !== "頂点武将");
         // 読んだ追加天賦が、シミュレーターのデータの名将の 1 人とだけ合えば、その名将 (AI を使わない)
         const bySim = await meishoBySimData(job.image_id, extraction, everyone);
         if (bySim) return bySim;
@@ -459,7 +460,7 @@ async function meishoCandidates(job: OcrJob, extraction?: OcrExtraction | null):
   // すでに名将修行の画面が入っている武将は、立ち絵の見比べの候補にしない。
   // 同じ名将の画面ならカードの絵が同じなので、その前の端末での見比べで決まっているはず。決まらなかった = 別の名将の画面
   // (例: 鶴姫の画面がもう入っているのに、霧隠才蔵の画面を鶴姫と取り違えた)
-  return [...new Set([...all.filter((w) => w.is_meisho), ...unsure, ...byName])].filter((w) => !w.meisho_images?.length);
+  return [...new Set([...all.filter((w) => w.is_meisho), ...unsure, ...byName])].filter((w) => !w.meisho_images?.length && w.faction !== "頂点武将");
 }
 
 const MEISHO_FAIL = "名将修行の画面の立ち絵から、どの名将か見分けられませんでした。下の「どの名将か選ぶ」で選んでください (その名将の名将修行に入れるだけで、武将をまとめるわけではありません)";

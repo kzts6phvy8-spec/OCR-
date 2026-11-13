@@ -81,7 +81,7 @@ export function warlordToText(w: Warlord): string {
  * (まだ読み取っていない武将は「未取得」)
  */
 export function meishoTrainingToText(list: Warlord[]): string {
-  const done = list.filter((w) => w.meisho_talents?.length).length;
+  const done = list.filter((w) => w.meisho_talents?.length || w.meisho_awakening?.length).length;
   const lines = [`名将修行 追加天賦 (${list.length} 人・読み取り済み ${done} 人)`, ""];
   let faction: string | null = null;
   for (const w of list) {
@@ -90,6 +90,13 @@ export function meishoTrainingToText(list: Warlord[]): string {
       lines.push(`■ ${faction || "勢力未入力"}`);
     }
     lines.push(`${w.is_special ? "【特】" : ""}${w.name}${w.title_alias ? `（${w.title_alias}）` : ""}`);
+    if (w.faction === "頂点武将") {
+      // 頂点武将の名将は「名将の道」(少納言・大輔 上/下・中納言) の形
+      if (!w.meisho_awakening?.length) lines.push("  名将の道: 未取得");
+      for (const n of w.meisho_awakening ?? []) lines.push(`  ${n.rank}${n.slot ? ` ${n.slot}` : ""}『${n.title}』${n.effect}`);
+      lines.push("");
+      continue;
+    }
     if (!w.meisho_talents?.length) lines.push("  未取得");
     else if (w.meisho_source === "simulator") lines.push("  (シミュレーターに直接渡したデータ)");
     for (const t of w.meisho_talents ?? []) lines.push(`  ${t.rank}${t.slot ? ` ${t.slot}` : ""}:${t.effect}${t.estimated ? " (推定・名将全員同じ)" : ""}`);

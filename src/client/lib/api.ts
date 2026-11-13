@@ -1012,6 +1012,8 @@ export const api = {
     }
     // 名将全員が同じ丸 (少史 上: 兵数上限+175、少納言 下: 物理計略防御+20%) が足りない名将は、推定で埋める (書き出しの時だけ)
     for (const [k, w] of meisho.entries()) {
+      // 頂点武将の名将は「名将の道」の形で、名将修行の丸は無い
+      if (w.faction === "頂点武将") continue;
       const talents = [...(w.meisho_talents ?? [])];
       const add = (rank: string, slot: string, effect: string) => {
         if (!talents.some((t) => t.rank === rank && t.slot === slot)) talents.push({ rank, slot, effect, trained: false, estimated: true });
