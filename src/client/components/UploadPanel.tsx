@@ -1,3 +1,4 @@
+import { tidyExtraction } from "../../core/ocrSchema.ts";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { AlertTriangle, BookOpen, CheckCircle2, Clock, Cloud, ImagePlus, Loader2, RefreshCw, RotateCcw, ScanLine, Send, X, XCircle } from "lucide-react";
 import { FACTIONS, isPending, type Faction, type OcrJob, type UploadMode, type Warlord } from "../../core/types.ts";
@@ -407,7 +408,7 @@ function JobRow({
   // 名将修行の画面: 選んだ名将の名将修行 (追加天賦) に入れるだけ (武将をまとめるわけではない)
   // 解析が終わって、どれかの名将に入っている名将修行の画面 (選び直し・見分け直しができる)
   const doneTraining = job.status === "done" && warlords.some((w) => (w.meisho_images ?? []).includes(job.image_id));
-  const training = Boolean(job.extraction?.meisho_training?.visible) || doneTraining;
+  const training = Boolean(job.extraction && tidyExtraction(job.extraction).meisho_training?.visible) || doneTraining;
   const unregisteredMeisho = useMemo(() => {
     if (!training) return [];
     const have = new Set(warlords.map((w) => `${w.faction}|${w.name}`));
@@ -462,7 +463,7 @@ function JobRow({
           {job.status === "remote" && <span className="text-sky-300">サーバーで解析待ち (アプリを閉じても進みます)</span>}
           {job.status === "done" && (
             <button onClick={() => job.warlord_id && onOpen(job.warlord_id)} className="text-gold-300 underline-offset-2 hover:underline">
-              {job.extraction?.meisho_training?.visible || job.warnings.some((w) => w.startsWith("名将修行の画面"))
+              {(job.extraction && tidyExtraction(job.extraction).meisho_training?.visible) || job.warnings.some((w) => w.startsWith("名将修行の画面"))
                 ? `${job.warlord_label} の名将修行に追加`
                 : `${job.warlord_label} を${job.merged ? "統合更新" : "新規登録"}`}
             </button>
@@ -539,7 +540,7 @@ function JobRow({
                   suggest={
                     readName
                       ? (w) => w.name === readName || differsByOneChar(w.name, readName)
-                      : job.extraction?.meisho_training?.visible
+                      : (job.extraction && tidyExtraction(job.extraction).meisho_training?.visible)
                         ? // 名将修行の画面 (名前が無い): 名将の武将を候補に並べ、立ち絵で選んでもらう
                           (w) => Boolean(w.is_meisho) || isRosterName(w)
                         : undefined
