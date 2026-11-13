@@ -225,7 +225,9 @@ export async function ingestExtraction(
     if (candidates.length === 0) {
       throw new IngestError(screen + "の画面ですが、頂点武将がまだ登録されていません。先にその頂点武将のスキル画面などを取り込むか、下の「統合先を選んで保存」で選んでください");
     }
-    let found = opts.matchKnownApex ? await opts.matchKnownApex(candidates) : null;
+    // 名将の道の画面は、名将の頂点武将が 1 人だけならその武将 (名将の道のカードの絵はスキル画面の立ち絵と違うので見比べない)
+    let found = ext.meisho_awakening?.visible && candidates.length === 1 && candidates[0].is_meisho ? candidates[0] : null;
+    if (!found && opts.matchKnownApex) found = await opts.matchKnownApex(candidates);
     if (!found && opts.sameArt) {
       if (candidates.length === 1) {
         if ((await opts.sameArt(candidates[0], { strict: false })) === "different") throw pickError;

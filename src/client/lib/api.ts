@@ -355,7 +355,8 @@ export const api = {
     // 名将修行の画面を手で振り分けた武将は、以後も名将修行の画面の見分けの候補にする
     const job = await db.getJob(id);
     const w = await db.getWarlord(targetId);
-    if (job?.extraction?.meisho_training?.visible && w && !w.meisho_training_manual) {
+    const { tidyExtraction } = await import("../../core/ocrSchema.ts");
+    if (job?.extraction && tidyExtraction(job.extraction).meisho_training?.visible && w && !w.meisho_training_manual) {
       await db.updateWarlord(w.id, normalizeInput({ ...toInput(w), meisho_training_manual: true }));
     }
     return queue.retryJobs([id], targetId);
