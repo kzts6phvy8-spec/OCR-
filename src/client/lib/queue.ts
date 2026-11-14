@@ -348,6 +348,11 @@ function ingestJob(snapshot: OcrJob, read: OcrExtraction) {
       excludeIds: job.exclude_ids,
       // 頂天突破の画面: すでに振り分けた同じ頂点武将の突破の画面と見比べる (カードの絵がほぼ同じ)
       matchKnownApex: (candidates) => matchKnownTraining(job.image_id, candidates.filter((w) => w.apex_images?.length), (w) => w.apex_images ?? []),
+      // 頂点武将が何人もいる時は、1 人ずつ尋ねず、全員の立ち絵を並べて 1 回で尋ねる (バックグラウンド解析がオンならサーバーに任せる)
+      identifyApex: async (candidates) => {
+        if (bgActive(loadSettings())) throw new NeedServerIdentify();
+        return identifyMeishoByArt(job.image_id, candidates, () => 60);
+      },
       // 名将修行の画面: 登録済みの名将 (名将の印がある武将) の立ち絵と見比べて誰かを決める
       identifyMeisho: async () => {
         // 読んだ追加天賦と、シミュレーターに直接渡した名将修行のデータが食い違う名将は、候補から外す (取り違え防止)
@@ -480,13 +485,30 @@ async function sendMeishoRequest(job: OcrJob, extraction: OcrExtraction, stage: 
 }
 
 /** 見分けの 1 回目をサーバーに預ける (候補が 3 人以下なら 2 回目から) */
+/** 頂天突破・名将の道の画面 (頂点武将の、武将名が無い画面) か */
+const isApexScreen = (e: OcrExtraction | null | undefined) => {
+  const t = e ? tidyExtraction(e) : null;
+  return Boolean(t?.apex_breakthrough?.visible || t?.meisho_awakening?.visible);
+};
+
+/** 頂天突破・名将の道の画面の持ち主の候補 (頂点武将。名将の道なら名将の頂点武将) */
+async function apexCandidates(job: OcrJob, extraction: OcrExtraction): Promise<Warlord[]> {
+  let list = (await db.listWarlords()).filter((w) => w.faction === "頂点武将" && !(job.exclude_ids ?? []).includes(w.id));
+  if (tidyExtraction(extraction).meisho_awakening?.visible && list.some((w) => w.is_meisho)) list = list.filter((w) => w.is_meisho);
+  return list;
+}
+
+const APEX_FAIL = "頂点武将の画面 (頂天突破・名将の道) の立ち絵から、どの頂点武将か見分けられませんでした。下の「統合先を選んで保存」でその頂点武将を選んでください";
+
 async function startServerIdentify(job: OcrJob, extraction: OcrExtraction) {
-  const candidates = await meishoCandidates(job, extraction);
+  const apex = isApexScreen(extraction);
+  const fail = (j: OcrJob, e: OcrExtraction) => meishoFail(j, e, apex ? APEX_FAIL : MEISHO_FAIL);
+  const candidates = apex ? await apexCandidates(job, extraction) : await meishoCandidates(job, extraction);
   const first = await buildMeishoShortlistRequest(job.image_id, candidates);
-  if (!first) return meishoFail(job, extraction);
+  if (!first) return fail(job, extraction);
   if (first.parts) return sendMeishoRequest(job, extraction, 1, first.parts, first.ids);
   const second = await buildMeishoConfirmRequest(job.image_id, candidates.filter((w) => first.ids.includes(w.id)));
-  if (!second) return meishoFail(job, extraction);
+  if (!second) return fail(job, extraction);
   return sendMeishoRequest(job, extraction, 2, second.parts, second.ids);
 }
 
@@ -495,16 +517,34 @@ async function applyMeishoAnswer(job: OcrJob, text: string) {
   const extraction = job.extraction;
   if (!extraction) throw new Error("読み取り結果がありません");
   const ids = job.meisho_ids ?? [];
+  const apex = isApexScreen(extraction);
+  const fail = () => meishoFail(job, extraction, apex ? APEX_FAIL : MEISHO_FAIL);
   if (job.meisho_stage === 1) {
     const shortIds = parseMeishoShortlist(text, ids);
     const shortlist = (await Promise.all(shortIds.map((id) => db.getWarlord(id)))).filter((w): w is Warlord => Boolean(w));
-    if (shortlist.length === 0) return meishoFail(job, extraction);
+    if (shortlist.length === 0) return fail();
     const second = await buildMeishoConfirmRequest(job.image_id, shortlist);
-    if (!second) return meishoFail(job, extraction);
+    if (!second) return fail();
     return sendMeishoRequest(job, extraction, 2, second.parts, second.ids);
   }
   const d = parseMeishoConfirmDetail(text, ids);
   const found = d ? await db.getWarlord(d.id) : null;
+  if (apex) {
+    if (!found || !d || d.confidence < 60) return fail();
+    const fresh = await update(job, { target_id: found.id });
+    const result = await ingestJob(fresh, extraction);
+    await update(fresh, {
+      status: "done",
+      warlord_id: result.warlord.id,
+      warlord_label: warlordLabel(result.warlord),
+      merged: result.merged,
+      warnings: [`名前の無い頂点武将の画面なので、立ち絵から「${found.name}」と判断しました`, ...result.warnings],
+      meisho_stage: null,
+      meisho_ids: null,
+      server_req: null,
+    });
+    return;
+  }
   if (!found || !d || !(await meishoFits(job.image_id, extraction))(found)) return meishoFail(job, extraction);
   // 答えを待つ間に別の画面が入った武将で、その画面とカードの絵が違えば、別の名将の画面
   if (found.meisho_images?.length && !(await matchKnownTraining(job.image_id, [found]))) return meishoFail(job, extraction);
