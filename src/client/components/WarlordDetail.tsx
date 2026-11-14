@@ -105,6 +105,7 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
   const [draft, setDraft] = useState<WarlordInput>(() => (warlord ? toInput(warlord) : structuredClone(EMPTY)));
   const [saving, setSaving] = useState(false);
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const [apexLightbox, setApexLightbox] = useState<number | null>(null);
 
   // 編集を始めた時の内容。保存する時は、ここから変えた項目だけを送る
   // (編集中に解析結果がこの武将に統合されても、その内容を古い値で上書きしない)
@@ -327,6 +328,8 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
 
   const view = warlord && !editing ? warlord : null;
   const gallery = view ? view.gallery_images : draft.gallery_images;
+  // 名前の無い頂点武将の画面 (頂天突破・名将の道)。登録画像とは別に持っている
+  const apexShots = (view ?? draft).apex_images ?? [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
@@ -524,6 +527,19 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
 
           {!warlord && <NewScreenshots files={newFiles} setFiles={setNewFiles} analyze={analyzeNew} setAnalyze={setAnalyzeNew} />}
 
+          {apexShots.length > 0 && (
+            <Section title={`頂天突破・名将の道の画面 (${apexShots.length})`}>
+              <p className="mb-2 text-[11px] text-ebony-500">名前の無い画面なので、上のスクリーンショットとは別にしまってあります (読み取った内容は「頂天突破」「名将覚醒」の欄に入っています)。</p>
+              <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8">
+                {apexShots.map((id, i) => (
+                  <button key={id} onClick={() => setApexLightbox(i)} className="block aspect-[16/9] w-full overflow-hidden rounded-md border border-ebony-700">
+                    <StoredImage id={id} alt="" className="size-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            </Section>
+          )}
+
           {/* ギャラリー */}
           {(warlord || gallery.length > 0) && (
           <Section title={`スクリーンショット (${gallery.length})`}>
@@ -581,6 +597,9 @@ export function WarlordDetail({ warlord, allWarlords, onClose, onSaved, onDelete
         </div>
       </div>
 
+      {apexLightbox !== null && apexShots[apexLightbox] && (
+        <Lightbox images={apexShots} index={apexLightbox} onChange={setApexLightbox} onClose={() => setApexLightbox(null)} />
+      )}
       {lightbox !== null && gallery[lightbox] && (
         <Lightbox images={gallery} index={lightbox} onChange={setLightbox} onClose={() => setLightbox(null)} />
       )}
