@@ -1,6 +1,6 @@
 import type { Warlord } from "../../core/types.ts";
 import type { ArtCheck } from "../../core/ingest.ts";
-import { MAX_IMAGES_PER_WARLORD } from "../../core/health.ts";
+import { MAX_IMAGES_PER_WARLORD, hasImageLimit } from "../../core/health.ts";
 import * as db from "./db.ts";
 import { artSignature, blobToBase64, compressImage, signatureSimilarity } from "./images.ts";
 import { geminiHttpError } from "./geminiShared.ts";
@@ -220,6 +220,8 @@ const screenKey = (t: string) => t.normalize("NFKC").replace(/\s|画面|情報/g
  * - 判定する画像と同じ種類の画面 (天賦の画面どうし など) が、もう登録されている
  */
 async function looksLikeAnother(candidate: Warlord, ids: string[], screens: string[]): Promise<boolean> {
+  // 頂点武将は画面が多く、同じ種類の画面も何枚もある (欄を送って撮るなど) ので、枚数や画面の種類では別の武将とみなさない
+  if (!hasImageLimit(candidate)) return false;
   if (candidate.gallery_images.length >= MAX_IMAGES_PER_WARLORD) return true;
   const mine = new Set(screens.map(screenKey).filter(Boolean));
   if (mine.size === 0) return false;
