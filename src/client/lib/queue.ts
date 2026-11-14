@@ -95,7 +95,8 @@ let recovering = false;
  * サーバーは同じ名前の依頼を二重に置かないので、実は残っていた時も解析が二重になることはない
  */
 async function recoverLostJobs(): Promise<number> {
-  if (recovering || !serverCounts || serverCounts.pending > 0 || serverCounts.ready > 0) return 0;
+  // 版 4 以前のサーバーはドライブの検索で数えていて、あるはずの依頼を見落とす (件数が 0 でも本当は残っている) ので送り直さない
+  if (recovering || serverVersion < 5 || !serverCounts || serverCounts.pending > 0 || serverCounts.ready > 0) return 0;
   recovering = true;
   try {
     const now = Date.now();
