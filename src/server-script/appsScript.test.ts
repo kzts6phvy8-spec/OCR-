@@ -20,6 +20,7 @@ function makeEnv(
   const files: File[] = [];
   const props = new Map<string, string>();
   const triggers: string[] = [];
+  const mails: { to: string; subject: string; body: string }[] = [];
   const live = () => files.filter((f) => !f.trashed);
   const fileApi = (f: File) => ({
     getName: () => f.name,
@@ -69,11 +70,16 @@ function makeEnv(
       createTextOutput: (t: string) => ({ setMimeType: () => ({ body: t }) }),
     },
     Logger: { log: () => {} },
-    Utilities: { sleep: () => {} },
+    Utilities: { sleep: () => {}, formatDate: (d: Date) => d.toISOString().slice(0, 10) },
+    Session: { getEffectiveUser: () => ({ getEmail: () => "owner@example.com" }) },
+    MailApp: {
+      sendEmail: (to: string, subject: string, body: string) => void mails.push({ to, subject, body }),
+      getRemainingDailyQuota: () => 100,
+    },
   } as Record<string, unknown>;
   runInNewContext(readFileSync("public/apps-script.txt", "utf8"), ctx);
   const post = (body: object) => JSON.parse((ctx.doPost as (e: unknown) => { body: string })({ postData: { contents: JSON.stringify(body) } }).body);
-  return { ctx, post, files, props, triggers, driveFailures, process: () => (ctx.processQueue as () => void)() };
+  return { ctx, post, files, props, triggers, mails, driveFailures, process: () => (ctx.processQueue as () => void)() };
 }
 
 const TOKEN = "t".repeat(32);
@@ -128,7 +134,7 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
     reply = () => ({ code: 429, text: '{"error":{"message":"Quota exceeded for metric: generate_content_free_tier_requests, limit: 250, GenerateRequestsPerDayPerProjectPerModel-FreeTier"}}' });
     env.process();
     const st = env.post({ action: "status", token: TOKEN });
-    expect(st).toMatchObject({ pending: 1, ready: 0, version: 5 });
+    expect(st).toMatchObject({ pending: 1, ready: 0, version: 6 });
     expect(st.limit).toMatchObject({ daily: true });
     expect(st.lastRunAt).toBeGreaterThan(0);
     expect(st.lastOkAt).toBe(0);
@@ -163,9 +169,9 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
   it("kick の合図で、自動起動を待たずにその場で解析する", () => {
     env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
     for (let i = 0; i < 10; i++) env.post({ action: "enqueue", token: TOKEN, id: "k" + i, model: "m", body: {} });
-    expect(env.post({ action: "kick", token: TOKEN })).toMatchObject({ ok: true, version: 5, pending: 0, ready: 10 });
+    expect(env.post({ action: "kick", token: TOKEN })).toMatchObject({ ok: true, version: 6, pending: 0, ready: 10 });
     expect(calls).toHaveLength(10);
-    expect(env.post({ action: "results", token: TOKEN }).version).toBe(5);
+    expect(env.post({ action: "results", token: TOKEN }).version).toBe(6);
   });
 
   it("ドライブが一時的にエラーを返しても、やり直して解析を続ける", () => {
@@ -205,5 +211,23 @@ describe("バックグラウンド解析サーバー (Apps Script)", () => {
     env.post({ action: "cancel", token: TOKEN, ids: ["a"] });
     env.process();
     expect(calls).toHaveLength(0);
+  });
+
+  it("送った分が全部終わったら 1 回だけメールで知らせ、1 日の上限に達したら その日 1 回だけ知らせる", () => {
+    env.post({ action: "config", token: TOKEN, geminiKey: "AQ.key" });
+    env.post({ action: "enqueue", token: TOKEN, id: "a", model: "m", body: {}, appUrl: "https://example.com/app/" });
+    env.process();
+    expect(env.mails).toHaveLength(1);
+    expect(env.mails[0].subject).toContain("解析が終わりました (1 件)");
+    expect(env.mails[0].body).toContain("https://example.com/app/");
+    env.process();
+    expect(env.mails).toHaveLength(1);
+
+    reply = () => ({ code: 429, text: "Quota exceeded for metric: generate_content_free_tier_requests, limit: 250 PerDay" });
+    env.post({ action: "enqueue", token: TOKEN, id: "b", model: "m", body: {} });
+    env.process();
+    env.process();
+    expect(env.mails).toHaveLength(2);
+    expect(env.mails[1].subject).toContain("上限");
   });
 });

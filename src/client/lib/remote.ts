@@ -44,7 +44,13 @@ export async function callServer<T = Record<string, unknown>>(
   try {
     res = await fetch(settings.bgUrl, {
       method: "POST",
-      body: JSON.stringify({ action, token: settings.bgToken, ...payload }),
+      // 解析を預ける時は、知らせのメールに載せるアプリの URL も送る (サーバー版 6〜)
+      body: JSON.stringify({
+        action,
+        token: settings.bgToken,
+        ...(action === "enqueue" && typeof location !== "undefined" ? { appUrl: location.origin + location.pathname } : {}),
+        ...payload,
+      }),
       redirect: "follow",
       signal: controller.signal,
     });
