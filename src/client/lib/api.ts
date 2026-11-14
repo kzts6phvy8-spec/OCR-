@@ -186,8 +186,22 @@ export const api = {
    * 保存してある読み取り結果や、武将名・二つ名・奥義スキルに「名将一覧」が混ざっている武将に付ける。
    * 前の版は「名将」の 2 文字だけで印を付け、二つ名からその文字を消していたので、二つ名を読み取り結果から戻して判断し直す
    */
-  async markMeisho(): Promise<number> {
+  /** いま名将の印がある武将の ID (起動時の点検の前後で比べて、本当に増えた分だけを知らせるため) */
+  async meishoIds(): Promise<Set<string>> {
+    return new Set((await db.listWarlords()).filter((w) => w.is_meisho).map((w) => w.id));
+  },
+
+  /** 名将の印を付け直す。since: 比べる前の印 (無ければ今)。新しく印が付いた武将を返す */
+  async markMeisho(since?: Set<string>): Promise<Warlord[]> {
     let marked = 0;
+    const { SIM_MEISHO: simList } = await import("../../core/meishoSimData.ts");
+    const before = since ?? new Set((await db.listWarlords()).filter((w) => w.is_meisho).map((w) => w.id));
+    /** シミュレーターのデータで、同じ勢力・名前の通常/特異の「違う方」が名将と分かっている武将 (下で印を外すので、ここでも付けない) */
+    const simOtherVariant = (w: Warlord) =>
+      !w.meisho_manual &&
+      !w.meisho_images?.length &&
+      simList.some((m) => m.faction === w.faction && m.name === w.name) &&
+      !simList.some((m) => m.faction === w.faction && m.name === w.name && m.special === w.is_special);
     for (const w of await db.listWarlords()) {
       // 名将修行の丸の位置を、効果から決まる位置に直す (前の読み取りで位置を読み違えていた分)
       const fixed = normalizeInput(toInput(w)).meisho_talents ?? [];
@@ -206,7 +220,7 @@ export const api = {
         : exts.map((e) => stripMeisho(String(e.title_alias ?? "").replace(/【\s*特\s*】/g, ""))).find((a) => a.includes("名将"));
       const evidence = exts.some(hasMeishoMark) || hasMeishoMark({ name: w.name, title_alias: w.title_alias, skill: { name: w.skill_name, desc: w.skill_desc, gauge: null } });
       // 手で決めた武将は、印を変えない
-      const is_meisho = w.meisho_manual ? Boolean(w.is_meisho) : evidence || Boolean(w.is_meisho && !lostAlias);
+      const is_meisho = w.meisho_manual ? Boolean(w.is_meisho) : (evidence && !simOtherVariant(w)) || Boolean(w.is_meisho && !lostAlias);
       if (is_meisho === Boolean(w.is_meisho) && !lostAlias && !evidence) continue;
       const next = {
         ...toInput(w),
@@ -253,7 +267,10 @@ export const api = {
         marked++;
       }
     }
-    return marked;
+    // 起動のたびに付けては外す武将がいても数えないよう、最初と比べて本当に増えた分だけを知らせる
+    const added = (await db.listWarlords()).filter((w) => w.is_meisho && !before.has(w.id));
+    marked = added.length;
+    return added;
   },
 
   /** 中身がまったく同じ画像が 2 重に登録された武将を、1 枚にまとめる (起動時に呼ぶ) */

@@ -141,6 +141,7 @@ export default function App() {
       });
       // 名将の印を、すでにあるデータから付ける (AI なし)
       await step("名将", async () => {
+        const meishoBefore = await api.meishoIds();
         // 頂点武将の名将 (名将の道) が名将修行の丸に入っていたら、名将の道の丸に移す
         await api.fixApexMeisho();
         const road = await api.fixMisreadAwakening();
@@ -149,11 +150,15 @@ export default function App() {
         // 名将修行の丸 8 つへの入れ方を、入っている画面から決め直す (位置の読み違いで丸が空いていた分)
         await (await import("./lib/meishoSlots.ts")).recomputeAllMeishoTalents();
         if (wrong > 0) toast("info", `取り違えて入っていた名将修行の画面 ${wrong} 枚を見分け直します`, "読んだ追加天賦が、その名将のものと食い違っていました");
-        const n = await api.markMeisho();
+        const added = await api.markMeisho(meishoBefore);
         // 名将修行の決め直し・印の付け外しを、画面 (名将一覧の足りない丸など) に反映する
         void refreshWarlords();
-        if (n === 0) return;
-        toast("success", `${n} 人に「名将」の印を付けました`, "図鑑の「名将のみ」で絞り込めます");
+        if (added.length === 0) return;
+        toast(
+          "success",
+          `${added.length} 人に「名将」の印を付けました`,
+          `${added.map((w) => `${w.is_special ? "【特】" : ""}${w.name} (${w.faction || "勢力未入力"})`).join("、")}。図鑑の「名将のみ」で絞り込めます`,
+        );
       });
       // 同じスクショが 2 重に登録された画像を 1 枚にまとめる
       await step("画像の重なり", async () => {
