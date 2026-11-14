@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, BookOpen, Loader2, Database, Download, Save, ScanLine, Settings as SettingsIcon, Upload } from "lucide-react";
 import { isPending, type OcrJob, type Warlord } from "../core/types.ts";
 import { api } from "./lib/api.ts";
-import { getQueueState, onQueueChange, resumeQueue } from "./lib/queue.ts";
+import { getQueueState, onQueueChange, resumeQueue, takeLostRecovered } from "./lib/queue.ts";
 import { backfillSignatures } from "./lib/visual.ts";
 import { logError } from "./lib/errorLog.ts";
 import { activeModelLabel, bgActive, hasActiveKey, loadSettings, onSettingsChange, type Settings } from "./lib/settings.ts";
@@ -215,7 +215,11 @@ export default function App() {
   useEffect(() => {
     void refreshWarlords();
     void refreshJobs().then(() => resumeQueue());
-    const offQueue = onQueueChange(() => void refreshJobs());
+    const offQueue = onQueueChange(() => {
+      void refreshJobs();
+      const lost = takeLostRecovered();
+      if (lost > 0) toast("warning", `サーバーから消えていた依頼 ${lost} 枚を送り直しました`, "サーバーに解析待ちも受け取り待ちも無いのに、アプリでは解析待ちのままでした。送り直したので、また解析が進みます");
+    });
     const offSettings = onSettingsChange(setSettings);
     return () => {
       offQueue();
