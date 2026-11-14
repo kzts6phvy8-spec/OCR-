@@ -49,7 +49,7 @@ export function findIssues(warlords: Warlord[]): Issue[] {
         message: `「${label(w)}」に画像が ${w.gallery_images.length} 枚あります (1 人の武将は多くても ${MAX_IMAGES_PER_WARLORD} 枚)。別の武将の画像が混ざっています。「立ち絵ごとに分ける」で分けてください`,
         warlordIds: [w.id],
       });
-    } else if (w.gallery_images.length === 1) {
+    } else if (w.gallery_images.length === 1 && !(w.apex_images?.length || w.meisho_images?.length)) {
       issues.push({
         kind: "single_image",
         autoFix: false,
