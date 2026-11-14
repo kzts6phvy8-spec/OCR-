@@ -1,6 +1,6 @@
 import { AWAKENING_PRIORITIES } from "../../core/types.ts";
 import type { MeishoTalent, ExportPayload, Faction, OcrJob, Talent, UploadMode, Warlord, WarlordInput } from "../../core/types.ts";
-import { meishoTrainingToText, warlordsToText } from "../../core/text.ts";
+import { meishoTrainingToText, warlordToText, warlordsToText } from "../../core/text.ts";
 import { warlordLabel } from "../../core/domain.ts";
 import { decideSpecial, detectTalentOrder, emptyWarlordInput, hasMeishoMark, stripMeisho, fixTalentOrder, learnTalentStats, talentRules, mergeWarlord, normalizeInput } from "../../core/domain.ts";
 import { toInput } from "../../core/ingest.ts";
@@ -654,6 +654,52 @@ export const api = {
     // アップロードできる大きさに収まるよう、いくつかの ZIP に分ける
     const blobs = splitForZip(entries, maxBytes).map((g) => new Blob(zipParts(g), { type: "application/zip" }));
     return { blobs, count: entries.length, missing };
+  },
+
+  /**
+   * 頂点武将だけを 1 つの ZIP にまとめる: データのテキスト・JSON (シミュレーター用) と、各武将の立ち絵。
+   * 頂天突破・名将の道も入る。iPhone からアップロードできる大きさを超える時は、いくつかの ZIP に分ける
+   */
+  async exportApexZip(maxBytes = 28_000_000): Promise<{ blobs: Blob[]; count: number; missing: number }> {
+    const { crc32, splitForZip, zipParts, safeFileName } = await import("../../core/zip.ts");
+    const { cropLeft } = await import("./images.ts");
+    const list = (await db.listWarlords())
+      .filter((w) => w.faction === "頂点武将")
+      .sort((a, b) => a.name.localeCompare(b.name, "ja") || Number(a.is_special) - Number(b.is_special));
+    const entries: { name: string; data: Blob; crc: number }[] = [];
+    const add = async (name: string, data: Blob) => entries.push({ name, data, crc: crc32(new Uint8Array(await data.arrayBuffer())) });
+    const stamp = new Date().toISOString();
+    await add(`頂点武将-データ.txt`, new Blob([`頂点武将 (${list.length} 人・${stamp.slice(0, 10)})\n\n` + list.map(warlordToText).join("\n\n" + "─".repeat(24) + "\n\n") + "\n"], { type: "text/plain;charset=utf-8" }));
+    // シミュレーター用の JSON: 画像の ID や図鑑の中だけで使う印は外す
+    const json = list.map((w) => {
+      const {
+        gallery_images: _g, image_url: _i, apex_images: _a, meisho_images: _m, reset_batch: _r,
+        talent_order_v2: _t1, talent_reorder_undone: _t2, talent_check_v2: _t3, talent_ai_read: _t4,
+        meisho_training_manual: _mt, meisho_talents_manual: _mm, meisho_manual: _mn,
+        ...rest
+      } = w;
+      return { ...rest, meisho_talents: (w.meisho_talents ?? []).map(({ trained: _x, ...t }) => t) };
+    });
+    await add(`頂点武将-データ.json`, new Blob([JSON.stringify({ app: "sengoku-fubu-warlord-db", kind: "apex", exported_at: stamp, warlords: json }, null, 2)], { type: "application/json" }));
+    let missing = 0;
+    const used = new Set<string>();
+    for (const w of list) {
+      const id = w.image_url || w.gallery_images[0];
+      const image = id ? await db.getImage(id).catch(() => null) : null;
+      let art: Blob | null = null;
+      if (image) art = await cropLeft(image, 0.45, 1200).catch(() => null);
+      if (!art) {
+        missing++;
+        continue;
+      }
+      const base = safeFileName(`${w.is_special ? "【特】" : ""}${w.name}${w.title_alias ? `(${w.title_alias})` : ""}`);
+      let name = `立ち絵/${base}.jpg`;
+      for (let n = 2; used.has(name); n++) name = `立ち絵/${base}_${n}.jpg`;
+      used.add(name);
+      await add(name, art);
+    }
+    const blobs = splitForZip(entries, maxBytes).map((g) => new Blob(zipParts(g), { type: "application/zip" }));
+    return { blobs, count: list.length, missing };
   },
 
   /**
