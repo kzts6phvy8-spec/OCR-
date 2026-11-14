@@ -353,3 +353,30 @@ describe("名将修行の画面と読まれた名将の道の画面", () => {
     expect(e.meisho_training?.visible).toBe(true);
   });
 });
+
+describe("頂点武将が何人もいる時の頂天突破の画面", () => {
+  it("1 人ずつ尋ねず、全員まとめて 1 回で見分ける", async () => {
+    await ingestExtraction(makeExtraction({ name: "伊達政宗", faction: "頂点武将" }), opts("date.png"));
+    const imagawa = await ingestExtraction(makeExtraction({ name: "今川義元", faction: "頂点武将" }), opts("imagawa.png"));
+    let asked = 0;
+    let groups = 0;
+    const r = await ingestExtraction(
+      makeExtraction({ name: null, apex_breakthrough: { visible: true, selected_area: null, selected_size: null, title: "追加天賦", effect: "攻+40. 計+40", cost: 25 } }),
+      {
+        ...opts("apex.png"),
+        sameArt: async () => {
+          asked++;
+          return "unknown";
+        },
+        identifyApex: async (c) => {
+          groups++;
+          expect(c).toHaveLength(2);
+          return repo.all().find((w) => w.id === imagawa.warlord.id) ?? null;
+        },
+      },
+    );
+    expect(asked).toBe(0);
+    expect(groups).toBe(1);
+    expect(r.warlord.id).toBe(imagawa.warlord.id);
+  });
+});

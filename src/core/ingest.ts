@@ -182,6 +182,8 @@ export async function ingestExtraction(
     identifyMeisho?: () => Promise<Warlord | null>;
     /** 頂天突破の画面: すでにその頂点武将に振り分けた突破の画面と見比べて誰かを決める (AI なし。分からなければ null) */
     matchKnownApex?: (candidates: Warlord[]) => Promise<Warlord | null>;
+    /** 頂天突破・名将の道の画面: 頂点武将が 2 人以上の時、全員の立ち絵を 1 回で見比べて誰かを決める (無ければ 1 人ずつ見比べる) */
+    identifyApex?: (candidates: Warlord[]) => Promise<Warlord | null>;
   },
 ): Promise<IngestResult> {
   const readFaction = opts.faction || normalizeFaction(ext.faction);
@@ -232,11 +234,12 @@ export async function ingestExtraction(
       if (candidates.length === 1) {
         if ((await opts.sameArt(candidates[0], { strict: false })) === "different") throw pickError;
         found = candidates[0];
-      } else {
+      } else if (!opts.identifyApex) {
         const { same } = await compareAll(candidates, opts.sameArt, true);
         if (same.length === 1) found = same[0];
       }
     }
+    if (!found && candidates.length > 1 && opts.identifyApex) found = await opts.identifyApex(candidates);
     if (!found) throw pickError;
     existing = found;
     name = found.name;
