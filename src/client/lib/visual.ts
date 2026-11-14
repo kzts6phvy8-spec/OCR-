@@ -294,7 +294,16 @@ export function artChecker(
     if (server) {
       const answer = server.answers[`${candidate.id}${strict ? "!" : ""}`];
       if (answer) return answer;
-      throw new NeedServerArtCheck(candidate, strict);
+      // アプリを開いている間は、サーバーを往復せずにこの iPhone から直接尋ねる (保存はどのみちアプリを開いている時にしかできないので、
+      // サーバーに任せると答えを待つ 1〜数分が無駄になる)。届かない・上限の時だけサーバーに任せる
+      if (typeof document !== "undefined" && document.hidden) throw new NeedServerArtCheck(candidate, strict);
+      const parts = await buildArtCheckRequest(imageId, candidate);
+      if (!parts) return "unknown";
+      try {
+        return interpretAnswer(await ask(parts, loadSettings()), strict);
+      } catch {
+        throw new NeedServerArtCheck(candidate, strict);
+      }
     }
     // 迷う時は AI に尋ねる
     const parts = await buildArtCheckRequest(imageId, candidate);
