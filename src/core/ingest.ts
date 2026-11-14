@@ -11,7 +11,7 @@ import {
   normalizeRarity,
 } from "./domain.ts";
 import type { OcrExtraction } from "./ocrSchema.ts";
-import { MAX_IMAGES_PER_WARLORD } from "./health.ts";
+import { MAX_IMAGES_PER_WARLORD, hasImageLimit } from "./health.ts";
 import { ONI_FACTION, cleanOniSynergies, shareOniSynergies, splitPartners } from "./oni.ts";
 
 export class IngestError extends Error {}
@@ -329,7 +329,7 @@ export async function ingestExtraction(
     record.talent_order_v2 = true;
     record.talent_ai_read = true;
   }
-  if (record.gallery_images.length > MAX_IMAGES_PER_WARLORD) {
+  if (hasImageLimit(record) && record.gallery_images.length > MAX_IMAGES_PER_WARLORD) {
     warnings.push(
       `「${record.name}」の画像が ${record.gallery_images.length} 枚になりました (1 人の武将は多くても ${MAX_IMAGES_PER_WARLORD} 枚)。別の武将の画像が混ざっているかもしれません`,
     );

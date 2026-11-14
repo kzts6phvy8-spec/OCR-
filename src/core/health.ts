@@ -34,12 +34,15 @@ export interface Issue {
 /** 1 人の武将に統合される画像は多くても 6 枚 (それより多ければ、別の武将の画像が混ざっている) */
 export const MAX_IMAGES_PER_WARLORD = 6;
 
+/** 画像の枚数の上限を当てはめる武将か (頂点武将は画面が多いので、何枚でもよい) */
+export const hasImageLimit = (w: { faction: string }) => w.faction !== "頂点武将";
+
 const label = (w: Warlord) => `${w.is_special ? "【特】" : ""}${w.name}${w.faction ? ` (${w.faction})` : ""}`;
 
 export function findIssues(warlords: Warlord[]): Issue[] {
   const issues: Issue[] = [];
   for (const w of warlords) {
-    if (w.gallery_images.length > MAX_IMAGES_PER_WARLORD) {
+    if (hasImageLimit(w) && w.gallery_images.length > MAX_IMAGES_PER_WARLORD) {
       issues.push({
         kind: "too_many_images",
         autoFix: false,
