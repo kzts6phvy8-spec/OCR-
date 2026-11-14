@@ -8,6 +8,7 @@ import {
   UPLOAD_CONCURRENCY,
   getLastResultAt,
   getQueueState,
+  refreshServerStatus,
   getServerVersion,
   isHeldApexJob,
   pollServer,
@@ -62,6 +63,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 
 export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }: Props) {
   const toast = useToast();
+  const [checking, setChecking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<UploadMode>("auto");
   const [faction, setFaction] = useState<Faction | "">("");
@@ -334,8 +336,26 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
               {qs.server?.lastOkAt ? <span className="block text-[11px] text-sky-200/70">最後に解析できた時刻: {formatClock(qs.server.lastOkAt)}</span> : null}
               {qs.serverError && <span className="block text-hi-400">{qs.serverError}</span>}
             </span>
-            <button onClick={() => void pollServer()} className="shrink-0 rounded-md border border-sky-600/60 p-1.5" aria-label="結果を確認" title="結果を確認">
-              <RefreshCw className="size-4" />
+            <button
+              onClick={async () => {
+                if (checking) return;
+                setChecking(true);
+                try {
+                  // サーバーの件数を確かめてから、受け取れる結果があれば受け取る (解析待ちが無くても件数は新しくする)
+                  await refreshServerStatus();
+                  await pollServer();
+                  const st = getQueueState();
+                  if (st.serverError) toast("error", "サーバーに確認できませんでした", st.serverError);
+                  else if (st.server) toast("info", `サーバー: 未解析 ${st.server.pending} 件 / 受け取り待ち ${st.server.ready} 件`, "最新の状態に更新しました");
+                } finally {
+                  setChecking(false);
+                }
+              }}
+              className="shrink-0 rounded-md border border-sky-600/60 p-1.5"
+              aria-label="結果を確認"
+              title="結果を確認"
+            >
+              <RefreshCw className={`size-4 ${checking ? "animate-spin" : ""}`} />
             </button>
           </div>
         )}
@@ -377,7 +397,15 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
         ) : (
           <ul className="scroll-thin -mr-2 space-y-2 overflow-y-auto pr-2" style={{ maxHeight: "36rem" }}>
             {shownJobs.map((job) => (
-              <JobRow key={job.id} job={job} warlords={warlords} onRetry={retry} onOpen={onOpenWarlord} onRemove={(id) => void remove([id])} />
+              <JobRow
+                key={job.id}
+                job={job}
+                held={isHeldApexJob(job, jobs)}
+                warlords={warlords}
+                onRetry={retry}
+                onOpen={onOpenWarlord}
+                onRemove={(id) => void remove([id])}
+              />
             ))}
             {jobs.length > shownJobs.length && !showFailedOnly && (
               <li className="py-2 text-center text-[11px] text-ebony-500">ほか {jobs.length - shownJobs.length} 件 (新しい 100 件を表示中)</li>
@@ -395,8 +423,11 @@ function JobRow({
   onRetry,
   onOpen,
   onRemove,
+  held = false,
 }: {
   job: OcrJob;
+  /** 名前の無い頂点武将の画面で、ほかの画像の保存が終わるのを待っている */
+  held?: boolean;
   warlords: Warlord[];
   onRetry: (id: string) => void;
   onOpen: (id: string) => void;
@@ -459,7 +490,12 @@ function JobRow({
           <p className="truncate text-sm font-medium">{job.file_name}</p>
         </div>
         <p className="mt-0.5 text-xs text-ash">
-          {job.status === "queued" && "待機中"}
+          {job.status === "queued" &&
+            (held
+              ? "読み取り済み。ほかの画像の保存が終わってから保存します (名前の無い頂点武将の画面)"
+              : job.extraction
+                ? "読み取り済み。図鑑への保存の順番待ち"
+                : "待機中")}
           {job.status === "processing" && <span className="text-gold-400">AI が画像を解析しています…</span>}
           {job.status === "remote" && <span className="text-sky-300">サーバーで解析待ち (アプリを閉じても進みます)</span>}
           {job.status === "done" && (
