@@ -1,4 +1,4 @@
-import type { Faction, MeishoTalent, OcrJob, Talent, UploadMode, Warlord } from "../../core/types.ts";
+import { isPending, type Faction, type MeishoTalent, type OcrJob, type Talent, type UploadMode, type Warlord } from "../../core/types.ts";
 import { differsByOneChar, ingestExtraction } from "../../core/ingest.ts";
 import { emptyWarlordInput, extractionToPatch, normalizeInput, warlordLabel } from "../../core/domain.ts";
 import { simMeishoTalents as simMeishoTalentsSync } from "../../core/meishoSimData.ts";
@@ -498,6 +498,11 @@ async function apexCandidates(job: OcrJob, extraction: OcrExtraction): Promise<W
   return list;
 }
 
+/** 名前のある画面 (または、まだ読み取っていない画面) の解析・保存が残っているか */
+function namedPending(jobs: OcrJob[], self: OcrJob): boolean {
+  return jobs.some((k) => k.id !== self.id && !k.talents_only && isPending(k.status) && !(k.extraction && isApexScreen(k.extraction)));
+}
+
 const APEX_FAIL = "頂点武将の画面 (頂天突破・名将の道) の立ち絵から、どの頂点武将か見分けられませんでした。下の「統合先を選んで保存」でその頂点武将を選んでください";
 
 async function startServerIdentify(job: OcrJob, extraction: OcrExtraction) {
@@ -640,6 +645,12 @@ async function processJob(job: OcrJob) {
       if (bgActive(loadSettings()) && !job.local) return await sendToServer(job, image);
       extraction = await analyzeWithRetry(image, job.mode, loadSettings());
     }
+    // 名前の無い頂点武将の画面は、名前のある画面を全部保存するまで待たせる
+    if (!job.target_id && isApexScreen(extraction) && namedPending(await db.listJobs(), job)) {
+      await db.putExtraction(job.image_id, extraction).catch(() => {});
+      await update(job, { status: "queued", extraction, local: true });
+      return;
+    }
     const result = await ingestJob(job, extraction);
     await db.putExtraction(job.image_id, extraction).catch(() => {});
     // 解析が終わった画像は保存用の大きさに縮めて容量を節約する
@@ -745,6 +756,8 @@ async function pickNextJob(paused: boolean): Promise<OcrJob | null> {
     if (j.status !== "queued") return null;
     if (bg && isUpload(j)) return 0;
     if (paused) return null;
+    // 名前の無い頂点武将の画面は、名前のある画面 (その頂点武将を登録する画面) を全部保存してから
+    if (j.extraction && !j.target_id && isApexScreen(j.extraction) && namedPending(jobs, j)) return null;
     if (j.extraction) return 1;
     if (j.talents_only) {
       if (screenshotsBusy) return null;
@@ -924,6 +937,12 @@ async function applyServerResult(job: OcrJob, r: RemoteResult, model: string) {
       return;
     }
     extraction = parseGeminiRestBody(r.body ?? "");
+    // 名前の無い頂点武将の画面は、名前のある画面を全部保存するまで待たせる (まだ登録されていない頂点武将と見分けられないため)
+    if (!job.target_id && isApexScreen(extraction) && namedPending(await db.listJobs(), job)) {
+      await db.putExtraction(job.image_id, extraction).catch(() => {});
+      await update(job, { status: "queued", extraction, local: true, server_req: null });
+      return;
+    }
     const result = await ingestJob(job, extraction);
     await db.putExtraction(job.image_id, extraction).catch(() => {});
     // 縮小は待たずに次の結果へ (ただし iPhone のメモリを食わないよう、縮小どうしは 1 枚ずつ)。
