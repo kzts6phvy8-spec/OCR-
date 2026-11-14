@@ -51,6 +51,29 @@ export function DataPanel({
     }
   };
 
+  const [apexZips, setApexZips] = useState<{ blob: Blob; name: string }[]>([]);
+  const saveApexZip = (zip: { blob: Blob; name: string }) => saveFile(zip.blob, zip.name, "戦国布武 頂点武将");
+  const exportApex = async () => {
+    if (!warlords.some((w) => w.faction === "頂点武将")) return toast("info", "頂点武将がまだ登録されていません");
+    setBusy(true);
+    try {
+      const r = await api.exportApexZip();
+      const n = r.blobs.length;
+      const zips = r.blobs.map((blob, i) => ({ blob, name: n === 1 ? `頂点武将-${today()}.zip` : `頂点武将-${today()}-${i + 1}of${n}.zip` }));
+      setApexZips(zips);
+      toast(
+        "success",
+        `頂点武将 ${r.count} 人を ZIP にまとめました`,
+        `データ (テキスト・JSON) と立ち絵が入っています${r.missing ? `。画像が無い ${r.missing} 人は立ち絵が入っていません` : ""}`,
+      );
+      if (n === 1) await saveApexZip(zips[0]);
+    } catch (e) {
+      toast("error", "頂点武将をまとめられませんでした", (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const exportData = async () => {
     setBusy(true);
     try {
@@ -152,6 +175,36 @@ export function DataPanel({
                 className="inline-flex items-center gap-1.5 rounded-lg border border-gold-600/60 px-3 py-1.5 text-sm text-gold-300"
               >
                 <Download className="size-4" /> {i + 1} / {artZips.length} を保存 ({(zip.blob.size / 1_000_000).toFixed(1)}MB)
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="panel p-5 md:col-span-2">
+        <h2 className="mb-1 flex items-center gap-2 font-serif text-lg font-bold text-gold-400">
+          <Images className="size-5" /> 頂点武将だけをまとめて保存
+        </h2>
+        <p className="mb-4 text-sm text-ash">
+          頂点武将 ({warlords.filter((w) => w.faction === "頂点武将").length} 人) のデータと立ち絵を 1 つの ZIP にまとめます。中身: 頂点武将-データ.txt (読む用)・頂点武将-データ.json
+          (シミュレーター用。頂天突破・名将の道・受動スキルも入っています)・立ち絵 フォルダ
+        </p>
+        <button
+          onClick={exportApex}
+          disabled={busy}
+          className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-b from-gold-500 to-gold-600 px-4 py-2 font-bold text-ebony-950 disabled:opacity-50"
+        >
+          <Download className="size-4" /> 頂点武将 (.zip) を保存
+        </button>
+        {apexZips.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {apexZips.map((zip, i) => (
+              <button
+                key={zip.name}
+                onClick={() => void saveApexZip(zip)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gold-600/60 px-3 py-1.5 text-sm text-gold-300"
+              >
+                <Download className="size-4" /> {apexZips.length > 1 ? `${i + 1} / ${apexZips.length} を保存` : "もう一度保存"} ({(zip.blob.size / 1_000_000).toFixed(1)}MB)
               </button>
             ))}
           </div>
