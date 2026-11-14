@@ -9,6 +9,7 @@ import {
   getLastResultAt,
   getQueueState,
   getServerVersion,
+  isHeldApexJob,
   pollServer,
   resumeNow,
   type QueueState,
@@ -645,7 +646,9 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
   const total = batch.length;
   const toSend = batch.filter((j) => !j.local && (j.status === "queued" || j.status === "processing")).length;
   // サーバーで止まった分を引き取って、この端末で解析している枚数
-  const localJobs = batch.filter((j) => j.local && (j.status === "queued" || j.status === "processing"));
+  // 名前の無い頂点武将の画面は、ほかの画像が終わるまで保存を待たせている (アプリを開いていなくてよい)
+  const held = batch.filter((j) => isHeldApexJob(j, batch)).length;
+  const localJobs = batch.filter((j) => j.local && (j.status === "queued" || j.status === "processing") && !isHeldApexJob(j, batch));
   const localPending = localJobs.length;
   // 読み取りはサーバーで済んでいて、保存 (同じ名前の武将との立ち絵の確認) だけが残っている分
   const localSaving = localJobs.filter((j) => j.extraction).length;
@@ -741,6 +744,7 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
             <p className="font-bold text-emerald-300">送信完了！ アプリを閉じても大丈夫です</p>
             <p className="mt-0.5 text-xs text-washi/80">
               Google のサーバーで解析が進みます (残り {atServer} 枚)。次にアプリを開いた時に結果を受け取り、図鑑に反映します。
+              {held > 0 && ` 名前の無い頂点武将の画面 ${held} 枚は読み取り済みで、ほかの画像が終わってから保存します。`}
             </p>
           </div>
         </div>
@@ -822,10 +826,13 @@ function serverNotice(qs: QueueState, jobs: OcrJob[]): { tone: "limit" | "stuck"
       detail: `最後に動いたのは ${formatClock(s.lastRunAt)} です。iPad などで Apps Script のプロジェクトを開き、もう一度「setup」を実行して許可してください。`,
     };
   }
-  if (!isStalled(jobs, getLastResultAt())) return null;
+  // サーバーが最近解析できている・受け取り待ちの結果がある時は、止まってはいない (アプリが受け取れば進む)
+  const progressAt = Math.max(getLastResultAt(), s?.lastOkAt ?? 0);
+  if (s && s.ready > 0) return null;
+  if (!isStalled(jobs, progressAt)) return null;
   const oldest = Math.min(...remote.map((j) => Date.parse(j.updated_at)));
   const lastDone = Math.max(0, ...jobs.filter((j) => j.status === "done").map((j) => Date.parse(j.updated_at)));
-  const stalledMin = Math.floor((Date.now() - Math.max(getLastResultAt(), oldest, lastDone)) / 60_000);
+  const stalledMin = Math.floor((Date.now() - Math.max(progressAt, oldest, lastDone)) / 60_000);
 
   // アプリから Gemini に確かめた結果 (版 2 以前のサーバーの時)
   const probe = lastProbe();
