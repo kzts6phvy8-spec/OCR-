@@ -85,6 +85,52 @@ function setServerCounts(res: Partial<ServerCounts>) {
   };
 }
 
+/** 送ってから少なくともこれだけたった依頼だけを、サーバーから消えたとみなす (送った直後はドライブの反映が遅れることがある) */
+const LOST_AFTER_MS = 10 * 60_000;
+let recovering = false;
+
+/**
+ * サーバーには解析待ちも受け取り待ちも 1 件も無いのに、アプリでは「サーバーで解析待ち」のままのジョブ = サーバーから消えた依頼。
+ * 待っていても結果は届かないので、送り直す (読み取り済みで立ち絵の確認などを待っていた分は、この iPhone で保存し直す)。
+ * サーバーは同じ名前の依頼を二重に置かないので、実は残っていた時も解析が二重になることはない
+ */
+async function recoverLostJobs(): Promise<number> {
+  if (recovering || !serverCounts || serverCounts.pending > 0 || serverCounts.ready > 0) return 0;
+  recovering = true;
+  try {
+    const now = Date.now();
+    let moved = 0;
+    for (const job of await db.listJobs()) {
+      if (job.status !== "remote" || now - Date.parse(job.updated_at) < LOST_AFTER_MS) continue;
+      await update(job, {
+        status: "queued",
+        local: Boolean(job.extraction),
+        attempts: 0,
+        server_req: null,
+        art_pending: null,
+        meisho_stage: null,
+        meisho_ids: null,
+      });
+      moved++;
+    }
+    if (moved > 0) {
+      lostRecovered += moved;
+      notify();
+      resumeNow();
+    }
+    return moved;
+  } finally {
+    recovering = false;
+  }
+}
+/** サーバーから消えていて送り直した依頼の数 (画面に知らせる) */
+let lostRecovered = 0;
+export const takeLostRecovered = () => {
+  const n = lostRecovered;
+  lostRecovered = 0;
+  return n;
+};
+
 export const getQueueState = (): QueueState => ({
   running: workers > 0,
   pausedUntil: pausedUntil > Date.now() ? pausedUntil : null,
@@ -872,7 +918,10 @@ export async function pollServer(): Promise<void> {
       if (res.results.length) lastResultAt = Date.now();
       if (res.version) serverVersion = res.version;
       serverError = "";
-      if (res.results.length === 0) break;
+      if (res.results.length === 0) {
+        await recoverLostJobs();
+        break;
+      }
       const received: string[] = [];
       let unacked: string[] = [];
       // 進み具合の表示: 今回受け取った分と、サーバーにまだ残っている分
@@ -1033,6 +1082,7 @@ export async function refreshServerStatus() {
     setServerCounts(res);
     if (res.version) serverVersion = res.version;
     serverError = "";
+    await recoverLostJobs();
   } catch (err) {
     serverError = err instanceof Error ? err.message : String(err);
   }
