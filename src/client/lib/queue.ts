@@ -514,6 +514,10 @@ async function apexCandidates(job: OcrJob, extraction: OcrExtraction): Promise<W
 }
 
 /** 名前のある画面 (または、まだ読み取っていない画面) の解析・保存が残っているか */
+/** 名前のある画面が残っているので、保存を待たせている頂点武将の画面か (画面の表示用) */
+export const isHeldApexJob = (j: OcrJob, jobs: OcrJob[]) =>
+  j.status === "queued" && Boolean(j.extraction) && !j.target_id && isApexScreen(j.extraction) && namedPending(jobs, j);
+
 function namedPending(jobs: OcrJob[], self: OcrJob): boolean {
   return jobs.some((k) => k.id !== self.id && !k.talents_only && isPending(k.status) && !(k.extraction && isApexScreen(k.extraction)));
 }
