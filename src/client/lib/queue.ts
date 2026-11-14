@@ -350,8 +350,7 @@ function ingestJob(snapshot: OcrJob, read: OcrExtraction) {
       matchKnownApex: (candidates) => matchKnownTraining(job.image_id, candidates.filter((w) => w.apex_images?.length), (w) => w.apex_images ?? []),
       // 頂点武将が何人もいる時は、1 人ずつ尋ねず、全員の立ち絵を並べて 1 回で尋ねる (バックグラウンド解析がオンならサーバーに任せる)
       identifyApex: async (candidates) => {
-        if (bgActive(loadSettings())) throw new NeedServerIdentify();
-        return identifyMeishoByArt(job.image_id, candidates, () => 60);
+        return directOrServer(() => identifyMeishoByArt(job.image_id, candidates, () => 60));
       },
       // 名将修行の画面: 登録済みの名将 (名将の印がある武将) の立ち絵と見比べて誰かを決める
       identifyMeisho: async () => {
@@ -367,8 +366,9 @@ function ingestJob(snapshot: OcrJob, read: OcrExtraction) {
         const known = await matchKnownTraining(job.image_id, all.filter((w) => w.meisho_images?.length));
         if (known) return known;
         // バックグラウンド解析がオンなら、AI での見分けはサーバーに任せる (アプリを閉じていても進む)
-        if (bgActive(loadSettings())) throw new NeedServerIdentify();
-        return identifyMeishoByArt(job.image_id, await meishoCandidates(job, extraction), await meishoMinConfidence(job.image_id, extraction));
+        return directOrServer(async () =>
+          identifyMeishoByArt(job.image_id, await meishoCandidates(job, extraction), await meishoMinConfidence(job.image_id, extraction)),
+        );
       },
       similarNames: async (name) => {
         // 名前だけを索引から読む (全武将の中身を毎回読むと遅い)
@@ -399,6 +399,21 @@ function pauseForRateLimit(err: OcrError) {
 
 /** AI での見分けをサーバーに任せる合図 (保存の途中で投げ、ジョブをサーバーに預け直す) */
 class NeedServerIdentify extends Error {}
+
+/**
+ * 見分けの AI への問い合わせ: アプリを開いている間はこの iPhone から直接 (数秒で終わる)。
+ * サーバーに任せると答えが届くまで 1〜数分かかり、保存はどのみちアプリを開いている時にしかできないため。
+ * アプリが裏にある・直接届かない (上限など) 時だけサーバーに任せる
+ */
+async function directOrServer(fn: () => Promise<Warlord | null>): Promise<Warlord | null> {
+  if (!bgActive(loadSettings())) return fn();
+  if (typeof document !== "undefined" && document.hidden) throw new NeedServerIdentify();
+  try {
+    return await fn();
+  } catch {
+    throw new NeedServerIdentify();
+  }
+}
 
 /** 名将修行の画面の持ち主の候補: 名将の印がある武将と、名将一覧に名前があるのにまだ印を付けられていない武将 */
 /**
