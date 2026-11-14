@@ -10,7 +10,7 @@ import {
   getQueueState,
   refreshServerStatus,
   getServerVersion,
-  isHeldApexJob,
+  heldApexIds,
   pollServer,
   resumeNow,
   type QueueState,
@@ -64,6 +64,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }: Props) {
   const toast = useToast();
   const [checking, setChecking] = useState(false);
+  const heldIds = useMemo(() => heldApexIds(jobs), [jobs]);
   const inputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<UploadMode>("auto");
   const [faction, setFaction] = useState<Faction | "">("");
@@ -400,7 +401,7 @@ export function UploadPanel({ jobs, warlords, model, hasApiKey, onOpenWarlord }:
               <JobRow
                 key={job.id}
                 job={job}
-                held={isHeldApexJob(job, jobs)}
+                held={heldIds.has(job.id)}
                 warlords={warlords}
                 onRetry={retry}
                 onOpen={onOpenWarlord}
@@ -683,8 +684,9 @@ function BgStages({ batch, preparing, qs }: { batch: OcrJob[]; preparing: number
   const toSend = batch.filter((j) => !j.local && (j.status === "queued" || j.status === "processing")).length;
   // サーバーで止まった分を引き取って、この端末で解析している枚数
   // 名前の無い頂点武将の画面は、ほかの画像が終わるまで保存を待たせている (アプリを開いていなくてよい)
-  const held = batch.filter((j) => isHeldApexJob(j, batch)).length;
-  const localJobs = batch.filter((j) => j.local && (j.status === "queued" || j.status === "processing") && !isHeldApexJob(j, batch));
+  const heldSet = useMemo(() => heldApexIds(batch), [batch]);
+  const held = heldSet.size;
+  const localJobs = batch.filter((j) => j.local && (j.status === "queued" || j.status === "processing") && !heldSet.has(j.id));
   const localPending = localJobs.length;
   // 読み取りはサーバーで済んでいて、保存 (同じ名前の武将との立ち絵の確認) だけが残っている分
   const localSaving = localJobs.filter((j) => j.extraction).length;

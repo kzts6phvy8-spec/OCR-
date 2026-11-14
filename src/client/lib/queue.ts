@@ -548,9 +548,16 @@ async function sendMeishoRequest(job: OcrJob, extraction: OcrExtraction, stage: 
 
 /** 見分けの 1 回目をサーバーに預ける (候補が 3 人以下なら 2 回目から) */
 /** 頂天突破・名将の道の画面 (頂点武将の、武将名が無い画面) か */
+const apexCache = new WeakMap<OcrExtraction, boolean>();
 const isApexScreen = (e: OcrExtraction | null | undefined) => {
-  const t = e ? tidyExtraction(e) : null;
-  return Boolean(t?.apex_breakthrough?.visible || t?.meisho_awakening?.visible);
+  if (!e) return false;
+  let v = apexCache.get(e);
+  if (v === undefined) {
+    const t = tidyExtraction(e);
+    v = Boolean(t.apex_breakthrough?.visible || t.meisho_awakening?.visible);
+    apexCache.set(e, v);
+  }
+  return v;
 };
 
 /** 頂天突破・名将の道の画面の持ち主の候補 (頂点武将。名将の道なら名将の頂点武将) */
@@ -564,6 +571,18 @@ async function apexCandidates(job: OcrJob, extraction: OcrExtraction): Promise<W
 /** 名前のある画面が残っているので、保存を待たせている頂点武将の画面か (画面の表示用) */
 export const isHeldApexJob = (j: OcrJob, jobs: OcrJob[]) =>
   j.status === "queued" && Boolean(j.extraction) && !j.target_id && isApexScreen(j.extraction) && namedPending(jobs, j);
+
+/**
+ * 保存を待たせている頂点武将の画面の ID をまとめて求める (画面の表示用。1 件ずつ isHeldApexJob を呼ぶと、
+ * 枚数が多い時に毎秒の再描画で重くなるため)。待たせている画面自身は「名前のある画面」に数えないので、全体で 1 回調べれば足りる
+ */
+export function heldApexIds(jobs: OcrJob[]): Set<string> {
+  const out = new Set<string>();
+  const anyNamed = jobs.some((k) => !k.talents_only && isPending(k.status) && !(k.extraction && isApexScreen(k.extraction)));
+  if (!anyNamed) return out;
+  for (const j of jobs) if (j.status === "queued" && j.extraction && !j.target_id && isApexScreen(j.extraction)) out.add(j.id);
+  return out;
+}
 
 function namedPending(jobs: OcrJob[], self: OcrJob): boolean {
   return jobs.some((k) => k.id !== self.id && !k.talents_only && isPending(k.status) && !(k.extraction && isApexScreen(k.extraction)));
