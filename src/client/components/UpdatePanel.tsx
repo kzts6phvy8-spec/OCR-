@@ -89,7 +89,7 @@ export function UpdatePanel({ warlords, onChanged, onOpenWarlord }: { warlords: 
       {!base ? (
         <>
           <p className="mb-3 text-sm text-ash">
-            ゲームのアップデート (新しい武将・鬼のシーズン・名将になった武将・名前の変更) の分だけをファイルにします。
+            ゲームのアップデート (新しい武将・鬼のシーズン・名将になった武将・武器覚醒の追加・名前の変更) の分だけをファイルにします。
             <br />① ここで「始める」を押す → ② アップデートで増えた・変わった武将のスクショを、いつも通り取り込む → ③ ここで「変更点を書き出す」
           </p>
           <div className="flex flex-wrap items-center gap-2">
@@ -111,6 +111,7 @@ export function UpdatePanel({ warlords, onChanged, onOpenWarlord }: { warlords: 
             <ul className="mb-3 grid gap-1 text-sm sm:grid-cols-2">
               <li>新しい武将: {d.added.length} 人</li>
               <li>名将になった武将: {d.newMeisho.length} 人</li>
+              <li>武器覚醒の追加: {d.newWeaponAwakening.length} 人</li>
               <li>名前の変更: {d.renamed.length} 人</li>
               <li>鬼のシーズンの変更: {d.seasonChanged.length} 人</li>
               <li className="sm:col-span-2">新しい鬼のシーズン: {d.newSeasons.length ? d.newSeasons.join("、") : "なし"}</li>

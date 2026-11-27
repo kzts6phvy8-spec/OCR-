@@ -12,6 +12,8 @@ export interface BaselineEntry {
   is_special: boolean;
   is_meisho: boolean;
   oni_season: string;
+  /** 専用武器覚醒があるか (前の版の基準には無い) */
+  has_weapon_awakening?: boolean;
 }
 
 export interface UpdateBaseline {
@@ -36,6 +38,7 @@ export function makeBaseline(warlords: Warlord[], label: string, now = new Date(
       is_special: w.is_special,
       is_meisho: Boolean(w.is_meisho),
       oni_season: effectiveSeason(w),
+      has_weapon_awakening: Boolean(w.has_weapon_awakening),
     };
   }
   return { started_at: now.toISOString(), label, warlords: out };
@@ -48,6 +51,8 @@ export interface UpdateDiff {
   renamed: { warlord: Warlord; from: BaselineEntry }[];
   /** 新しく名将になった武将 (前からいた武将) */
   newMeisho: Warlord[];
+  /** 専用武器覚醒が追加された武将 (前からいた武将) */
+  newWeaponAwakening: Warlord[];
   /** シーズンが変わった・新しく分かった鬼憑武将 (前からいた武将) */
   seasonChanged: { warlord: Warlord; from: string; to: string }[];
   /** 基準の時には無かった鬼のシーズン */
@@ -58,7 +63,7 @@ export interface UpdateDiff {
 
 export function diffUpdate(base: UpdateBaseline, warlords: Warlord[]): UpdateDiff {
   const now = new Map(warlords.map((w) => [w.id, w]));
-  const diff: UpdateDiff = { added: [], renamed: [], newMeisho: [], seasonChanged: [], newSeasons: [], removed: [] };
+  const diff: UpdateDiff = { added: [], renamed: [], newMeisho: [], newWeaponAwakening: [], seasonChanged: [], newSeasons: [], removed: [] };
   for (const w of warlords) {
     const b = base.warlords[w.id];
     if (!b) {
@@ -67,6 +72,7 @@ export function diffUpdate(base: UpdateBaseline, warlords: Warlord[]): UpdateDif
     }
     if (b.name !== w.name || b.title_alias !== w.title_alias) diff.renamed.push({ warlord: w, from: b });
     if (!b.is_meisho && w.is_meisho) diff.newMeisho.push(w);
+    if (b.has_weapon_awakening === false && w.has_weapon_awakening) diff.newWeaponAwakening.push(w);
     const season = effectiveSeason(w);
     if (season && season !== b.oni_season) diff.seasonChanged.push({ warlord: w, from: b.oni_season, to: season });
   }
@@ -77,12 +83,13 @@ export function diffUpdate(base: UpdateBaseline, warlords: Warlord[]): UpdateDif
   const byName = (a: Warlord, b: Warlord) => a.faction.localeCompare(b.faction, "ja") || a.name.localeCompare(b.name, "ja");
   diff.added.sort(byName);
   diff.newMeisho.sort(byName);
+  diff.newWeaponAwakening.sort(byName);
   return diff;
 }
 
 /** 変わった所が 1 つでもあるか */
 export const hasChanges = (d: UpdateDiff) =>
-  d.added.length + d.renamed.length + d.newMeisho.length + d.seasonChanged.length + d.newSeasons.length + d.removed.length > 0;
+  d.added.length + d.renamed.length + d.newMeisho.length + d.newWeaponAwakening.length + d.seasonChanged.length + d.newSeasons.length + d.removed.length > 0;
 
 const label = (w: { name: string; is_special: boolean; title_alias?: string; faction: string }) =>
   `${w.is_special ? "【特】" : ""}${w.name}${w.title_alias ? `（${w.title_alias}）` : ""} [${w.faction || "勢力未入力"}]`;
@@ -103,7 +110,7 @@ export function updateToText(
   lines.push(`(取り込み開始 ${base.started_at.slice(0, 10)} → 書き出し ${now.toISOString().slice(0, 10)})`);
   lines.push("");
   lines.push(
-    `新しい武将 ${d.added.length} 人 / 名将になった武将 ${d.newMeisho.length} 人 / 名前の変更 ${d.renamed.length} 人 / 鬼のシーズンの変更 ${d.seasonChanged.length} 人 / 新しい鬼のシーズン ${d.newSeasons.length}`,
+    `新しい武将 ${d.added.length} 人 / 名将になった武将 ${d.newMeisho.length} 人 / 武器覚醒の追加 ${d.newWeaponAwakening.length} 人 / 名前の変更 ${d.renamed.length} 人 / 鬼のシーズンの変更 ${d.seasonChanged.length} 人 / 新しい鬼のシーズン ${d.newSeasons.length}`,
   );
   if (!hasChanges(d)) {
     lines.push("", "変わった所はありません。");
@@ -129,6 +136,10 @@ export function updateToText(
     section("名将になった武将");
     for (const w of d.newMeisho) lines.push(`・${label(w)}`);
   }
+  if (d.newWeaponAwakening.length) {
+    section("専用武器覚醒が追加された武将");
+    for (const w of d.newWeaponAwakening) lines.push(`・${label(w)}${w.awakening_after_weapon ? `: ${w.awakening_after_weapon}` : " (武器覚醒後の効果はまだ読み取れていません)"}`);
+  }
   if (d.seasonChanged.length) {
     section("鬼のシーズンの変更");
     for (const s of d.seasonChanged) lines.push(`・${label(s.warlord)}: ${s.from || "不明"} → ${s.to}`);
@@ -141,10 +152,10 @@ export function updateToText(
     section("新しい武将");
     for (const w of d.added) lines.push(`・${label(w)}${w.faction === "鬼憑武将" && effectiveSeason(w) ? ` (${effectiveSeason(w)})` : ""}`);
   }
-  // 詳しい内容: 新しい武将と、名将になった武将
-  const detailed = [...d.added, ...d.newMeisho];
+  // 詳しい内容: 新しい武将と、名将になった・武器覚醒が追加された武将
+  const detailed = [...new Set([...d.added, ...d.newMeisho, ...d.newWeaponAwakening])];
   if (detailed.length) {
-    section("詳しい内容 (新しい武将・名将になった武将)");
+    section("詳しい内容 (新しい武将・名将になった武将・武器覚醒が追加された武将)");
     lines.push("");
     lines.push(detailed.map(details).join("\n\n" + "─".repeat(24) + "\n\n"));
   }

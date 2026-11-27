@@ -762,6 +762,7 @@ export const api = {
       exported_at: new Date().toISOString(),
       added: diff.added.map(clean),
       new_meisho: diff.newMeisho.map(clean),
+      new_weapon_awakening: diff.newWeaponAwakening.map(clean),
       renamed: diff.renamed.map((r) => ({ from: { name: r.from.name, title_alias: r.from.title_alias }, to: clean(r.warlord) })),
       rename_hints: renameHints.map((h) => ({ from: h.existing.name, to: h.added.name, faction: h.added.faction })),
       season_changed: diff.seasonChanged.map((x) => ({ name: x.warlord.name, is_special: x.warlord.is_special, from: x.from, to: x.to })),
@@ -770,7 +771,7 @@ export const api = {
     };
     await add("アップデート-変更点.json", new Blob([JSON.stringify(json, null, 2)], { type: "application/json" }));
     const used = new Set<string>();
-    for (const w of [...diff.added, ...diff.newMeisho, ...diff.renamed.map((r) => r.warlord)]) {
+    for (const w of new Set([...diff.added, ...diff.newMeisho, ...diff.newWeaponAwakening, ...diff.renamed.map((r) => r.warlord)])) {
       const id = w.image_url || w.gallery_images[0];
       const image = id ? await db.getImage(id).catch(() => null) : null;
       const art = image ? await cropLeft(image, 0.45, 1200).catch(() => null) : null;
@@ -782,7 +783,7 @@ export const api = {
       await add(name, art);
     }
     const blobs = splitForZip(entries, maxBytes).map((g) => new Blob(zipParts(g), { type: "application/zip" }));
-    const changed = diff.added.length + diff.newMeisho.length + diff.renamed.length + diff.seasonChanged.length;
+    const changed = diff.added.length + diff.newMeisho.length + diff.newWeaponAwakening.length + diff.renamed.length + diff.seasonChanged.length;
     return { blobs, changed };
   },
 
