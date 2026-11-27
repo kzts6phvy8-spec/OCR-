@@ -19,12 +19,14 @@ describe("アップデートの変更点", () => {
       w("a", { name: "武田信玄", faction: "奥.関.甲" }),
       w("b", { name: "旧名", faction: "東海" }),
       w("c", { name: "鬼A", faction: "鬼憑武将", oni_season: "源平合戦" }),
+      w("e", { name: "上杉謙信", faction: "奥.関.甲", rarity: "SSR" }),
     ];
     const base = makeBaseline(before, "12月アップデート");
     const after = [
       w("a", { name: "武田信玄", faction: "奥.関.甲", is_meisho: true }),
       w("b", { name: "新名", faction: "東海" }),
       w("c", { name: "鬼A", faction: "鬼憑武将", oni_season: "源平合戦" }),
+      w("e", { name: "上杉謙信", faction: "奥.関.甲", rarity: "SSR", has_awakening: true, has_weapon_awakening: true, awakening_after_weapon: "物理攻撃+20%" }),
       w("d", {
         name: "鬼B",
         faction: "鬼憑武将",
@@ -36,6 +38,7 @@ describe("アップデートの変更点", () => {
     expect(d.renamed.map((r) => `${r.from.name}→${r.warlord.name}`)).toEqual(["旧名→新名"]);
     expect(d.newMeisho.map((x) => x.name)).toEqual(["武田信玄"]);
     expect(d.newSeasons).toEqual(["新選組"]);
+    expect(d.newWeaponAwakening.map((x) => x.name)).toEqual(["上杉謙信"]);
     const text = updateToText(base, d, (x) => x.name);
     expect(text).toContain("新選組: 鬼B");
     expect(text).toContain("旧名");
