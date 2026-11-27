@@ -6,6 +6,7 @@ import { saveFile, today } from "../lib/share.ts";
 import { HealthPanel } from "./HealthPanel.tsx";
 import { OniSeasonPanel } from "./OniSeasonPanel.tsx";
 import { MeishoPanel } from "./MeishoPanel.tsx";
+import { UpdatePanel } from "./UpdatePanel.tsx";
 import type { Warlord } from "../../core/types.ts";
 
 export function DataPanel({
@@ -133,6 +134,7 @@ export function DataPanel({
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
+      <UpdatePanel warlords={warlords} onChanged={onImported} onOpenWarlord={onOpenWarlord} />
       <HealthPanel warlords={warlords} onChanged={onImported} onOpenWarlord={onOpenWarlord} />
       <OniSeasonPanel warlords={warlords} onOpenWarlord={onOpenWarlord} />
       <MeishoPanel warlords={warlords} onOpenWarlord={onOpenWarlord} onChanged={onImported} />

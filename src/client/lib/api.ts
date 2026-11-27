@@ -10,6 +10,7 @@ import { blobToDataUrl, compressImage, dataUrlToBlob, shrinkForGallery } from ".
 import * as queue from "./queue.ts";
 import { findIssues, type Issue } from "../../core/health.ts";
 import { getErrorLog } from "./errorLog.ts";
+import type { UpdateBaseline, UpdateDiff } from "../../core/update.ts";
 
 export interface HealthReport {
   checkedAt: string;
@@ -27,6 +28,8 @@ export function lastHealthReport(): HealthReport | null {
     return null;
   }
 }
+
+const UPDATE_KEY = "game-update-baseline-v1";
 
 // 画面から使う操作。サーバーは無く、すべて端末内で完結する。
 
@@ -654,6 +657,133 @@ export const api = {
     // アップロードできる大きさに収まるよう、いくつかの ZIP に分ける
     const blobs = splitForZip(entries, maxBytes).map((g) => new Blob(zipParts(g), { type: "application/zip" }));
     return { blobs, count: entries.length, missing };
+  },
+
+  // ---------------- ゲームのアップデートの取り込み ----------------
+
+  /** 取り込み中のアップデートの基準 (始めた時の図鑑)。無ければ null */
+  updateBaseline(): UpdateBaseline | null {
+    try {
+      return JSON.parse(localStorage.getItem(UPDATE_KEY) ?? "null") as UpdateBaseline | null;
+    } catch {
+      return null;
+    }
+  },
+
+  /** アップデートの取り込みを始める: 今の図鑑を基準として覚える (この後に取り込んだ分が「アップデートの分」になる) */
+  async startUpdate(label: string): Promise<UpdateBaseline> {
+    const { makeBaseline } = await import("../../core/update.ts");
+    const base = makeBaseline(await db.listWarlords(), label);
+    localStorage.setItem(UPDATE_KEY, JSON.stringify(base));
+    return base;
+  },
+
+  /** アップデートの取り込みを終える (基準を忘れる) */
+  endUpdate() {
+    try {
+      localStorage.removeItem(UPDATE_KEY);
+    } catch {
+      /* 消せなくても困らない */
+    }
+  },
+
+  /**
+   * 基準と今の図鑑を比べる。renameHints: 新しく登録された武将のうち、前からいた武将と立ち絵がほぼ同じもの
+   * (ゲームで名前が変わった武将は、新しい名前で別の武将として登録されるため)
+   */
+  async updateReport(): Promise<{ base: UpdateBaseline; diff: UpdateDiff; renameHints: { added: Warlord; existing: Warlord }[] } | null> {
+    const base = this.updateBaseline();
+    if (!base) return null;
+    const { diffUpdate } = await import("../../core/update.ts");
+    const all = await db.listWarlords();
+    const diff = diffUpdate(base, all);
+    const renameHints: { added: Warlord; existing: Warlord }[] = [];
+    if (diff.added.length) {
+      const { signaturesOf } = await import("./visual.ts");
+      const { signatureSimilarity } = await import("./images.ts");
+      const olds = all.filter((w) => base.warlords[w.id] && (w.image_url || w.gallery_images[0]));
+      const oldSigs = await signaturesOf(olds.map((w) => w.image_url || w.gallery_images[0]));
+      for (const a of diff.added) {
+        const id = a.image_url || a.gallery_images[0];
+        if (!id) continue;
+        const sig = (await signaturesOf([id])).get(id);
+        if (!sig) continue;
+        let best: { w: Warlord; score: number } | null = null;
+        for (const o of olds) {
+          const os = oldSigs.get(o.image_url || o.gallery_images[0]);
+          if (!os) continue;
+          const score = signatureSimilarity(sig, os);
+          if (!best || score > best.score) best = { w: o, score };
+        }
+        // ほぼ同じ立ち絵で、名前が違う (同じ名前なら別の版の武将として登録されたもの)
+        if (best && best.score >= 0.985 && best.w.name !== a.name) renameHints.push({ added: a, existing: best.w });
+      }
+    }
+    return { base, diff, renameHints };
+  },
+
+  /**
+   * 名前が変わった武将をまとめる: 新しい名前で登録された武将の内容を前からいた武将に入れ、前からいた武将の名前を新しい名前にする
+   * (前からいた武将の名将修行・手で直した内容などはそのまま残る)
+   */
+  async applyRename(existingId: string, addedId: string): Promise<Warlord> {
+    const added = await db.getWarlord(addedId);
+    if (!added) throw new Error("武将が見つかりません");
+    const merged = await this.mergeWarlords(existingId, addedId);
+    return db.updateWarlord(merged.id, normalizeInput({ ...toInput(merged), name: added.name, title_alias: added.title_alias || merged.title_alias }));
+  },
+
+  /** アップデートの変更点を ZIP にまとめる: 変更点のテキスト・JSON と、新しい武将・名将になった武将の立ち絵 */
+  async exportUpdateZip(maxBytes = 28_000_000): Promise<{ blobs: Blob[]; changed: number } | null> {
+    const report = await this.updateReport();
+    if (!report) return null;
+    const { base, diff, renameHints } = report;
+    const { updateToText, effectiveSeason } = await import("../../core/update.ts");
+    const { crc32, splitForZip, zipParts, safeFileName } = await import("../../core/zip.ts");
+    const { cropLeft } = await import("./images.ts");
+    const entries: { name: string; data: Blob; crc: number }[] = [];
+    const add = async (name: string, data: Blob) => entries.push({ name, data, crc: crc32(new Uint8Array(await data.arrayBuffer())) });
+    await add("アップデート-変更点.txt", new Blob([updateToText(base, diff, warlordToText, renameHints)], { type: "text/plain;charset=utf-8" }));
+    // シミュレーター用の JSON: 画像の ID や図鑑の中だけで使う印は外す
+    const clean = (w: Warlord) => {
+      const {
+        gallery_images: _g, image_url: _i, apex_images: _a, meisho_images: _m, reset_batch: _r,
+        talent_order_v2: _t1, talent_reorder_undone: _t2, talent_check_v2: _t3, talent_ai_read: _t4,
+        meisho_training_manual: _mt, meisho_talents_manual: _mm, meisho_manual: _mn,
+        ...rest
+      } = w;
+      return { ...rest, oni_season: effectiveSeason(w) || undefined, meisho_talents: (w.meisho_talents ?? []).map(({ trained: _x, ...t }) => t) };
+    };
+    const json = {
+      app: "sengoku-fubu-warlord-db",
+      kind: "update",
+      label: base.label,
+      started_at: base.started_at,
+      exported_at: new Date().toISOString(),
+      added: diff.added.map(clean),
+      new_meisho: diff.newMeisho.map(clean),
+      renamed: diff.renamed.map((r) => ({ from: { name: r.from.name, title_alias: r.from.title_alias }, to: clean(r.warlord) })),
+      rename_hints: renameHints.map((h) => ({ from: h.existing.name, to: h.added.name, faction: h.added.faction })),
+      season_changed: diff.seasonChanged.map((x) => ({ name: x.warlord.name, is_special: x.warlord.is_special, from: x.from, to: x.to })),
+      new_seasons: diff.newSeasons,
+      removed: diff.removed.map((b) => ({ name: b.name, faction: b.faction, is_special: b.is_special })),
+    };
+    await add("アップデート-変更点.json", new Blob([JSON.stringify(json, null, 2)], { type: "application/json" }));
+    const used = new Set<string>();
+    for (const w of [...diff.added, ...diff.newMeisho, ...diff.renamed.map((r) => r.warlord)]) {
+      const id = w.image_url || w.gallery_images[0];
+      const image = id ? await db.getImage(id).catch(() => null) : null;
+      const art = image ? await cropLeft(image, 0.45, 1200).catch(() => null) : null;
+      if (!art) continue;
+      const nameBase = safeFileName(`${w.is_special ? "【特】" : ""}${w.name}${w.title_alias ? `(${w.title_alias})` : ""}_${w.faction}`);
+      let name = `立ち絵/${nameBase}.jpg`;
+      for (let n = 2; used.has(name); n++) name = `立ち絵/${nameBase}_${n}.jpg`;
+      used.add(name);
+      await add(name, art);
+    }
+    const blobs = splitForZip(entries, maxBytes).map((g) => new Blob(zipParts(g), { type: "application/zip" }));
+    const changed = diff.added.length + diff.newMeisho.length + diff.renamed.length + diff.seasonChanged.length;
+    return { blobs, changed };
   },
 
   /**
