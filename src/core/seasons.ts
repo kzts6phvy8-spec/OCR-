@@ -37,10 +37,26 @@ export function oniSeasonInText(text: string): string {
   return ONI_SEASONS.find((s) => t.includes(`鬼憑${norm(s)}`)) ?? "";
 }
 
+/**
+ * アップデートで増えた、一覧にまだ無いシーズン: 効果の文の「鬼憑〇〇2体以上」の〇〇。
+ * 「鬼憑武将2体」(勢力の名前) と、連携相手の武将名 (「鬼憑毛利元就、鬼憑吉川元春2体…」) は除く
+ */
+function newSeasonInText(partner: string, effect: string): string {
+  const t = norm(effect);
+  const m = t.match(/鬼憑([^鬼憑、,，]{2,10}?)[0-9０-９一二三四]体/);
+  if (!m || m[1] === "武将") return "";
+  if (norm(partner).includes(m[1])) return "";
+  return m[1];
+}
+
 /** 連携スキルからシーズンを見つける (「鬼憑 + シーズン名」がある時だけ) */
 export function detectSeason(synergies: { partner: string; effect: string }[]): string {
   for (const s of synergies) {
     const found = oniSeasonInText(`${s.partner} ${s.effect}`);
+    if (found) return found;
+  }
+  for (const s of synergies) {
+    const found = newSeasonInText(s.partner, s.effect);
     if (found) return found;
   }
   return "";
@@ -48,3 +64,4 @@ export function detectSeason(synergies: { partner: string; effect: string }[]): 
 
 /** 保存できるシーズンの名前にそろえる (一覧に無ければ空文字) */
 export const normalizeSeason = (v: unknown) => seasonInText(String(v ?? ""));
+

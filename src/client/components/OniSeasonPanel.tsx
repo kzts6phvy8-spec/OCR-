@@ -7,13 +7,15 @@ import { ONI_GROUP_SIZE, resolveOniSeasons } from "../../core/health.ts";
 // 「データ管理」の鬼のシーズン一覧: シーズン (4 人の組) ごとに、図鑑に登録されている鬼を並べる
 
 export function OniSeasonPanel({ warlords, onOpenWarlord }: { warlords: Warlord[]; onOpenWarlord: (id: string) => void }) {
-  const { onis, wrongFaction, seasonOf, unknown } = useMemo(() => {
+  const { onis, wrongFaction, seasonOf, unknown, seasons } = useMemo(() => {
     const onis = warlords.filter((w) => w.faction === "鬼憑武将");
     // 「鬼憑 + シーズン名」の連携スキルがあるのに、勢力が鬼憑武将になっていない武将 (勢力の読み違い)
     const wrongFaction = warlords.filter((w) => w.faction !== "鬼憑武将" && detectSeason(w.synergy_skills));
     // 点検と同じ決め方 (選んだシーズン・連携スキルの文章・連携スキルで指し合う鬼から)
     const seasonOf = resolveOniSeasons(onis);
-    return { onis, wrongFaction, seasonOf, unknown: onis.filter((w) => !seasonOf.has(w.id)) };
+    // アップデートで増えた、一覧にまだ無いシーズンも並べる
+    const extra = [...new Set([...seasonOf.values()].filter((s) => !(ONI_SEASONS as readonly string[]).includes(s)))];
+    return { onis, wrongFaction, seasonOf, unknown: onis.filter((w) => !seasonOf.has(w.id)), seasons: [...ONI_SEASONS, ...extra] };
   }, [warlords]);
   if (onis.length === 0 && wrongFaction.length === 0) return null;
   return (
@@ -26,7 +28,7 @@ export function OniSeasonPanel({ warlords, onOpenWarlord }: { warlords: Warlord[
         「(推定)」は、連携スキルで指し合っている鬼のシーズンから決めたものです。
       </p>
       <ul className="grid gap-2 sm:grid-cols-2">
-        {ONI_SEASONS.map((season) => {
+        {seasons.map((season) => {
           const members = [...new Map(onis.filter((w) => seasonOf.get(w.id) === season).map((w) => [w.name, w])).values()];
           const misfiled = wrongFaction.filter((w) => detectSeason(w.synergy_skills) === season);
           const done = members.length === ONI_GROUP_SIZE;
