@@ -18,6 +18,7 @@ export const ONI_SEASONS = [
   "慶長出羽",
   "上杉四天王",
   "織田四天王",
+  "剣心一如",
 ] as const;
 
 const norm = (s: string) => s.normalize("NFKC").replace(/[\s・]/g, "").replace(/ケ/g, "ヶ").replace(/大坂/g, "大阪");
