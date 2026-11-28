@@ -2,6 +2,8 @@
 // アップデートの取り込みを始める時に今の図鑑を「基準」として覚えておき、スクショを取り込んだ後に基準と比べる。
 
 import { detectSeason } from "./seasons.ts";
+import { MEISHO_ROSTER } from "./meisho.ts";
+import { SIM_MEISHO } from "./meishoSimData.ts";
 import type { Warlord } from "./types.ts";
 
 /** 基準として覚えておく、武将 1 人分の要点 */
@@ -42,6 +44,33 @@ export function makeBaseline(warlords: Warlord[], label: string, now = new Date(
     };
   }
   return { started_at: now.toISOString(), label, warlords: out };
+}
+
+/**
+ * 「取り込みを始める」を押し忘れた時: 指定した日時より前に登録されていた武将を基準にする (後から作る基準)。
+ * 前の状態は残っていないので、次のように推定する。
+ * - 新しい武将: 指定した日時より後に登録された武将
+ * - 名将になった武将: アップデート前から分かっていた名将 (ゲームの名将一覧・シミュレーターのデータ・頂点 伊達政宗) 以外で名将の印がある武将
+ * - 名前の変更・武器覚醒の追加・シーズンの変更: 前の状態が分からないので比べない (名前の変更は立ち絵の候補で見つける)
+ */
+export function makeRetroBaseline(warlords: Warlord[], since: Date, label: string): UpdateBaseline {
+  const knownMeisho = (w: Warlord) =>
+    MEISHO_ROSTER.some((e) => e.faction === w.faction && e.name === w.name) ||
+    SIM_MEISHO.some((e) => e.faction === w.faction && e.name === w.name) ||
+    (w.faction === "頂点武将" && w.name === "伊達政宗");
+  const out: Record<string, BaselineEntry> = {};
+  for (const w of warlords) {
+    if (Date.parse(w.created_at) >= since.getTime()) continue;
+    out[w.id] = {
+      name: w.name,
+      title_alias: w.title_alias,
+      faction: w.faction,
+      is_special: w.is_special,
+      is_meisho: Boolean(w.is_meisho) && knownMeisho(w),
+      oni_season: effectiveSeason(w),
+    };
+  }
+  return { started_at: since.toISOString(), label, warlords: out };
 }
 
 export interface UpdateDiff {

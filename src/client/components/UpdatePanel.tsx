@@ -24,6 +24,11 @@ export function UpdatePanel({ warlords, onChanged, onOpenWarlord }: { warlords: 
   const [report, setReport] = useState<Report | null>(null);
   const [busy, setBusy] = useState(false);
   const [zips, setZips] = useState<{ blob: Blob; name: string }[]>([]);
+  // 始め忘れた時の、取り込みを始めた日 (この日の 0 時から)
+  const [sinceDay, setSinceDay] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
 
   // 図鑑が変わるたびに、変わった所を数え直す
   useEffect(() => {
@@ -42,6 +47,17 @@ export function UpdatePanel({ warlords, onChanged, onOpenWarlord }: { warlords: 
     setBase(await api.startUpdate(label.trim()));
     setZips([]);
     toast("success", "アップデートの取り込みを始めました", "このあと取り込んだスクショの分が「アップデートの変更点」になります");
+  };
+
+  const startSince = async () => {
+    if (!label.trim()) return toast("info", "アップデートの名前を入れてください");
+    const since = new Date(`${sinceDay}T00:00:00`);
+    if (Number.isNaN(since.getTime())) return toast("info", "日付を選んでください");
+    const after = warlords.filter((w) => Date.parse(w.created_at) >= since.getTime()).length;
+    if (!confirm(`${sinceDay} の 0 時から取り込みを始めたことにしますか？\nこの日より後に登録された武将 ${after} 人が「新しい武将」になります。`)) return;
+    setBase(await api.startUpdateSince(label.trim(), since));
+    setZips([]);
+    toast("success", `${sinceDay} から始めたことにしました`, "名前の変更・武器覚醒の追加・シーズンの変更は、前の状態が分からないので比べません");
   };
 
   const exportZip = async () => {
@@ -101,6 +117,19 @@ export function UpdatePanel({ warlords, onChanged, onOpenWarlord }: { warlords: 
               <Sparkles className="size-4" /> 取り込みを始める
             </button>
           </div>
+          <details className="mt-3 text-sm">
+            <summary className="cursor-pointer text-gold-300">「始める」を押し忘れて、もう取り込んでしまった時</summary>
+            <p className="mt-2 text-xs text-ash">
+              アップデートのスクショを取り込み始めた日を選ぶと、その日より後に登録された武将を「新しい武将」にします。名将は、ゲームの名将一覧に無いのに名将の印がある武将を「名将になった武将」にします。
+              名前の変更・武器覚醒の追加・鬼のシーズンの変更は、前の状態が残っていないので比べません (名前の変更は、立ち絵が同じ武将の候補として出ます)。
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input type="date" className="field max-w-[11rem]" value={sinceDay} onChange={(e) => setSinceDay(e.target.value)} />
+              <button onClick={() => void startSince()} className="rounded-lg border border-gold-600/60 px-3 py-2 text-sm font-bold text-gold-300">
+                この日から始めたことにする
+              </button>
+            </div>
+          </details>
         </>
       ) : (
         <>

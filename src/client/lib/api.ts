@@ -678,6 +678,14 @@ export const api = {
     return base;
   },
 
+  /** 「始める」を押し忘れた時: 指定した日時から始めたことにする (その日時より前に登録されていた武将を基準にする) */
+  async startUpdateSince(label: string, since: Date): Promise<UpdateBaseline> {
+    const { makeRetroBaseline } = await import("../../core/update.ts");
+    const base = makeRetroBaseline(await db.listWarlords(), since, label);
+    localStorage.setItem(UPDATE_KEY, JSON.stringify(base));
+    return base;
+  },
+
   /** アップデートの取り込みを終える (基準を忘れる) */
   endUpdate() {
     try {

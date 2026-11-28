@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diffUpdate, makeBaseline, updateToText } from "./update.ts";
+import { diffUpdate, makeBaseline, makeRetroBaseline, updateToText } from "./update.ts";
 import { detectSeason } from "./seasons.ts";
 import type { Warlord } from "./types.ts";
 import { emptyWarlordInput } from "./domain.ts";
@@ -49,5 +49,18 @@ describe("アップデートの変更点", () => {
     expect(one("鬼A", "鬼憑新選組4体が同時に場内にいる場合")).toBe("新選組");
     expect(one("鬼A", "鬼憑武将2体以上が場内にいる場合")).toBe("");
     expect(one("鬼憑毛利元就、鬼憑吉川元春", "鬼憑毛利元就、鬼憑吉川元春2体以上が場内にいる場合")).toBe("");
+  });
+
+  it("始め忘れた時は、日時より後に登録された武将と、名将一覧に無い名将を変更点にする", () => {
+    const list = [
+      w("a", { name: "南部晴政", faction: "奥.関.甲", is_meisho: true, created_at: "2026-10-01T00:00:00Z" }),
+      w("b", { name: "武田勝頼", faction: "奥.関.甲", is_meisho: true, created_at: "2026-10-01T00:00:00Z" }),
+      w("c", { name: "新しい鬼", faction: "鬼憑武将", oni_season: "剣心一如", created_at: "2026-11-28T00:00:00Z" }),
+    ];
+    const base = makeRetroBaseline(list, new Date("2026-11-27T00:00:00Z"), "12月");
+    const d = diffUpdate(base, list);
+    expect(d.added.map((x) => x.name)).toEqual(["新しい鬼"]);
+    expect(d.newMeisho.map((x) => x.name)).toEqual(["武田勝頼"]);
+    expect(d.newSeasons).toEqual(["剣心一如"]);
   });
 });
